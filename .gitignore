@@ -1,0 +1,6 @@
+*.pyc
+*.o
+*.so
+*.mod
+.ipynb_checkpoints/*
+*.pyf
