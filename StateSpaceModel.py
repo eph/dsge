@@ -3,7 +3,7 @@ from __future__ import division
 import numpy as np
 import scipy as sp
 import pandas as p
-from fortran import dlyap, kalman, gensys, meyer_gohde
+from fortran import dlyap, kalman, gensys
 
 
 
@@ -14,9 +14,9 @@ class StateSpaceModel(object):
 
         if len(yy.shape) < 2:
             yy = np.swapaxes(np.atleast_2d(yy), 0, 1)
-            
+
         self.yy = yy
-        
+
 
         self.TT = TT
         self.RR = RR
@@ -27,20 +27,20 @@ class StateSpaceModel(object):
 
 
         self.t0 = t0
-        
+
         self.shock_names = None
-        
+
     def log_lik(self, para, *args, **kwargs):
 
         t0 = kwargs.pop('t0', self.t0)
         yy = kwargs.pop('y', self.yy)
         P0 = kwargs.pop('P0', 'unconditional')
-        
+
         TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
 
         if P0=='unconditional':
             P0, info = dlyap.dlyap(TT, RR.dot(QQ).dot(RR.T))
-            
+
         lik = kalman.kalman_filter(yy.T, TT, RR, QQ, DD, ZZ, HH, P0)
 
         return lik
@@ -53,7 +53,7 @@ class StateSpaceModel(object):
         P0 = kwargs.pop('P0', 'unconditional')
 
         TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
-        
+
         if P0=='unconditional':
             P0, info = dlyap.dlyap(TT, RR.dot(QQ).dot(RR.T))
 
@@ -66,7 +66,7 @@ class StateSpaceModel(object):
 
         St = np.zeros((nobs+1, ns, npart))
         St[0, :, :] = np.linalg.cholesky(P0).dot(np.random.normal(size=(neps, npart)))
-        
+
         resamp = np.zeros((nobs))
         for t in range(nobs):
             eps = RRcQQ.dot(np.random.normal(size=(neps, npart)))
@@ -74,20 +74,20 @@ class StateSpaceModel(object):
 
             nut = np.tile(yy[t, :] - DD, (1, npart)) - ZZ.dot(St[t+1, :, :])
 
-            
+
 
 
     def system_matrices(self, para, *args, **kwargs):
-        TT = np.atleast_2d(self.TT(para, *args, **kwargs)) 
-        RR = np.atleast_2d(self.RR(para, *args, **kwargs)) 
-        QQ = np.atleast_2d(self.QQ(para, *args, **kwargs)) 
+        TT = np.atleast_2d(self.TT(para, *args, **kwargs))
+        RR = np.atleast_2d(self.RR(para, *args, **kwargs))
+        QQ = np.atleast_2d(self.QQ(para, *args, **kwargs))
 
-        DD = np.atleast_1d(self.DD(para, *args, **kwargs)) 
-        ZZ = np.atleast_2d(self.ZZ(para, *args, **kwargs)) 
-        HH = np.atleast_1d(self.HH(para, *args, **kwargs)) 
+        DD = np.atleast_1d(self.DD(para, *args, **kwargs))
+        ZZ = np.atleast_2d(self.ZZ(para, *args, **kwargs))
+        HH = np.atleast_1d(self.HH(para, *args, **kwargs))
 
         return TT, RR, QQ, DD, ZZ, HH
-    
+
 
     def impulse_response(self, para, h=20, *args, **kwargs):
 
@@ -189,7 +189,7 @@ class StateSpaceModel(object):
 
             AA = np.dot(TT, AA) + np.dot(Kt, iFtnut).squeeze()
             AA = np.asarray(AA).squeeze()
-            
+
             Pt = np.dot(TTPt, TT.T) - np.dot(Kt, sp.linalg.solve(Ft, Kt.T, sym_pos=True)) + RQR
 
 
@@ -211,12 +211,12 @@ class StateSpaceModel(object):
 
 class LinLagExModel(StateSpaceModel):
 
-    def __init__(self, yy, A, B, C, F, G, N, Q, 
+    def __init__(self, yy, A, B, C, F, G, N, Q,
                  Aj, Bj, Cj, Fj, Gj,
                  Ainf, Binf, Cinf, Finf, Ginf,
                  t0=0,
                  shock_names=None, state_names=None, obs_names=None):
-
+        import meyer_gohde
         self.A = A
         self.B = B
         self.C = C
@@ -226,18 +226,18 @@ class LinLagExModel(StateSpaceModel):
         self.N = N
         self.Q = Q
 
-        
-        self.Aj = Aj 
-        self.Bj = Bj 
-        self.Cj = Cj 
-        self.Fj = Fj 
-        self.Gj = Gj 
+
+        self.Aj = Aj
+        self.Bj = Bj
+        self.Cj = Cj
+        self.Fj = Fj
+        self.Gj = Gj
 
         self.Ainf = Ainf
-        self.Binf = Binf 
-        self.Cinf = Cinf 
-        self.Finf = Finf 
-        self.Ginf = Ginf 
+        self.Binf = Binf
+        self.Cinf = Cinf
+        self.Finf = Finf
+        self.Ginf = Ginf
 
         self.t0 = t0
 
@@ -255,7 +255,7 @@ class LinLagExModel(StateSpaceModel):
         Fj = lambda j: np.array(self.Fj(p0, j), dtype=float)
         Gj = lambda j: np.array(self.Gj(p0, j), dtype=float)
 
-        F = np.array(self.F(p0), dtype=float) 
+        F = np.array(self.F(p0), dtype=float)
 
         find_max_it = meyer_gohde.mg.find_max_it
         max_it = find_max_it(Aj, Bj, Cj, Fj, Gj, F.shape[0], F.shape[1])
@@ -264,19 +264,19 @@ class LinLagExModel(StateSpaceModel):
 
     def impulse_response(self, p0, h=20):
 
-        A = np.array(self.A(p0), dtype=float) 
-        B = np.array(self.B(p0), dtype=float) 
-        C = np.array(self.C(p0), dtype=float) 
-        F = np.array(self.F(p0), dtype=float) 
-        G = np.array(self.G(p0), dtype=float) 
-        N = np.array(self.N(p0), dtype=float) 
-        Q = np.array(self.Q(p0), dtype=float) 
-        
-        Aj = lambda j: np.array(self.Aj(p0, j), dtype=float) 
+        A = np.array(self.A(p0), dtype=float)
+        B = np.array(self.B(p0), dtype=float)
+        C = np.array(self.C(p0), dtype=float)
+        F = np.array(self.F(p0), dtype=float)
+        G = np.array(self.G(p0), dtype=float)
+        N = np.array(self.N(p0), dtype=float)
+        Q = np.array(self.Q(p0), dtype=float)
+
+        Aj = lambda j: np.array(self.Aj(p0, j), dtype=float)
         Bj = lambda j: np.array(self.Bj(p0, j), dtype=float)
-        Cj = lambda j: np.array(self.Cj(p0, j), dtype=float) 
-        Fj = lambda j: np.array(self.Fj(p0, j), dtype=float) 
-        Gj = lambda j: np.array(self.Gj(p0, j), dtype=float) 
+        Cj = lambda j: np.array(self.Cj(p0, j), dtype=float)
+        Fj = lambda j: np.array(self.Fj(p0, j), dtype=float)
+        Gj = lambda j: np.array(self.Gj(p0, j), dtype=float)
 
         Ainf = np.array(self.Ainf(p0), dtype=float)
         Binf = np.array(self.Binf(p0), dtype=float)
@@ -284,8 +284,8 @@ class LinLagExModel(StateSpaceModel):
         Ginf = np.array(self.Ginf(p0), dtype=float)
         Finf = np.array(self.Finf(p0),dtype=float)
 
-        
-        ma_solve = meyer_gohde.mg.solve_ma_alt 
+
+        ma_solve = meyer_gohde.mg.solve_ma_alt
         MA_VECTOR, ALPHA, BETA, RC = ma_solve(A, B, C, F, G, N,
                                               Aj, Bj, Cj, Fj, Gj,
                                               Ainf, Binf, Cinf, Ginf, Finf,h-1)
@@ -296,14 +296,14 @@ class LinLagExModel(StateSpaceModel):
         i = 0
 
         for respi in MA_VECTOR.T:
-            irfs[self.shock_names[i]] = p.DataFrame(np.reshape(respi, (h, nvars))*np.sqrt(Q[i, i]), columns=self.state_names) 
+            irfs[self.shock_names[i]] = p.DataFrame(np.reshape(respi, (h, nvars))*np.sqrt(Q[i, i]), columns=self.state_names)
             i = i + 1
         return irfs
 
-        
+
     def system_matrices(self, p0):
         pass
-        
+
 
 class LinearDSGEModel(StateSpaceModel):
 
@@ -339,22 +339,22 @@ class LinearDSGEModel(StateSpaceModel):
         PPI = self.PPI(para, *args, **kwargs)
         C0 = np.zeros(G0.shape[0])
 
-        TT, CC, RR, fmat, fwt, ywt, gev, RC, loose = gensys.gensys_wrapper.call_gensys(G0, G1, C0, PSI, PPI, 1.00000000001) 
-        
+        TT, CC, RR, fmat, fwt, ywt, gev, RC, loose = gensys.gensys_wrapper.call_gensys(G0, G1, C0, PSI, PPI, 1.00000000001)
+
         return TT, RR, RC
-        
+
     def system_matrices(self, para, *args, **kwargs):
-        
+
         TT, RR, RC = self.solve_LRE(para, *args, **kwargs)
 
-        QQ = np.atleast_2d(self.QQ(para, *args, **kwargs)) 
-        DD = np.atleast_1d(self.DD(para, *args, **kwargs)) 
-        ZZ = np.atleast_2d(self.ZZ(para, *args, **kwargs)) 
-        HH = np.atleast_1d(self.HH(para, *args, **kwargs)) 
+        QQ = np.atleast_2d(self.QQ(para, *args, **kwargs))
+        DD = np.atleast_1d(self.DD(para, *args, **kwargs))
+        ZZ = np.atleast_2d(self.ZZ(para, *args, **kwargs))
+        HH = np.atleast_1d(self.HH(para, *args, **kwargs))
 
         return TT, RR, QQ, DD, ZZ, HH
-    
-    
+
+
 if __name__ == '__main__':
 
     import numpy as np

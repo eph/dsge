@@ -3,11 +3,14 @@
 !  Iskander Karibzhanov's C + Intel MKL implementation
 module gensys
 
-  use mkl95_precision, only: wp => dp
-  use omp_lib
-
-
+  !use mkl95_precision, only: wp => dp
+  !use omp_lib
   implicit none
+
+  integer, parameter :: wp = selected_real_kind(15)
+
+
+
 
   real, parameter :: verysmall = 0.000001_wp
 
@@ -16,7 +19,7 @@ module gensys
   complex(wp), parameter :: CPLX_NEGONE = dcmplx(-1.0_wp, 0.0_wp)
 
   integer :: nunstab = 0
-  integer :: zxz = 0 
+  integer :: zxz = 0
   integer :: fixdiv = 1
   real(wp) :: stake = 1.01_wp
 
@@ -26,12 +29,12 @@ contains
 
   subroutine do_gensys(TT, CC, RR, fmat, fwt, ywt, gev, eu, loose, &
        G0, G1, C0, PSI, PI, DIV)
-    
-    implicit none 
+
+    implicit none
 
     real(wp), intent(inout) :: G0(:,:), G1(:,:), C0(:), PSI(:,:), PI(:,:), div, loose
     real(wp), intent(out) :: TT(size(G0,1),size(G0,1)), CC(size(G0,1)), RR(size(G0,1),size(PSI,2)), fmat, fwt, ywt, gev
-    !f2py depend(size(G0,1)) TT, C0, RR 
+    !f2py depend(size(G0,1)) TT, C0, RR
     complex(wp), dimension(size(G0,1), size(G0, 1)) :: Q, Z, AA, BB, cG0,cG1
     complex(wp), dimension(size(G0,1)) :: alpha, beta
     complex(wp) :: cRR(size(G0,1), size(PSI,2))
@@ -62,7 +65,7 @@ contains
     stake   = 1.01_wp
     fixdiv  = 1
 
-    fmat = 0 
+    fmat = 0
     ywt = 0
     gev = 0
     fwt = 0
@@ -76,7 +79,7 @@ contains
     cPI = dcmplx(PI)
 
     call qz(G0, G1, AA, BB, Q, Z, alpha, beta, n, info)
-    Q = transpose(conjg(Q)) 
+    Q = transpose(conjg(Q))
 
 
     if (zxz == 1) then
@@ -103,9 +106,9 @@ contains
 
 
     ! etawt = Q2*PI
-    allocate(etawt(nunstab, pin)) 
+    allocate(etawt(nunstab, pin))
 
-    call zgemm('n','n', nunstab, pin, n, CPLX_ONE, Qunstab, nunstab, & 
+    call zgemm('n','n', nunstab, pin, n, CPLX_ONE, Qunstab, nunstab, &
          cPI, n, CPLX_ZERO, etawt, nunstab)
     lmin = min(nunstab, pin)
 
@@ -120,7 +123,7 @@ contains
 
    ! zwt
     allocate(zwt(nstab, pin))
-    call zgemm('n','n', nstab, pin, n, CPLX_ONE, Qstab, nstab, & 
+    call zgemm('n','n', nstab, pin, n, CPLX_ONE, Qstab, nstab, &
          cPI, n, CPLX_ZERO, zwt, nstab)
 
     ldzt = min(nstab, pin)
@@ -141,7 +144,7 @@ contains
        !print*,norm,'fdsafa'
        unique = norm < n*verysmall;
     endif
-    
+
 !    TT(1,5)= zwt(2,1)
 !    deallocate(Qstab, Qunstab, cPI, etawt, eta_u, eta_s, eta_v, zwt, zwt_u, zwt_s, zwt_v, vv2)
 !    return
@@ -165,52 +168,52 @@ contains
 !!$    do i = 1, ldzt
 !!$       call zdscal(nstab, zwt_s(i), zwt_u_tran(i,:), 1)
 !!$    end do
- 
- 
+
+
     allocate(tmat(nstab, n), int_mat(lmin, nstab))
     tmat = 0.0_wp
     do i  = 1, nstab
        tmat(i,i) = 1.0_wp
     end do
- 
+
     ! int mat = deta\veta'*veta1*deta1*ueta1'
     call zgemm('n','c', lmin, nstab, pin, CPLX_ONE, eta_v, lmin, zwt, nstab, &
          CPLX_ZERO, int_mat, lmin)
     call zgemm('c','c', nstab, nunstab, lmin, CPLX_NEGONE, int_mat, lmin, &
          eta_u, nunstab, CPLX_ZERO, tmat(:, nstab+1:n), nstab)
- 
- 
+
+
     cG0 = cmplx(0.0_wp,0.0_wp)
     cG0(1:(n-nunstab),:) = matmul(tmat,AA)
- 
+
     do i = n-nunstab+1,n
        cG0(i,i) = dcmplx(1.0_wp, 0.0_wp)
     end do
- 
+
     cG1 = dcmplx(0.0_wp,0.0_wp)
-    cG1(1:(n-nunstab),:) = matmul(tmat,BB) 
- 
+    cG1(1:(n-nunstab),:) = matmul(tmat,BB)
+
     call zgesv(n, n, cG0, n, ipiv, cG1, n, info)
- 
+
     TT = real(matmul(matmul(Z, cG1), transpose(conjg(Z))));
     cRR = dcmplx(0.0_wp)
     cRR(1:n-nunstab,:) = matmul(matmul(tmat,Q),PSI)
- 
+
     cG0 = cmplx(0.0_wp,0.0_wp)
     cG0(1:(n-nunstab),:) = matmul(tmat,AA)
- 
+
     do i = n-nunstab+1,n
        cG0(i,i) = cmplx(1.0_wp, 0.0_wp)
     end do
-    
+
     call zgesv(n, size(RR, 2), cG0, n, ipiv, cRR, n, info)
     RR = real(matmul(Z,cRR))
- 
+
     deallocate(etawt, eta_u, eta_s, eta_v)
     deallocate(zwt, zwt_u, zwt_s, zwt_v)!, zwt_u_tran)
     deallocate(int_mat, tmat, vv2, cPI, Qstab, Qunstab)
 
-    call mkl_free_buffers()
+    !call mkl_free_buffers()
   end subroutine do_gensys
 
   subroutine compute_norm(d, norm, m, n)
@@ -237,13 +240,13 @@ contains
        print*,'bad value'
        deallocate(work, rwork, norm_m)
        return
-    end if 
+    end if
 
     norm = sqrt(maxval(norm_m))
 
     deallocate(work, rwork, norm_m)
   end subroutine compute_norm
-    
+
   logical function delctg(alpha, beta)
 
     complex(wp), intent(in) :: alpha, beta
@@ -276,7 +279,7 @@ contains
 
 
   subroutine qz(a, b, aa, bb, q, z, alpha, beta, n, info)
-    
+
     double precision, intent(in) :: a(n,n), b(n,n)
     complex(wp), intent(out), dimension(n,n) :: q, z, aa, bb
     complex(wp), intent(out) :: alpha(n), beta(n)
@@ -290,7 +293,7 @@ contains
 
     cplxa = dcmplx(a)
     cplxb = dcmplx(b)
-    
+
     allocate(work(33))
     lwork = -1
     call zgges('V','V','S', delctg, n, cplxa, n, cplxb, n, sdim, alpha, beta, q, &
@@ -298,7 +301,7 @@ contains
     if (info < 0) then
        print*,'zgges: input ', -info, 'had an illegal value.'
        deallocate(work)
-       return 
+       return
     endif
     lwork =  int(work(1))
     deallocate(work)
@@ -309,7 +312,7 @@ contains
     deallocate(work)
 
     nunstab = n - sdim
-    
+
     aa = cplxa
     bb = cplxb
 
@@ -318,7 +321,7 @@ contains
 
   ! wrapper for zgesvd with options 'S' 'S'
 
-  ! Performs decomposition 
+  ! Performs decomposition
   ! A = U*S*V
   subroutine zsvd(A, U, S, V, nrow, ncolumn, nmin)
 
