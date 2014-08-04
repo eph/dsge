@@ -1,0 +1,103 @@
+# nkmp.yaml --- 
+# 
+# Description: This is model file for NKMP
+# model from An and Schorfheide (2007)
+# Author: Ed Herbst [edward.p.herbst@frb.gov]
+# Last-Updated: 07/21/14
+# 
+declarations:
+  name: 'nkmp'
+  variables: [c, ppi, R, z, y, g, ylag, ylev]
+  parameters: [tau, kap, psi1, psi2, rhor, rhogg, rhozz, rhogz, rhozg, rA, piA, gamQ, sigr, sigg, sigz, corrgz]
+  shocks: [epsg, epsz, epsr]
+  observables: [ygr, infl, int] 
+  para_func: [nu, bet, gam, piss, phi, gss]
+
+equations:
+  model:
+    # Euler Equation
+    - 1 = bet * exp(-tau*c(+1) + tau*c + R - z(+1) - ppi(+1))
+
+    # Phillips Curve
+    - kap*(exp(c) - 1) = (exp(ppi) - 1)*( (1 -  1/(2*nu))*exp(ppi) + 1/(2*nu)) - bet*(exp(ppi(+1)) - 1) * exp(-tau*c(+1) + tau*c +  y(+1) - y + ppi(+1))
+
+    # Resource Constraint
+    - exp(c - y) = exp(-g) - phi*piss^2*gss/2*(exp(ppi) - 1)^2
+
+    # Monetary Policy
+    - R = rhor * R(-1) + (1-rhor)*psi1*ppi + (1-rhor)*psi2*(y - g) + epsr
+
+    # Demand Shock
+    - g = rhogg * g(-1) + rhogz * z(-1)  + epsg
+
+    # Technology Shock
+    - z = rhozz * z(-1) + rhozg * g(-1)  + epsz
+
+    # hack
+    - ylag = y(-1)
+
+    - ylev = y + z
+
+  observables:
+    # Output growth
+    ygr : gamQ + (y - ylag + z)
+    
+    # Observed inflation
+    infl : piA + 4.0*ppi;
+
+    # Observed Interest Rate
+    int : piA + rA + 4.0*gamQ + 4.0*R
+
+calibration:
+  parameters:
+    tau : 2.0
+    kap: 0.5
+    psi1: 1.5
+    psi2: 0.25
+    rhor: 0.7
+    rhogg: 0.5
+    rhozz: 0.3
+    rhogz: 0.0
+    rhozg: 0.0
+    corrgz: 0.0
+    rA: 4.0
+    piA: 2.0
+    gamQ: 0.5
+    sigr: 0.1
+    sigz: 0.1
+    sigg: 0.1
+
+  parafunc:
+    nu: 2                       # This isn't used in the linear version
+    phi: 1                      # This isn't used in the linear version
+    gss: 0.2                    # This isn't used in the linear version
+    gam: 1 + gamQ/100
+    bet: 1/(1 + rA/400)
+    piss: 1 + piA/400
+
+  covariances: 
+    epsg: sigg^2
+    epsr: sigr^2
+    epsz: sigz^2
+    #epsg, epsz: corrgz*sigg*sigz
+    
+    
+estimation:
+  data: '/mq/home/m1eph00/projects/dsge-book/code/models/nkmp/us.txt'
+  prior: 
+    tau : [gamma, 2.00, 0.5]
+    kap : [uniform, 0.00, 1.0]
+    psi1: [gamma, 1.50, 0.25]
+    psi2: [gamma, 0.50, 0.25]
+    rhor: [uniform, 0.0, 1.0]
+    rhogg: [uniform, 0.0, 1.0]
+    rhozz: [uniform, 0.0, 1.0]
+    rhogz: [uniform, -1,1.0]
+    rhozg: [uniform, -1, 1.0]
+    rA: [gamma, 0.50, 0.50]
+    piA: [gamma, 7.0, 2.00]
+    gamQ: [normal, 0.4, 0.2]
+    corrgz: [uniform, -1, 1]
+    sigg: [inv_gamma, 0.4, 4]
+    sigz: [inv_gamma, 1.0, 4]
+    sigr: [inv_gamma, 0.5, 4]

@@ -1,0 +1,15 @@
+declarations:
+  name: test
+  variables : [zz]
+  shocks : [e]
+  parameters : [rho]
+equations:
+  model:
+    - 1 = zz(1)
+    - zz = rho*zz(-1) + e
+
+
+calibration:
+
+  parameters:
+    rho: 0.6
