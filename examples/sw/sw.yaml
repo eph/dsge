@@ -1,0 +1,175 @@
+declarations:
+  name: 'sw'
+  type: 'sticky-information'
+  variables: [r, labobs, robs, pinfobs, dy, dc, dinve, dw, zcapf, rkf, kf, pkf, cf, invef, yf, labf, w, wf, rrf, mc, zcap, rk, k, pk, c, inve, y, lab, pinf, kpf, kp,flexgap, a, b, g,  spinf, sw, ms, qs]
+
+  shocks: [ea,  eb,  eg, epinf, ew, em, eqs]
+  parameters : [constebeta, constepinf, constelab, calfa, csigma, cfc, csadjcost, chabb, cprobw, csigl, cprobp, cindw, cindp, czcap, crpi, crr, cry, crdy, crhoa, crhob, crhog, crhoqs, crhoms, crhopinf, crhow, cgy, cmap, cmaw, siga, sigb, sigg, sigqs, sigm, sigpinf, sigw]
+  para_func: [ctou, clandaw, cg, curvp, curvw, ctrend, cgamma, clandap, cbeta, cpie, cbetabar, cr, crk, cw, cikbar, cik, clk, cky, ciy, ccy, crkky, cwhlc, cwly, conster]
+  observables: [ygr, cgr, igr, wgr, lnh, pinfobs, robs]
+equations:
+  model:
+    - r =  crpi*(1-crr)*pinf + cry*(1-crr)*(y-yf) + crdy*(y-yf-y(-1)+yf(-1))+crr*r(-1) +ms  
+    - a =  calfa*rkf+(1-calfa)*(wf)
+    - zcapf =  (1/(czcap/(1-czcap)))* rkf  
+    - rkf =  (wf)+labf-kf 
+    - kf =  kpf(-1)+zcapf 
+    - invef = (1/(1+cbetabar*cgamma))* (  invef(-1) + cbetabar*cgamma*invef(1)+(1/(cgamma^2*csadjcost))*pkf ) +qs 
+    - pkf = -rrf-0*b+(1/((1-chabb/cgamma)/(csigma*(1+chabb/cgamma))))*b +(crk/(crk+(1-ctou)))*rkf(1) +  ((1-ctou)/(crk+(1-ctou)))*pkf(1) 
+    - cf = (chabb/cgamma)/(1+chabb/cgamma)*cf(-1) + (1/(1+chabb/cgamma))*cf(1) +((csigma-1)*cwhlc/(csigma*(1+chabb/cgamma)))*(labf-labf(1)) - (1-chabb/cgamma)/(csigma*(1+chabb/cgamma))*(rrf+0*b) + b 
+    - yf = ccy*cf+ciy*invef+g  +  crkky*zcapf 
+    - yf = cfc*( calfa*kf+(1-calfa)*labf +a )
+    - wf = csigl*labf   +(1/(1-chabb/cgamma))*cf - (chabb/cgamma)/(1-chabb/cgamma)*cf(-1) 
+    - kpf =  (1-cikbar)*kpf(-1)+(cikbar)*invef +  (1+cbetabar*cgamma)*(cikbar)*(cgamma^2*csadjcost)*qs 
+    - mc =  calfa*rk+(1-calfa)*(w) - 1*a - 0*(1-calfa)*a 
+    - zcap =  (1/(czcap/(1-czcap)))* rk 
+    - rk =  w+lab-k 
+    - k =  kp(-1)+zcap 
+    - inve = (1/(1+cbetabar*cgamma))* (  inve(-1) + cbetabar*cgamma*inve(1)+(1/(cgamma^2*csadjcost))*pk ) +qs 
+    - pk = -r+pinf(1)-0*b +(1/((1-chabb/cgamma)/(csigma*(1+chabb/cgamma))))*b + (crk/(crk+(1-ctou)))*rk(1) +  ((1-ctou)/(crk+(1-ctou)))*pk(1) 
+    - c = (chabb/cgamma)/(1+chabb/cgamma)*c(-1) + (1/(1+chabb/cgamma))*c(1) +((csigma-1)*cwhlc/(csigma*(1+chabb/cgamma)))*(lab-lab(1)) - (1-chabb/cgamma)/(csigma*(1+chabb/cgamma))*(r-pinf(1) + 0*b) +b 
+    - y = ccy*c+ciy*inve+g  +  1*crkky*zcap 
+    - y = cfc*( calfa*k+(1-calfa)*lab +a )
+    - pinf =  (1/(1+cbetabar*cgamma*cindp)) * ( cbetabar*cgamma*pinf(1) +cindp*pinf(-1)+((1-cprobp)*(1-cbetabar*cgamma*cprobp)/cprobp)/((cfc-1)*curvp+1)*(mc)  )  + spinf 
+    - w =  (1/(1+cbetabar*cgamma))*w(-1)+(cbetabar*cgamma/(1+cbetabar*cgamma))*w(1)+(cindw/(1+cbetabar*cgamma))*pinf(-1)-(1+cbetabar*cgamma*cindw)/(1+cbetabar*cgamma)*pinf+(cbetabar*cgamma)/(1+cbetabar*cgamma)*pinf(1)+(1-cprobw)*(1-cbetabar*cgamma*cprobw)/((1+cbetabar*cgamma)*cprobw)*(1/((clandaw-1)*curvw+1))*(csigl*lab + (1/(1-chabb/cgamma))*c - ((chabb/cgamma)/(1-chabb/cgamma))*c(-1) -w)+1*sw 
+    - kp =  (1-cikbar)*kp(-1)+cikbar*inve + (1+cbetabar*cgamma)*cikbar*cgamma^2*csadjcost*qs
+    - flexgap = y-yf
+    - dy = y - y(-1)
+    - dc = c - c(-1)
+    - dinve = inve - inve(-1)
+    - dw = w - w(-1)
+    - pinfobs = pinf
+    - robs = r
+    - labobs = lab
+    - a = crhoa*a(-1) + ea
+    - b = crhob*b(-1) + eb
+    - g = crhog*g(-1) + eg + cgy*ea
+    - spinf = crhopinf*spinf(-1) + epinf - cmap*epinf(-1)
+    - sw = crhow*sw(-1) + ew - cmaw*ew(-1) 
+    - ms = crhoms*ms(-1) + em 
+    - qs = crhoqs*qs(-1) + eqs
+  observables:
+    ygr     : ctrend + dy #y - y(-1)
+    cgr     : ctrend + dc #c - c(-1)
+    igr     : ctrend + dinve #inve - inve(-1)
+    wgr     : ctrend + dw #w - w(-1)
+    lnh     : constelab + labobs #lab
+    pinfobs : constepinf + pinfobs
+    robs    : (cpie/((cbeta)*(cgamma)^(-(csigma)))-1)*100 + robs
+    
+calibration:
+  parafunc:
+    ctou : 0.025
+    clandaw : 1.5
+    cg : 0.18
+    curvp : 10
+    curvw : 10
+    ctrend : 0.4312
+    cgamma : ctrend/100+1
+    clandap : cfc
+    cbeta : 100/(constebeta+100)
+    cpie : constepinf/100+1
+    cbetabar : cbeta*cgamma^(-csigma)
+    cr : cpie/(cbeta*cgamma^(-csigma))
+    crk : (cbeta^(-1))*(cgamma^csigma) - (1-ctou)
+    cw  : (calfa^calfa*(1-calfa)^(1-calfa)/(clandap*crk^calfa))^(1/(1-calfa))
+    cikbar : (1-(1-ctou)/cgamma)
+    cik : (1-(1-ctou)/cgamma)*cgamma
+    clk : ((1-calfa)/calfa)*(crk/cw)
+    cky : cfc*(clk)^(calfa-1)
+    ciy : cik*cky
+    ccy : 1-cg-cik*cky
+    crkky : crk*cky
+    cwhlc : (1/clandaw)*(1-calfa)/calfa*crk*cky/ccy
+    cwly : 1-crk*cky
+    conster : (cr-1)*100
+
+  parameters:
+    constebeta : 0.1657
+    constepinf : 0.7869
+    constelab : 0.5509
+    calfa : 0.1901
+    csigma : 1.3333
+    cfc : 1.6064
+    csadjcost : 5.7606
+    chabb :    0.72
+    cprobw :   0.70
+    cindw :    0.57
+    csigl :    1.90
+    cprobp :   0.65
+    cindp  :   0.3
+    czcap :    0.5462
+    crpi :     2.0443
+    crr :      0.8103
+    cry :      0.0882
+    crdy :     0.2247
+    crhoa :    0.9577
+    crhob :    0.2194
+    crhog :    0.9767
+    crhoqs :   0.7113
+    crhoms : 0.1479
+    crhopinf : 0.8895
+    crhow : 0.9688
+    cgy    : 0.50
+    cmaw    : 0.85
+    cmap    : 0.72
+    siga    : 0.4582
+    sigb    : 0.2400
+    sigg    : 0.5291
+    sigqs    : 0.4526
+    sigm    : 0.2449
+    sigpinf : 0.1410
+    sigw    : 0.2446
+
+  covariances:
+    ea    : siga^2
+    eb    : sigb^2
+    eg    : sigg^2
+    eqs   : sigqs^2
+    em    : sigm^2
+    epinf : sigpinf^2
+    ew    : sigw^2
+
+
+estimation:
+  data: 
+    file: '/mq/DSGE/research/alt_pricing/estimation/data/yy.txt'
+    start: 1966Q1
+
+  prior:
+    constebeta : [gamma, 0.25, 0.1]
+    constepinf : [gamma, 0.625, 0.1]
+    constelab :  [normal, 0.0, 2.0]
+    calfa : [normal, 0.3, 0.05]
+    csigma : [normal, 1.5, 0.375]
+    cfc : [normal, 1.25, 0.125]
+    csadjcost : [normal, 4, 1.5]
+    chabb :    [beta, 0.7, 0.1]
+    cprobw :   [beta, 0.5, 0.1]
+    cindw  :   [beta, 0.5, 0.1]
+    csigl :    [normal, 2, 0.75]
+    cprobp :   [beta, 0.5, 0.1]
+    cindp  :   [beta, 0.5, 0.1]
+    czcap :    [beta, 0.5, 0.15]
+    crpi :     [normal, 1.5, 0.25]
+    crr :      [beta, 0.75, 0.10]
+    cry :      [normal, 0.125, 0.05]
+    crdy :     [normal, 0.125, 0.05]
+    crhoa :    [beta, 0.5, 0.2] 
+    crhob :    [beta, 0.5, 0.2] 
+    crhog :    [beta, 0.5, 0.2] 
+    crhoqs :   [beta, 0.5, 0.2] 
+    crhoms :   [beta, 0.5, 0.2] 
+    crhopinf : [beta, 0.5, 0.2] 
+    crhow :    [beta, 0.5, 0.2]
+    cgy     :  [beta, 0.5, 0.2]
+    cmap    :  [beta, 0.5, 0.2]
+    cmaw    :  [beta, 0.5, 0.2]
+    siga    :  [inv_gamma, 0.1, 2]  
+    sigb    :  [inv_gamma, 0.1, 2] 
+    sigg    :  [inv_gamma, 0.1, 2] 
+    sigqs   :  [inv_gamma, 0.1, 2] 
+    sigm    :  [inv_gamma, 0.1, 2] 
+    sigpinf :  [inv_gamma, 0.1, 2] 
+    sigw    :  [inv_gamma, 0.1, 2] 
+    
