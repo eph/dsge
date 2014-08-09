@@ -27,4 +27,10 @@ meyer_gohde : meyer_gohde_interface.f90
 
 dlyap : dlyap_wrapper.f90
 	f2py  -c --opt=-O3 $(F2PYFLAGS) $(SLICOT) dlyap_wrapper.f90 -m dlyap
+
+resampling : resampling.f90
+	f2py -c --opt=-O3 $(F2PYFLAGS) resampling.f90 -m resampling
+
+cholmod : cholmod.f90
+	f2py -c --opt=-O3 $(F2PYFLAGS) cholmod.f90 -m cholmod
 # for debug --debug-capi

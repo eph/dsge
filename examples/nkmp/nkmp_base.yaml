@@ -1,18 +1,21 @@
-# nkmp.yaml --- 
-# 
+# nkmp.yaml ---
+#
 # Description: This is model file for NKMP
 # model from An and Schorfheide (2007)
 # Author: Ed Herbst [edward.p.herbst@frb.gov]
 # Last-Updated: 06/13/14
-# 
+#
 declarations:
   name: 'nkmp'
   index: j
   variables: [c, ppi, R, z, y, g, ylag]
   parameters: [tau, kap, psi1, psi2, rhor, rhogg, rhozz, rA, piA, gamQ, sigr, sigg, sigz]
   shocks: [epsg, epsz, epsr]
-  observables: [ygr, infl, int] 
+  observables: [ygr, infl, int]
   para_func: [nu, bet, gam, piss, phi, gss]
+
+  measurement_errors:
+    [meas_ygr, meas_infl, meas_int]
 
 equations:
   model:
@@ -40,7 +43,7 @@ equations:
   observables:
     # Output growth
     ygr : gamQ + (y - ylag + z)
-    
+
     # Observed inflation
     infl : piA + 4.0*ppi;
 
@@ -71,16 +74,20 @@ calibration:
     bet: 1/(1 + rA/400)
     piss: 1 + piA/400
 
-  covariances: 
+  covariances:
     epsg: sigg^2
     epsr: sigr^2
     epsz: sigz^2
-    
-    
-estimation:
-  data: '/mq/home/m1eph00/code/fortran/models/nkmp-exp/us.txt'
 
-  prior: 
+  measurement_errors:
+    meas_ygr : (2*0.0579923)^2
+    meas_infl : (2*0.1470832)^2
+    meas_int : (2*0.2237937)^2
+
+estimation:
+  data: 'examples/nkmp/us.txt'
+
+  prior:
     tau : [gamma, 2.00, 0.5]
     kap : [uniform, 0.00, 1.0]
     psi1: [gamma, 1.50, 0.25]

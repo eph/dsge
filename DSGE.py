@@ -19,7 +19,7 @@ class DSGE(dict):
     max_lead = 1;
     max_lag  = 1;
 
-    
+
     def __init__(self, *kargs, **kwargs):
         super(DSGE, self).__init__(self, *kargs, **kwargs)
 
@@ -34,7 +34,7 @@ class DSGE(dict):
             variable_too_far = [v for v in eq.atoms() if isinstance(v, Variable) and v.date > 1]
             variable_too_early = [v for v in eq.atoms() if isinstance(v, Variable) and v.date < -1]
 
-            
+
             eq_fvars = [v for v in eq.atoms() if isinstance(v, TSymbol) and v.date > 0]
             eq_lvars = [v for v in eq.atoms() if isinstance(v, TSymbol) and v.date < 0]
 
@@ -54,7 +54,7 @@ class DSGE(dict):
         for fv, lag_fv in zip(fvars, self['fvars_lagged']):
             self['re_errors_eq'].append(Equation(fv(-1) - lag_fv -  self['re_errors'][i], 0))
             i += 1
-            
+
         if 'make_log' in self.keys():
             self['perturb_eq'] = []
             sub_dict = dict()
@@ -68,11 +68,11 @@ class DSGE(dict):
 
             self['ss_ordering'] = [Variable(v.name+'ss') for v in self['make_log']]
 
-            
+
         else:
             self['perturb_eq'] = self['equations']
 
-        return 
+        return
 
     def __repr__(self):
         return "A DSGE Model."
@@ -92,11 +92,11 @@ class DSGE(dict):
     @property
     def shocks(self):
         return self['shk_ordering']
-        
+
     @property
     def name(self):
         return self['name']
-    
+
     @property
     def neq(self):
         return len(self['perturb_eq'])
@@ -111,7 +111,7 @@ class DSGE(dict):
 
     @property
     def ns(self):
-        return 
+        return
 
     @property
     def ny(self):
@@ -178,7 +178,7 @@ class DSGE(dict):
                     PPI[eq_i, s_j] = eq.set_eq_zero.diff(s).subs(subs_dict)
 
             eq_i += 1
-            print "\r Differentiating equation {0} of {1}.".format(eq_i, len(eq_cond)), 
+            print "\r Differentiating equation {0} of {1}.".format(eq_i, len(eq_cond)),
         DD = zeros((ovar, 1))
         ZZ = zeros((ovar, svar))
 
@@ -192,7 +192,7 @@ class DSGE(dict):
             for v in curr_var:
                 v_j = vlist.index(v)
                 ZZ[eq_i, v_j] = eq.diff(v).subs(subs_dict)
-            
+
             eq_i += 1
 
 
@@ -205,13 +205,13 @@ class DSGE(dict):
         import sys
         sys.stdout.flush()
         ss = {}
-        
-        for p in self['other_para']:                                       
+
+        for p in self['other_para']:
             ss[str(p)] = eval(str(self['para_func'][p.name]), context)
             context[str(p)] = ss[str(p)]
-            print "\r Constructing substitution dictionary [{0:20s}]".format(p.name), 
+            print "\r Constructing substitution dictionary [{0:20s}]".format(p.name),
         sys.stdout.flush()
-        
+
 
         GAM0 = lambdify(self.parameters+self['other_para'], GAM0)
         GAM1 = lambdify(self.parameters+self['other_para'], GAM1)
@@ -223,7 +223,7 @@ class DSGE(dict):
             def wrapped_f(px):
                 return f(*np.append(px, psi(*px)))
             return wrapped_f
-            
+
         self.GAM0 = add_para_func(GAM0)
         self.GAM1 = add_para_func(GAM1)
         self.PSI = add_para_func(PSI)
@@ -231,7 +231,7 @@ class DSGE(dict):
 
         QQ = self['covariance'].subs(subs_dict)
         HH = self['measurement_errors'].subs(subs_dict)
-        
+
         DD = DD.subs(subs_dict)
         ZZ = ZZ.subs(subs_dict)
 
@@ -239,14 +239,14 @@ class DSGE(dict):
         HH = lambdify(self.parameters+self['other_para'], self['measurement_errors'])
         DD = lambdify(self.parameters+self['other_para'], DD)
         ZZ = lambdify(self.parameters+self['other_para'], ZZ)
-        
+
         self.QQ = add_para_func(QQ)
         self.DD = add_para_func(DD)
         self.ZZ = add_para_func(ZZ)
         self.HH = add_para_func(HH)
 
         return GAM0, GAM1, PSI, PPI
-        
+
     def compile_model(self):
         self.python_sims_matrices()
 
@@ -275,16 +275,16 @@ class DSGE(dict):
 
             if data.find(',') > 0:
                 delim_dict['delimiter'] = ','
-                
+
             data = np.genfromtxt(datafile, missing_values='NaN', **delim_dict)
-            
+
         data = p.DataFrame(data[:, :len(self['observables'])], columns=map(lambda x: str(x), self['observables']))
 
         if startdate is not 0:
             nobs = data.shape[0]
             data.index = p.period_range(startdate, freq='Q', periods=nobs)
-            
-            
+
+
         dsge = LinearDSGEModel(data, GAM0, GAM1, PSI, PPI,
                                QQ, DD, ZZ, HH, t0=0,
                                shock_names=map(lambda x: str(x), self.shocks),
@@ -292,7 +292,7 @@ class DSGE(dict):
                                obs_names=map(lambda x: str(x), self['observables']))
 
         return dsge
-        
+
     def solve_model(self, p0):
 
         #if self.GAM0 == None:
@@ -305,8 +305,8 @@ class DSGE(dict):
         PSI = self.PSI(*p0)
         PPI = self.PPI(*p0)
         C0 = np.zeros((G0.shape[0]))
-        TT, CC, RR, fmat, fwt, ywt, gev, RC, loose = gensys.call_gensys(G0, G1, C0, PSI, PPI, 1.00000000001) 
-    
+        TT, CC, RR, fmat, fwt, ywt, gev, RC, loose = gensys.call_gensys(G0, G1, C0, PSI, PPI, 1.00000000001)
+
         return TT, RR, RC
 
     def sims_matrices(self):
@@ -336,7 +336,7 @@ class DSGE(dict):
             #print ("    ! Equation {0}".format(str(eqi)))
             #print "    !------------------------------------------------------------"
             for v in filter(lambda x: x.date >= 0, peq.atoms(Variable)):
-                
+
                 D = peq.set_eq_zero.diff(v)
 
                 derivative = D.subs(subs_dict)
@@ -361,7 +361,7 @@ class DSGE(dict):
             eqi = eqi + 1
 
             str_list.append('\n\n\n')
-            print "\r Parsing equation %d" % eqi, 
+            print "\r Parsing equation %d" % eqi,
 
         eti = 1
         for fv in self['fvars']:
@@ -372,17 +372,17 @@ class DSGE(dict):
 
 
         return ''.join(str_list)
-        
+
     def write_matlab_model(self, odir):
-      
+
         import os
 
         if not os.path.isabs(odir):
             odir = os.path.join(os.getcwd(), odir)
-        
+
         print "I\'m writing to ", odir,  "."
-        
-        try: 
+
+        try:
             os.mkdir(odir)
             print "Directory created."
         except:
@@ -407,10 +407,10 @@ class DSGE(dict):
             pfile = open(os.path.join(odir, self.name+"_prior.txt"), 'w')
             prow = ['ptype', 'pmean', 'pstdd', 'pmask', 'pfix']
             fstr = "{ptype}, {pmean}, {pstdd}, {pmask}, {pfix}\n"
-            
+
             for par in self.parameters:
                 prior_spec = self['__data__']['estimation']['prior'][par.name]
-                
+
                 ptype = prior_type.index(prior_spec[0])+1
                 pmean = prior_spec[1]
                 pstdd = prior_spec[2]
@@ -419,7 +419,7 @@ class DSGE(dict):
                 pfile.write(fstr.format(**odict))
 
             pfile.close()
-            
+
             tfile = open(os.path.join(odir, self.name+"_trspec.txt"), 'w')
             trspec = dict();
             trspec['beta'] = [0, 0.99999]
@@ -435,10 +435,10 @@ class DSGE(dict):
             tfile.close()
 
 
-    
+
     def __write_dec_file(self, fstr):
         ofile = open(fstr, 'w')
-        
+
         vari = 1
         for v in self.variables:
             ofile.write("var.{0} = {1};\n".format( v.name, vari))
@@ -455,7 +455,7 @@ class DSGE(dict):
 
     def __write_starting_file(self, fstr):
         ofile = open(fstr, 'w')
-        
+
         ofile.write('function p = ' + self.name + '_pmsv()\n')
         for p in self.parameters:
             ofile.write('{0} = {1};\n'.format(p.name, self['calibration'][p.name]))
@@ -478,7 +478,7 @@ class DSGE(dict):
         if self['para_func'] is not None:
 
             for v in self['other_para']:
-                
+
                 pstr = str(self['para_func'][v.name])
                 #pstr = re.sub(r'(^[0-9\.]+)', r'\1_wp', pstr)
                 assign_list += "{0} = {1};\n".format(v.name, pstr)
@@ -495,7 +495,7 @@ class DSGE(dict):
             #print ("    ! Equation {0}".format(str(eqi)))
             #print "    !------------------------------------------------------------"
             for v in vlist:
-                
+
                 D = peq.set_eq_zero.diff(v)
 
                 #derivative = D.subs(subs_dict)
@@ -503,7 +503,7 @@ class DSGE(dict):
                 if not(derivative==0):
                     my_str = my_str + '    GAM0({0}, {1}) = {2};\n'.format(str(eqi), v.fortind, -derivative)
 
-                
+
             for v in llist:
                 derivative = peq.set_eq_zero.diff(v)#.subs(subs_dict)
 
@@ -516,7 +516,7 @@ class DSGE(dict):
 
                 if not(derivative==0):
                     my_str = my_str + '    PSI({0}, {1}) = {2};\n'.format(str(eqi), v.fortind, derivative)
-                
+
             eqi = eqi + 1
 
             my_str = my_str + '\n\n\n'
@@ -535,7 +535,7 @@ class DSGE(dict):
                     stri = self['shk_ordering'][i].fortind
                     strj = self['shk_ordering'][i].fortind
                     QQstr = QQstr + '    QQ({0}, {1}) = {2};\n'.format(stri, strj, self['covariance'][i, j])
-                
+
         ZZstr = ''
         DDstr = ''
 
@@ -558,11 +558,11 @@ class DSGE(dict):
                 vi = vi+1
 
             obsi = obsi+1
-        
+
 
         if max_lead_in_obs > 0:
             ZZstr = ZZstr + "\n\n\n TTn = TT\n"
-            
+
         for lead_obs in np.arange(1, max_lead_in_obs+1):
 
             obsi = 1
@@ -578,7 +578,7 @@ class DSGE(dict):
 
                     vi = vi + 1
 
-                    
+
                 obsi = obsi + 1
 
 
@@ -631,22 +631,22 @@ end
 
     def write_fortran_module(self, odir, name=None):
 
-        #basedir = '/mq/home/m1eph00/code/models/{0}/'.format(directory) 
-        
+        #basedir = '/mq/home/m1eph00/code/models/{0}/'.format(directory)
+
         if name==None:
             name = self.name
 
         import os
-        
+
         if not os.path.isabs(odir):
             odir = os.path.join(os.getcwd(), odir)
-            
+
         print "I\'m writing to ", odir, "."
-        
+
         try:
             os.mkdir(odir)
             print "Directory created."
-        except: 
+        except:
             print "Directory already exists."
 
         #------------------------------------------------------------
@@ -695,7 +695,7 @@ end
         rwmhfile.close()
 
 
-        
+
         #------------------------------------------------------------
         # MAKEFILE
         #------------------------------------------------------------
@@ -725,7 +725,7 @@ end
 
             if data.find(',') > 0:
                 delim_dict['delimiter'] = ','
-                
+
             data = np.genfromtxt(datafile, missing_values='NaN', **delim_dict)
 
         nobs, ny = data.shape
@@ -746,10 +746,10 @@ end
             pfile = open(os.path.join(mdir, "prior.txt"), 'w')
             prow = ['ptype', 'pmean', 'pstdd', 'pmask', 'pfix']
             fstr = "{ptype}, {pmean}, {pstdd}, {pmask}, {pfix}\n"
-            
+
             for par in self.parameters:
                 prior_spec = self['__data__']['estimation']['prior'][par.name]
-                
+
                 ptype = prior_type.index(prior_spec[0])+1
                 pmean = prior_spec[1]
                 pstdd = prior_spec[2]
@@ -758,7 +758,7 @@ end
                 pfile.write(fstr.format(**odict))
 
             pfile.close()
-            
+
             tfile = open(os.path.join(mdir, "trans.txt"), 'w')
             trspec = dict();
             trspec['beta'] = [1, 0, 0.99999, 1]
@@ -771,7 +771,7 @@ end
                 prior_spec = self['__data__']['estimation']['prior'][par.name]
                 if prior_spec[0]=='uniform':
                     trspec['uniform'] = [1, prior_spec[1], prior_spec[2], 1]
-                    
+
                 tfile.write("{0}, {1}, {2}, {3}\n".format(*trspec[prior_spec[0]]))
             tfile.close()
 
@@ -787,19 +787,19 @@ end
             # hack
             return fstr
 
-        
+
         para_list = ",".join([p.__str__() for p in self.parameters])
         helper_list = ",".join([p.__str__() for p in self['para_func']])
 
         assign_list = ''
-        
+
         for parai,p in enumerate(self.parameters):
             assign_list += "{0} = para({1});\n".format(p.name, parai+1)
 
         if self['para_func'] is not None:
             assign_list += "! Helper parameters\n"
             for v in self['other_para']:
-                
+
                 pstr = str(self['para_func'][v.name])
                 #pstr = re.sub(r'(^[0-9\.]+)', r'\1_wp', pstr)
                 assign_list += "{0} = {1};\n".format(v.name, re.sub(r'(^[0-9\.]+|[^a-zA-Z][0-9\.]+)', r'\1_wp',pstr))
@@ -825,7 +825,7 @@ end
 
 
         dec = (#"\n    ! deep parameters \n"+
-               #"    real(wp) :: {0}".format(", ".join([x.__str__() for x in self['par_ordering']])) + 
+               #"    real(wp) :: {0}".format(", ".join([x.__str__() for x in self['par_ordering']])) +
                # "\n    ! not so deep parameters \n"+
                # "    real(wp) :: {0}".format(", ".join([x.__str__() for x in self['other_parameters']]))+
                # "\n    ! steady states \n"+
@@ -836,7 +836,7 @@ end
                "    integer :: {0}".format(", ".join([x.fortind for x in self['shk_ordering']])))
 
         file_dict['dec'] = dec
-        
+
         file_dict['neq'] = self.neq_fort
         file_dict['neta'] = self.neta
         file_dict['neps'] = self.neps
@@ -851,7 +851,7 @@ end
         file_dict['helper_list'] = helper_list
         file_dict['assign_list'] = assign_list
         var_string = ''
-        
+
         nvars = len(self.variables)
         for i in xrange(1, nvars+1):
             var_string = var_string + "    {0} = {1}\n".format(self['var_ordering'][i-1].fortind, i)
@@ -876,7 +876,7 @@ end
                     stri = self['shk_ordering'][i].fortind
                     strj = self['shk_ordering'][i].fortind
                     QQstr = QQstr + '    QQ({0}, {1}) = {2}\n'.format(stri, strj, self['covariance'][i, j])
-                
+
         HHstr = ''
         for i in range(0, self['measurement_errors'].shape[0]):
             for j in range(0, self['measurement_errors'].shape[1]):
@@ -887,7 +887,7 @@ end
                     HHstr = HHstr + '    HH({0}, {1}) = {2}\n'.format(i+1, j+1, self['measurement_errors'][i, j])
 
 
-        ZZstr = ''        
+        ZZstr = ''
         DDstr = ''
         obsi = 1
         subsdict = dict(zip(self.variables, np.zeros(nvars)))
@@ -899,7 +899,7 @@ end
         max_lead_in_obs = max([i.date for i in itertools.chain.from_iterable(all_vars_in_obs)])
 
 
-        subsdict = dict.fromkeys([x for x in itertools.chain.from_iterable(all_vars_in_obs)], 0)        
+        subsdict = dict.fromkeys([x for x in itertools.chain.from_iterable(all_vars_in_obs)], 0)
         for o in self['observables']:
             ee = self['obs_equations'][o.name]
             DDm = ee.subs(subsdict)
@@ -914,11 +914,11 @@ end
                 vi = vi+1
 
             obsi = obsi+1
-        
+
 
         if max_lead_in_obs > 0:
             ZZstr = ZZstr + "\n\n\n TTn = TT;\n"
-            
+
         for lead_obs in np.arange(1, max_lead_in_obs+1):
 
             obsi = 1
@@ -934,7 +934,7 @@ end
 
                     vi = vi + 1
 
-                    
+
                 obsi = obsi + 1
 
 
@@ -943,7 +943,7 @@ end
         file_dict['ss_mat'] = QQstr + ZZstr + DDstr + HHstr
 
         if 'helper_func' in self['__data__']['declarations']:
-            extra_includes = 'include \'' + self['__data__']['declarations']['helper_func']['fortran'] + '\'' 
+            extra_includes = 'include \'' + self['__data__']['declarations']['helper_func']['fortran'] + '\''
         else:
             extra_includes = ''
 
@@ -952,7 +952,7 @@ end
         fortran_template = """
 !------------------------------------------------------------
 ! Automatically generated fortran file.
-!------------------------------------------------------------ 
+!------------------------------------------------------------
 module {name}
   use mkl95_precision, only: wp => dp
 
@@ -979,7 +979,7 @@ module {name}
   integer, parameter :: neq = {neq}, neta = {neta}, neps = {neps}, nobs = {nobs}, npara = {npara}, ns = {neq}, ny = {ny}
   integer, parameter :: t0 = {t0}
 
-  real(wp),  parameter :: REALLY_NEG = -1000000000000.0_wp        
+  real(wp),  parameter :: REALLY_NEG = -1000000000000.0_wp
   ! data
   real(wp) :: YY(ny, nobs)
 
@@ -1005,20 +1005,20 @@ contains
     real(wp), intent(out) :: TT(neq, neq), RR(neq, neps), QQ(neps, neps), DD(ny), ZZ(ny, neq), HH(ny,ny)
     integer, intent(out) :: info
 
-    real(wp) :: GAM0(neq, neq), GAM1(neq, neq), C(neq), PSI(neq, neps), PPI(neq, neta), CC(neq) 
+    real(wp) :: GAM0(neq, neq), GAM1(neq, neq), C(neq), PSI(neq, neps), PPI(neq, neta), CC(neq)
     real(wp) :: TTn(neq, neq), temp(neq, neq)
-        
+
     real(wp) :: {para_list}
     real(wp) :: {helper_list}
 
-    ! gensys 
+    ! gensys
     real(wp) :: fmat, fwt, ywt, gev, loose, DIV
     integer :: eu(2)
 
     {dec}
 
     {para}
-    
+
     {def}
 
     GAM0 = 0.0_wp
@@ -1030,7 +1030,7 @@ contains
     {sims_mat}
 
     call do_gensys(TT, CC, RR, fmat, fwt, ywt, gev, eu, loose, GAM0, GAM1, C, PSI, PPI, DIV)
-! 
+!
     info = eu(1)*eu(2)
 
     QQ = 0.0_wp
@@ -1046,11 +1046,11 @@ contains
 
 end module {name}
 """
-        
+
         mod_str = fortran_template.format(**file_dict)
 
         mod_str = mod_str.replace('_wp_wp', '_wp')
-        mfile = open(os.path.join(mdir, name+".f90"), 'w')        
+        mfile = open(os.path.join(mdir, name+".f90"), 'w')
 
         mfile.write(mod_str)
         mfile.close()
@@ -1068,7 +1068,7 @@ end module {name}
         # print(char_str.format('transfile', directory, 'trspec.txt'))
 
 
-        # print("contains")       
+        # print("contains")
 
         # print "  include /mq/home/m1eph00/code/fortran/base/helper_functions.f90"
         # print "  subroutine sysmat(para, TT, RR, QQ, DD, ZZ, HH, info)"
@@ -1077,7 +1077,7 @@ end module {name}
         # print "\n    real(wp), intent(out) :: TT(neq, neq), RR(neq, neps), QQ(neps, neps), DD(ny), ZZ(ny, neq), HH(ny, ny)"
 
         # print "\n    real(wp) :: GAM0(neq, neq), GAM1(neq, neq), C(neq), PSI(neq, neps), PPI(neq, neta), CC(neq), G0(neq, neq), G1(neq, neq)"
-        
+
         # print "\n    ! deep parameters "
         # print("    real(wp) :: {0}".format(", ".join([x.__str__() for x in self['par_ordering']])))
 
@@ -1085,16 +1085,16 @@ end module {name}
         # print("    real(wp) :: {0}".format(", ".join([x.__str__() for x in self['other_parameters']])))
 
         # print "\n    ! steady states "
-        # print("    real(wp) :: {0}".format(", ".join([x.__str__() for x in self['ss_ordering']])))        
+        # print("    real(wp) :: {0}".format(", ".join([x.__str__() for x in self['ss_ordering']])))
 
         # print "\n    ! variables "
         # print("    integer :: {0}".format(", ".join([x.fortind for x in self.variables + self['fvars']])))
 
         # print "\n    ! shocks "
         # print("    integer :: {0}".format(", ".join([x.fortind for x in self['shk_ordering']])))
-        
 
-        # nvars = len(self['var_ordering']) 
+
+        # nvars = len(self['var_ordering'])
 
         # for i in xrange(1, nvars+1):
         #     var_string = "    {0} = {1}".format(self['var_ordering'][i-1].fortind, i)
@@ -1111,9 +1111,9 @@ end module {name}
 
         # for i in xrange(1, len(self['fvars'])+1):
         #     print("    n_{0} = {1}".format(self['fvars'][i-1].name, i))
-            
 
-            
+
+
         # for i in range(0, self['covariance'].shape[0]):
         #     for j in range(0, self['covariance'].shape[1]):
 
@@ -1122,8 +1122,8 @@ end module {name}
         #             strj = self['shk_ordering'][i].fortind
         #             print('    QQ({0}, {1}) = {2}'.format(stri, strj, self['covariance'][i, j]))
 
-                    
-        
+
+
 
     @staticmethod
     def read(mfile):
@@ -1186,7 +1186,7 @@ end module {name}
 
         context['sqrt'] = sympy.sqrt
         context['__builtins__'] = None
-        
+
         equations = []
 
         raw_equations = model_yaml['equations']['model']
@@ -1204,16 +1204,16 @@ end module {name}
 
             equations.append(Equation(lhs, rhs))
 
-            
 
-        #------------------------------------------------------------ 
+
+        #------------------------------------------------------------
         # Figure out max leads and lags
         #------------------------------------------------------------
         it = itertools.chain.from_iterable
 
         max_lead_exo = dict.fromkeys(shk_ordering)
         max_lag_exo = dict.fromkeys(shk_ordering)
-        
+
         all_shocks = [list(eq.atoms(Shock)) for eq in equations]
 
         for s in shk_ordering:
@@ -1248,7 +1248,7 @@ end module {name}
         old_var = var_ordering[:]
         for v in old_var:
 
-            # lags 
+            # lags
             for i in np.arange(2, abs(max_lag_endo[v])+1):
                 # for lag l need to add l-1 variable
                 var_l = Variable(v.name + "_LAG" + str(i-1))
@@ -1262,11 +1262,11 @@ end module {name}
                 var_ordering.append(var_l)
                 equations.append(Equation(var_l, var_l_1))
 
-                
+
             # still need to do leads
 
         equations = [eq.subs(subs_dict) for eq in equations]
-        
+
         cov = cal['covariances']
 
         nshock = len(shk_ordering)
@@ -1283,7 +1283,7 @@ end module {name}
             if len(shocks)==2:
                 shocki = Shock(shocks[0].strip())
                 shockj = Shock(shocks[1].strip())
-                
+
                 indi = shk_ordering.index(shocki)
                 indj = shk_ordering.index(shockj)
 
@@ -1292,7 +1292,7 @@ end module {name}
 
             else:
                 "fdfadsf"
-            
+
         nobs = len(obs_equations)
         HH = sympy.zeros((nobs, nobs))
 
@@ -1306,14 +1306,14 @@ end module {name}
                 if len(shocks)==2:
                     shocki = Shock(shocks[0].strip())
                     shockj = Shock(shocks[1].strip())
-                
+
                     indi = measurement_errors.index(shocki)
                     indj = measurement_errors.index(shockj)
 
                     HH[indi, indj] = eval(value, context)
-                    HH[indj, indi] = QQ[indi, indj]
+                    HH[indj, indi] = HH[indi, indj]
 
-            
+
 
 
         context['sum'] = np.sum
@@ -1328,21 +1328,21 @@ end module {name}
             'var_ordering': var_ordering,
             'par_ordering': par_ordering,
             'shk_ordering': shk_ordering,
-            'other_parameters': other_para, 
-            'other_para': other_para, 
-            'para_func': cal['parafunc'], 
-            'calibration': calibration, 
-            'steady_state': steady_state, 
+            'other_parameters': other_para,
+            'other_para': other_para,
+            'para_func': cal['parafunc'],
+            'calibration': calibration,
+            'steady_state': steady_state,
             'init_values': init_values,
             'equations': equations,
             'covariance': QQ,
             'measurement_errors': HH,
-            'meas_ordering': measurement_errors, 
-            'info': info, 
-            'make_log': make_log, 
-            '__data__': model_yaml, 
-            'name': dec['name'], 
-            'observables': observables, 
+            'meas_ordering': measurement_errors,
+            'info': info,
+            'make_log': make_log,
+            '__data__': model_yaml,
+            'name': dec['name'],
+            'observables': observables,
             'obs_equations': obs_equations
             }
 

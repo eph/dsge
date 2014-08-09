@@ -4,3 +4,4 @@
 *.mod
 .ipynb_checkpoints/*
 *.pyf
+/fortran/cholmod.f90~

@@ -4,7 +4,7 @@ import numpy as np
 import scipy as sp
 import pandas as p
 from fortran import dlyap, kalman, gensys
-
+from helper_functions import cholpsd
 
 
 class StateSpaceModel(object):
@@ -29,6 +29,8 @@ class StateSpaceModel(object):
         self.t0 = t0
 
         self.shock_names = None
+        self.state_names = None
+        self.obs_names = None
 
     def log_lik(self, para, *args, **kwargs):
 
@@ -51,31 +53,157 @@ class StateSpaceModel(object):
         npart = kwargs.pop('npart', 1000)
         yy = kwargs.pop('y', self.yy)
         P0 = kwargs.pop('P0', 'unconditional')
+        filt = kwargs.pop('filt', 'bootstrap')
+        rcond = kwargs.pop('rcond',1e-7)
+        data = np.asarray(yy)
 
         TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
 
         if P0=='unconditional':
             P0, info = dlyap.dlyap(TT, RR.dot(QQ).dot(RR.T))
 
+
+        RQR = RR.dot(QQ).dot(RR.T)
+        P0 = TT.dot(P0).dot(TT.T) + RQR
         nobs = yy.shape[0]
         ny = yy.shape[1]
         neps = QQ.shape[0]
         ns = TT.shape[0]
 
         RRcQQ = RR.dot(np.linalg.cholesky(QQ))
+        iRQR = np.linalg.pinv(RQR,rcond=1e-7)
+        U,S,V = np.linalg.svd(RQR,full_matrices=0)
+        detRQR = np.sum(np.log(S[S>1e-7]))
+
 
         St = np.zeros((nobs+1, ns, npart))
-        St[0, :, :] = np.linalg.cholesky(P0).dot(np.random.normal(size=(neps, npart)))
 
+        U,s,V = sp.linalg.svd(P0)
+        L = U.dot(np.diag(np.sqrt(s)))
+        St[0,:,:] = L.dot(np.random.normal(size=(ns,npart)))
         resamp = np.zeros((nobs))
+        wtsim = np.ones((nobs+1,npart))
+        incwt = np.zeros((nobs,npart))
+        iH = np.linalg.inv(np.atleast_2d(HH))
+
+        logdetH = np.log(np.linalg.det(np.atleast_2d(HH)))
+        ESS = np.zeros((nobs))
+        loglh = np.zeros((nobs))
+
+        Pt = P0
+        AA = np.zeros((ns))
         for t in range(nobs):
-            eps = RRcQQ.dot(np.random.normal(size=(neps, npart)))
-            St[t+1, :, :] = TT.dot(St[t, :, :]) + eps
 
-            nut = np.tile(yy[t, :] - DD, (1, npart)) - ZZ.dot(St[t+1, :, :])
+            #------------------------------------------------------------
+            # "KF Recursions
+            #
+            #
+            #  s_t|s_{t-1}
+            #  y_t|
+            #------------------------------------------------------------
+            # yhat = np.dot(ZZ, AA) + DD.flatten()
+            # nut = data[t, :] - yhat
+            # nut = np.atleast_2d(nut)
+
+            # iFt = np.linalg.inv(Ft)
+            # iFtnut = sp.linalg.solve(Ft, nut.T, sym_pos=True)
+
+            # Kt = np.dot(Pt, ZZ.T)
+            # AA = np.dot(TT, AA) + np.dot(Kt, iFtnut).squeeze()
+            # AA = np.asarray(AA).squeeze()
+
+            # Pt = Pt - Pt.dot(ZZ.T).dot(iFt).dot(ZZ).dot(Pt)
+            # # Pt = (np.dot(TTPt, TT.T)
+            # #       -np.dot(Kt, sp.linalg.solve(Ft, Kt.T, sym_pos=True))
+            #       + RQR)
+            #------------------------------------------------------------
+
+
+            if filt=='bootstrap':
+                eps = RRcQQ.dot(np.random.normal(size=(neps, npart)))
+                St[t+1,...] = TT.dot(St[t,...]) + eps
+            else:
+                St[t+1,...] = TT.dot(St[t,...])
+                Pt = RQR
+                Ft = np.dot(np.dot(ZZ, Pt), ZZ.T) + HH
+                iFt = np.linalg.inv(Ft)
+                nut = (np.tile((data[t, :] - np.squeeze(DD)).T, (1, npart))
+                       - ZZ.dot(St[t+1,...]))
+
+                Stbar = TT.dot(St[t,...]) + Pt.dot(ZZ.T).dot(iFt).dot(nut)
+                Pt = Pt - Pt.dot(ZZ.T).dot(iFt).dot(ZZ).dot(Pt)
+
+                U,s,V = sp.linalg.svd(Pt)
+                L = U.dot(np.diag(np.sqrt(s)))
+                eps = np.random.normal(size=(ns,npart))
+                St[t+1,...] = Stbar + L.dot(eps)
+
+                d = np.diag(L)
+
+                iPt = np.linalg.pinv(Pt,rcond=rcond)
+                logdetPt = np.sum(np.log(s[s>rcond]))
+
+                nx = np.sum(np.sqrt(s)>rcond)
+
+                eta =  St[t+1,...] - Stbar
+                lng = (-0.5*nx*np.log(2.0*np.pi) - 0.5*logdetPt
+                       -0.5*np.einsum('ji,ji->i',np.dot(iPt,eta),eta))
+
+            nut = (np.tile((data[t, :] - np.squeeze(DD)).T, (1, npart))
+                   - ZZ.dot(St[t+1,...]))
+
+            incwt[t,:] = (-0.5*ny*np.log(2.0*np.pi) - 0.5*logdetH
+                          -0.5*np.einsum('ji,ji->i',np.dot(iH,nut),nut))
+
+            if filt=='cond-opt':
+                from scipy.stats import norm
+                eta = St[t+1,...] - TT.dot(St[t,...])
+                lnps = (-0.5*neps*np.log(2.0*np.pi) - 0.5*detRQR
+                        -0.5*np.einsum('ji,ji->i', np.dot(iRQR,eta),eta))
+                incwt[t,:] = incwt[t,:] + lnps - lng
+
+            # Equation 7.7
+            wtsim[t+1,:] = np.exp(incwt[t,:]) * wtsim[t,:]
+            wtsim[t+1,:] = wtsim[t+1,:]/np.mean(wtsim[t+1,:])
+
+            ESS[t] = npart / np.mean(wtsim[t+1,:]**2)
+
+            print t,ESS
+            if ESS[t] < npart/2:
+                from fortran import resampling
+                resamp = resampling.resampling.multinomial_resampling
+                ind = resamp(wtsim[t+1,:]/sum(wtsim[t+1,:]), np.random.rand(npart))
+                if ns == 1:
+                    St[t+1,...] = np.squeeze(St[t+1,:,ind-1])
+                else:
+                    St[t+1,...] = St[t+1,...][:,ind-1]
+                wtsim[t+1,:] = 1
 
 
 
+            loglh[t] = np.log(np.mean(np.exp(incwt[t,:])*wtsim[t,:]))
+            print loglh[0]
+            fjdsakfld
+        filtered_states = TT.dot(St[:-1,...,...]) * wtsim[:-1,:]
+        filtered_states = filtered_states.mean(2).T
+
+        if isinstance(yy,p.DataFrame):
+            loglh = p.DataFrame(loglh,columns=['Log Lik.'])
+            loglh.index = yy.index
+
+            ESS = p.DataFrame(ESS,columns=['ESS'])
+            ESS.index = yy.index
+
+            filtered_states = p.DataFrame(filtered_states, columns=self.state_names)
+            filtered_states.index = yy.index
+
+        results = {}
+        results['log_lik'] = loglh
+        results['ESS'] = ESS
+        results['filtered_states'] = filtered_states
+        results['St'] = St
+        results['wt'] = wtsim
+        return results
 
     def system_matrices(self, para, *args, **kwargs):
         TT = np.atleast_2d(self.TT(para, *args, **kwargs))
@@ -157,7 +285,9 @@ class StateSpaceModel(object):
 
         Pt = P0
 
-        loglh = 0
+        ZZ = np.atleast_2d(ZZ)
+        HH = np.atleast_2d(HH)
+        loglh = np.zeros((nobs))
         AA = At[0, :]
 
         for i in np.arange(0, nobs):
@@ -167,7 +297,7 @@ class StateSpaceModel(object):
 
             yhat = np.dot(ZZ, AA) + DD.flatten()
             nut = data[i, :] - yhat
-
+            nut = np.atleast_2d(nut)
             ind = (np.isnan(data[i, :])==False).nonzero()[0]
             nyact = ind.size
 
@@ -179,7 +309,7 @@ class StateSpaceModel(object):
             iFtnut = sp.linalg.solve(Ft, nut[:, ind].T, sym_pos=True)
 
             if i+1 > t0:
-                loglh = loglh - 0.5*nyact*np.log(2*np.pi) - 0.5*dFt \
+                loglh[i]= - 0.5*nyact*np.log(2*np.pi) - 0.5*dFt \
                         - 0.5*np.dot(nut[:, ind], iFtnut)
 
 
@@ -193,13 +323,17 @@ class StateSpaceModel(object):
             Pt = np.dot(TTPt, TT.T) - np.dot(Kt, sp.linalg.solve(Ft, Kt.T, sym_pos=True)) + RQR
 
 
+        if isinstance(yy,p.DataFrame):
+            loglh = p.DataFrame(loglh,columns=['Log Lik.'])
+            loglh.index = yy.index
+
 
         results = {}
-        results['filtered_states']   = p.DataFrame(At, columns=self.state_names)
+        results['filtered_states']   = p.DataFrame(At, columns=self.state_names,index=yy.index)
         results['one_step_forecast'] = []
-        results['log_lik'] = loglh[0, 0]
+        results['log_lik'] = loglh
 
-
+        #results['updated_states'] =
         return results
 
 
@@ -365,7 +499,7 @@ if __name__ == '__main__':
     QQ = lambda rho: 1.0
     DD = lambda rho: 0.0
     ZZ = lambda rho: 1.0
-    HH = lambda rho: 0.0
+    HH = lambda rho: 0.1
 
     test_ss = StateSpaceModel(yy, TT, RR, QQ, DD, ZZ, HH)
     print test_ss.system_matrices(0.3)
