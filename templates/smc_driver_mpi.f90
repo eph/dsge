@@ -45,7 +45,7 @@ program smc_driver
   character(len=244) :: phifile, parafile, wghtfile, llikfile, postfile, zifile, rfile, essfile
 
   character(len=144) :: hyp_str, hyp_fstr
-  logical :: fixed_hyper
+  logical :: fixed_hyper, save_hyper
 
   ! random numbers
   type (VSL_STREAM_STATE) :: stream
@@ -56,7 +56,7 @@ program smc_driver
   integer, allocatable :: paraind(:)
 
   ! containers
-  real(wp), allocatable :: arate(:,:), loglh(:), prio(:), ESS(:), zi(:)
+  real(wp), allocatable :: arate(:,:), loglh(:), prio(:), ESS(:), zi(:), loglhold(:)
   real(wp), allocatable :: incwt(:), wtsq(:)
   integer, allocatable :: acptsim(:,:), resamp(:)
 
@@ -107,7 +107,8 @@ program smc_driver
   hyp_str = ''
   hyp_fstr = ''
   fixed_hyper = .false.
-
+  save_hyper = .false. 
+  
   ! only one of these is used depending on SMC type
   nT = nobs 
   initpart = initfile           ! initial particles (if init_prior = .false.)
@@ -154,6 +155,7 @@ program smc_driver
      case('-g', '--geweke')
         do_geweke = .true.
         cmethod = 'geweke'
+        nphi = nobs + 1
      case('-i', '--initrep')
         call get_command_argument(i+1, arg)
         read(arg, '(i)') irep
@@ -177,9 +179,11 @@ program smc_driver
      case('--write-every')
         call get_command_argument(i+1,arg)
         read(arg,'(i)') write_every
+     case('--save-hyper')
+        save_hyper = .true.
      case('-f', '--init-files')
-!        call get_command_argument(i+1, initpart)
-!        call get_command_argument(i+2, initwt)
+        !        call get_command_argument(i+1, initpart)
+        !        call get_command_argument(i+2, initwt)
      end select
   end do
 
@@ -224,15 +228,19 @@ program smc_driver
   !  see the middle of page 9
   !-------------------------------------------------------------------------
   allocate(phi(nphi))
-  do i = 1, nphi
-     phi(i) = (i-1.0_wp)/(nphi - 1.0_wp)
-  end do
+  if (do_geweke==.true.) then
+     phi = 1.0_wp
+  else
+     do i = 1, nphi
+        phi(i) = (i-1.0_wp)/(nphi - 1.0_wp)
+     end do
 
-  if (phi_bend == .true.) then
-     if (rank == 0) then 
-        print*,'bending phi'
+     if (phi_bend == .true.) then
+        if (rank == 0) then 
+           print*,'bending phi'
+        end if
+        phi = phi**bcoeff
      end if
-     phi = phi**bcoeff
   end if
 
   !-------------------------------------------------------------------------
@@ -249,7 +257,7 @@ program smc_driver
   !-------------------------------------------------------------------------
   if (rank == 0) then 
      allocate(parasim(npara, npart), wtsim(npart), loglh(npart),&
-     & prio(npart), incwt(npart), wtsq(npart))
+          & prio(npart), incwt(npart), wtsq(npart),loglhold(npart))
      allocate(paraind(npart), acptsim(npara,npart),resamp(nphi))
      parasim = transpose(priorrand(npart, pshape, pmean, pstdd, pmask, pfix))
 
@@ -311,7 +319,7 @@ program smc_driver
 
   call date_and_time(values=time_array)
 
-
+  loglhold = 0.0_wp
   !----------------------------------------------------------------------------
   ! Initialize random deviates only using master
   !---------------------------------------------------------------------------
@@ -382,19 +390,34 @@ program smc_driver
   !-----------------------------------------------------------------------------
   do i = 2, nphi
 
+
+     !------------------------------------------------------------
+     if (do_geweke == .true.) then
+        call scatter(everything=.false.)
+        call mpi_barrier(MPI_COMM_WORLD, mpierror)
+
+        call evaluate_time_t_lik(nodeloglh, nodeprio, nodepara, ngap, npara)
+
+        ! send info back to master node
+        call mpi_barrier(MPI_COMM_WORLD, mpierror)
+        call gather(everything=.false.)
+        call mpi_barrier(MPI_COMM_WORLD, mpierror)
+     end if
+
      if (rank == 0) then
-
-
         !---------------------------------------------------------------------------
         ! [C]orrection
         ! This is in importance sampling step
         !---------------------------------------------------------------------------
-        
+
         !------------------------------------------------------------
         ! incremental weight = exp((phi[i]-phi[i-1])*loglh)
         !------------------------------------------------------------
-        call vdexp(npart, (phi(i) - phi(i-1))*loglh, incwt)
-
+        if (do_geweke == .true.) then
+           call vdexp(npart, loglh-loglhold, incwt)
+        else
+           call vdexp(npart, (phi(i) - phi(i-1))*loglh, incwt)
+        end if
         ! total weight
         wtsim = wtsim * incwt
 
@@ -426,7 +449,6 @@ program smc_driver
 
         if (do_resample) then 
            ! do resampling step, if necessary
-
            write (*, '(a$)') ' resample]'
            call multinomial_resampling(npart, wtsim, uu((i-1)*npart+1:i*npart), paraind)
 
@@ -465,12 +487,14 @@ program smc_driver
         end if
 
         ! save output 
-        call write_hyperparameters(i)
+        if (save_hyper==.true.) then
+           call write_hyperparameters(i)
+        end if
 
         errcode=vdrnggaussian(method,stream,npart*nintmh*npara,eps,0.0_wp,scale)
         acptsim = 0
 
-
+        
      endif
 
      ! scatter info to nodes
@@ -509,6 +533,10 @@ program smc_driver
         if ((mod(i,write_every) == 0) .or. (i==nphi)) then
            call write_files(i)
         end if
+
+        if (do_geweke==.true.) then
+           loglhold = loglh
+        end if
      endif
 
      call mpi_bcast(scale, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, mpierror)
@@ -535,7 +563,7 @@ program smc_driver
 
      close(1)
      close(2)
-     deallocate(parasim, wtsim, u, uu, arate, loglh, prio, incwt, wtsq, paraind, acptsim,resamp)
+     deallocate(parasim, wtsim, u, uu, arate, loglh, prio, incwt, wtsq, paraind, acptsim,resamp,loglhold)
   end if
   deallocate(nodepara,nodewt,nodeloglh,nodeprio,nodeacpt, nodeeps, nodevar)
   deallocate(pmaskinv, eps, ind, break_points)
@@ -611,6 +639,10 @@ contains
        lik0 = lk(j)
        pr0 = pri(j)
 
+       ! if (do_geweke==.true.) then
+       !    lik0 = likT(p0,i-1)
+       ! end if
+
        vvar2 = vvar
 
        do bj = 1, nblocks
@@ -660,7 +692,7 @@ contains
                 p1(bi) = mu(bi) + matmul(bvar, e((j-1)*nintmh + k,bi))
              endif
 
-             
+
              ! mixture proposal densities
              q0 = kapp*exp(mvnormal_pdf(p0(bi),p1(bi),scale*bvar))
              q1 = kapp*exp(mvnormal_pdf(p1(bi),p0(bi),scale*bvar))
@@ -671,7 +703,7 @@ contains
                 ind_pdf = ind_pdf/(sigi*sqrt(2.0_wp*3.1415))*exp(-0.5_wp*zstat**2)
                 !q1 = q1 + (1.0_wp - kapp)/2.0_wp*1.0_wp/(sigi*sqrt(2.0_wp*M_PI))*exp(-0.5_wp*zstat**2)
              end do
-
+             
              q0 = q0 + (1.0_wp - kapp)/2.0_wp*ind_pdf
              q1 = q1 + (1.0_wp - kapp)/2.0_wp*ind_pdf
 
@@ -682,7 +714,11 @@ contains
              q1 = log(q1)
 
              pr1 = pr(p1)
-             lik1 = lik(p1)
+             if (do_geweke == .true.)   then
+                lik1 = likT(p1,i-1)
+             else
+                lik1 = lik(p1)
+             end if
 
              alp = exp(phi(i)*(lik1 - lik0) + pr1 - pr0 + q0 - q1)
 
@@ -721,7 +757,12 @@ contains
     real(wp) :: lik0
 
     do i = 1, neval
-       lik0 = lik(p(:,i))
+
+       if (do_geweke == .true.)   then
+          lik0 = likT(p(:,i),1)
+       else
+          lik0 = lik(p(:,i))
+       end if
 
        if (isnan(lik0)) then
           lik0 = -10.0_wp**11
@@ -730,11 +771,13 @@ contains
        do while (lik0 < -10.0_wp**9)
 
           p2 = priorrand(2, pshape, pmean, pstdd, pmask, pfix)
-          if (mname(1:4)=='dssw') then
-             p2(:,22:npara) = abs(p2(:,22:npara))
-          end if
 
-          lik0 = lik(p2(1,:))
+          if (do_geweke == .true.)   then
+             lik0 = likT(p2(1,:),1)
+          else
+             lik0 = lik(p2(1,:))
+          end if
+          
 
           if (isnan(lik0)) then
              lik0 = -10000000000000.0_wp
@@ -757,6 +800,22 @@ contains
 
   end subroutine initial_draw_from_prior
 
+
+  subroutine evaluate_time_t_lik(lk, pri, p, neval, npara)
+    ! Computes the initial draw from the prior.
+
+    integer, intent(in) :: neval, npara
+    real(wp), intent(inout) :: lk(neval), p(npara, neval), pri(neval)
+
+    integer :: ilik
+
+    real(wp) :: lik0
+
+    do ilik = 1, neval
+       lk(ilik) = likT(p(:,ilik),i-1)
+    end do
+
+  end subroutine evaluate_time_t_lik
 
 
 

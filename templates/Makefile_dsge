@@ -15,21 +15,19 @@ OBJDIR = obj
 
 
 # drivers 
-smc_driver_mpi : prior.o smc_driver_mpi.f90 rand.o {model}.o filter.o gensys.o mcmc.o
-	$(MPIFC) $(FFLAGS) $(INCLUDE) -o smc_{model} rand.o hessian.o mcmc.o filter.o gensys.o as63.o prior.o {model}.o smc_driver_mpi.f90 $(LIBPATH) $(LIB)
+smc_driver_mpi : prior.o smc_driver_mpi.f90 rand.o {model}.o filter.o gensys.o mcmc.o particle_filter.o
+	$(MPIFC) $(FFLAGS) $(INCLUDE) -o smc_{model} rand.o hessian.o mcmc.o particle_filter.o filter.o gensys.o as63.o prior.o {model}.o smc_driver_mpi.f90 $(LIBPATH) $(LIB)
 
-rwmh_driver : prior.o rwmh_driver.f90 rand.o {model}.o mcmc.o hessian.o filter.o gensys.o
-	$(MPIFC) $(FFLAGS) $(INCLUDE) -o rwmh_{model} rand.o hessian.o mcmc.o as63.o prior.o filter.o gensys.o {model}.o rwmh_driver.f90 $(LIBPATH) $(LIB) 
+rwmh_driver : prior.o rwmh_driver.f90 rand.o {model}.o mcmc.o hessian.o filter.o gensys.o particle_filter.o
+	$(MPIFC) $(FFLAGS) $(INCLUDE) -o rwmh_{model} rand.o hessian.o mcmc.o as63.o prior.o particle_filter.o filter.o gensys.o {model}.o rwmh_driver.f90 $(LIBPATH) $(LIB) 
 
-blockmcmc_driver: prior.o blockmcmc.f90 rand.o {model}.o mcmc.o hessian.o filter.o gensys.o
-	$(MPIFC) $(FFLAGS) $(INCLUDE) -o blockmcmc_{model} rand.o hessian.o mcmc.o as63.o prior.o filter.o gensys.o {model}.o blockmcmc.f90 $(LIBPATH) $(LIB) 
+blockmcmc_driver: prior.o blockmcmc.f90 rand.o {model}.o mcmc.o hessian.o filter.o gensys.o particle_filter.o
+	$(MPIFC) $(FFLAGS) $(INCLUDE) -o blockmcmc_{model} particle_filter.o rand.o hessian.o mcmc.o as63.o prior.o filter.o gensys.o {model}.o blockmcmc.f90 $(LIBPATH) $(LIB) 
 
 #------------------------------------------------------------ 
 # models
 #------------------------------------------------------------
-# dssw_jp.o : dssw_jp.f90 prior.o filter.o gensys.o helper_functions.f90 prior.f90
-# 	$(FC) $(FFLAGS) $(INCLUDE) -c $< -o $@	
-{model}.o : {model}.f90 prior.o filter.o gensys.o helper_functions.f90
+{model}.o : {model}.f90 prior.o filter.o gensys.o helper_functions.f90 particle_filter.o
 	$(FC) $(FFLAGS) $(INCLUDE) -c $< -o $@
 
 # prior -- requires as63
@@ -44,6 +42,9 @@ mcmc.o : mcmc.f90 rand.o hessian.o
 	$(FC) $(FFLAGS) $(INCLUDE) -c $< -o $@
 
 as63.o: as63.f90
+	$(FC) $(FFLAGS) $(INCLUDE) -c $< -o $@
+
+particle_filter.o: particle_filter.f90 filter.o
 	$(FC) $(FFLAGS) $(INCLUDE) -c $< -o $@
 
 filter.o: filter.f90

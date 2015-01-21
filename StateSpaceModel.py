@@ -3,7 +3,7 @@ from __future__ import division
 import numpy as np
 import scipy as sp
 import pandas as p
-from fortran import dlyap, kalman, gensys
+from fortran import dlyap, kalman, gensys, filter
 from helper_functions import cholpsd
 
 
@@ -17,7 +17,6 @@ class StateSpaceModel(object):
 
         self.yy = yy
 
-
         self.TT = TT
         self.RR = RR
         self.QQ = QQ
@@ -25,7 +24,7 @@ class StateSpaceModel(object):
         self.ZZ = ZZ
         self.HH = HH
 
-
+        
         self.t0 = t0
 
         self.shock_names = None
@@ -47,6 +46,90 @@ class StateSpaceModel(object):
 
         return lik
 
+    def kf_everything(self, para, *args, **kwargs):
+        t0 = kwargs.pop('t0', self.t0)
+        yy = kwargs.pop('y', self.yy)
+
+        TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
+
+        f = filter.filter.kalman_filter_missing_with_states
+        loglh, filtered_states, smoothed_states = f(yy.T, TT, RR, QQ, DD, ZZ, HH, t0)
+
+        results = {}
+        results['log_lik'] = p.DataFrame(loglh, columns=['log_lik'])
+        
+        results['log_lik'].index = yy.index
+        filtered_states = p.DataFrame(filtered_states, columns=self.state_names)
+        filtered_states.index = yy.index
+        results['filtered_states'] = filtered_states
+
+        return results
+
+    def log_lik_pff(self, para, *args, **kwargs):
+
+        t0 = kwargs.pop('t0', self.t0)
+        yy = kwargs.pop('y', self.yy)
+        P0 = kwargs.pop('P0', 'unconditional')
+        npart = kwargs.pop('npart', 1000)
+        filt = kwargs.pop('filt', 'bootstrap')
+        seed = kwargs.pop('seed', 0)
+        resampling = kwargs.pop('resampling', 'stratified')
+        reduce_system = kwargs.pop('reduce_system', False)
+
+        TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
+
+        if reduce_system:
+            f = filter.filter.kalman_filter_missing_with_states
+            loglh, filtered_states, smoothed_states = f(yy.T, TT, RR, QQ, DD, ZZ, HH, t0)
+
+            from scipy.linalg import schur
+            (Z, T, nmin) = schur(TT, sort=lambda x: abs(x**2)>1e-15)
+
+            RRhat = Z.T.dot(RR)
+            ishock = np.argwhere(abs(RRhat[nmin:, :]).sum(0)>1e-10).flatten()
+            neshock = ishock.size
+             
+            if neshock>0:
+                TThat = np.hstack((T[:nmin,:][:, :nmin], T[:nmin, :][:, nmin:].dot(RRhat[nmin:, :][:, ishock])))
+                TThat = np.vstack((TThat, np.zeros((neshock, nmin+neshock))))
+
+                imat = np.zeros((TT.shape[0], neshock+nmin))
+                imat[:nmin, :][:, :nmin] = np.eye(nmin)
+                imat[nmin:, :][:, nmin:] = RRhat[nmin:, :][:, ishock]
+                
+                x = np.zeros((neshock, RR.shape[1]))
+                x[:, ishock] = np.eye(neshock)
+             
+                RRhat = np.vstack((RRhat[:nmin, :], x))
+                ZZhat = ZZ.dot(Z).dot(imat)
+
+            else:
+                jfdsklf
+            
+            loglh, filtered_states, smoothed_states = f(yy.T, TT, RR, QQ, DD, ZZ, HH, t0)
+
+            TT = TThat.copy() 
+            RR = RRhat.copy() 
+            ZZ = ZZhat.copy() 
+
+
+        filti = {'bootstrap':0, 'cond-opt': 1}
+        fi = filti[filt]
+
+        resamp = {'systematic':0, 'multinomial': 1, 'stratified': 2}
+        ri = resamp[resampling]
+
+        lik, filtered_states = filter.filter.part_filter(yy.T, TT, RR, QQ, DD, ZZ, HH, t0, npart, fi, ri, seed)
+        results = {}
+        results['log_lik'] = p.DataFrame(lik, columns=['log_lik'])
+        results['log_lik'].index = yy.index
+        filtered_states = p.DataFrame(filtered_states, columns=self.state_names)
+        filtered_states.index = yy.index
+        results['filtered_states'] = filtered_states
+        
+        return results
+
+
     def log_lik_pf(self, para, *args, **kwargs):
 
         t0 = kwargs.pop('t0', self.t0)
@@ -55,135 +138,171 @@ class StateSpaceModel(object):
         P0 = kwargs.pop('P0', 'unconditional')
         filt = kwargs.pop('filt', 'bootstrap')
         rcond = kwargs.pop('rcond',1e-7)
-        data = np.asarray(yy)
 
+
+        data = np.asarray(yy)
+        data = np.atleast_2d(data)
+        seed = kwargs.pop('seed', None)
+        scale = kwargs.pop('scale', 10)
+        init_s_w = kwargs.pop('init_s_w', None)
+        
         TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
 
         if P0=='unconditional':
             P0, info = dlyap.dlyap(TT, RR.dot(QQ).dot(RR.T))
 
+        if seed is not None:
+            np.random.seed(seed)
 
+        from scipy.stats import multivariate_normal
+        
         RQR = RR.dot(QQ).dot(RR.T)
         P0 = TT.dot(P0).dot(TT.T) + RQR
-        nobs = yy.shape[0]
-        ny = yy.shape[1]
+        nobs = data.shape[0]
+        ny = data.shape[1]
         neps = QQ.shape[0]
         ns = TT.shape[0]
-
-        RRcQQ = RR.dot(np.linalg.cholesky(QQ))
-        iRQR = np.linalg.pinv(RQR,rcond=1e-7)
-        U,S,V = np.linalg.svd(RQR,full_matrices=0)
-        detRQR = np.sum(np.log(S[S>1e-7]))
-
 
         St = np.zeros((nobs+1, ns, npart))
 
         U,s,V = sp.linalg.svd(P0)
         L = U.dot(np.diag(np.sqrt(s)))
         St[0,:,:] = L.dot(np.random.normal(size=(ns,npart)))
+
+
+
+        RRcQQ = RR.dot(np.linalg.cholesky(QQ))
+        iRQR = np.linalg.pinv(RQR,rcond=1e-7)
+        U,S,V = np.linalg.svd(RQR,full_matrices=0)
+        detRQR = np.sum(np.log(S[S>1e-7]))
+
+        ps = multivariate_normal(cov=RQR)
+
+        # container variables
         resamp = np.zeros((nobs))
         wtsim = np.ones((nobs+1,npart))
         incwt = np.zeros((nobs,npart))
-        iH = np.linalg.inv(np.atleast_2d(HH))
+        incwtaux = np.zeros((nobs,npart))
 
-        logdetH = np.log(np.linalg.det(np.atleast_2d(HH)))
+        #------------------------------------------------------------ 
+        # p(yt|st) [in terms of dev from mean]
+        #------------------------------------------------------------
+        py = multivariate_normal(cov=HH)
         ESS = np.zeros((nobs))
         loglh = np.zeros((nobs))
+        loglhalt = np.zeros((nobs))
 
-        Pt = P0
-        AA = np.zeros((ns))
+
+
+
+
+
+        #------------------------------------------------------------ 
+        # Helper Functions
+        #------------------------------------------------------------
+        demeaned_data = data - np.tile(np.squeeze(DD), (nobs, 1))
+        fcst_error = lambda i: np.tile(demeaned_data[i].T, (1, npart))-ZZ.dot(TT.dot(St[i, ...]))
+        if filt=='cond-opt':
+            Pt = RQR
+            Ft = np.dot(np.dot(ZZ, Pt), ZZ.T) + HH
+            iFt = np.linalg.inv(Ft)
+            PtZZpiFt = Pt.dot(ZZ.T).dot(iFt)
+            Pt = Pt - Pt.dot(ZZ.T).dot(iFt).dot(ZZ).dot(Pt)
+            pys = multivariate_normal(cov=Pt)
+
+
+        #------------------------------------------------------------ 
+        # AUXILIARY PARTICLE FILTER
+        #------------------------------------------------------------
+        if filt == 'auxsimp':
+            ptilde = multivariate_normal(cov=scale*HH)
+            fcst_error = lambda i: np.tile(demeaned_data[i].T, (1, npart))-ZZ.dot(TT.dot(St[i, ...]))
+
+            phatold = ptilde.logpdf(fcst_error(0).T)
+
+            wtsim[0, :] = np.exp(phatold)
+            wtsim[0, :] = wtsim[0, :]/(wtsim[0, :].mean())
+
+        if init_s_w is not None:
+            St[0, :, :] = init_s_w[0]
+            wtsim[0, :] = init_s_w[1]
+
         for t in range(nobs):
-
-            #------------------------------------------------------------
-            # "KF Recursions
-            #
-            #
-            #  s_t|s_{t-1}
-            #  y_t|
-            #------------------------------------------------------------
-            # yhat = np.dot(ZZ, AA) + DD.flatten()
-            # nut = data[t, :] - yhat
-            # nut = np.atleast_2d(nut)
-
-            # iFt = np.linalg.inv(Ft)
-            # iFtnut = sp.linalg.solve(Ft, nut.T, sym_pos=True)
-
-            # Kt = np.dot(Pt, ZZ.T)
-            # AA = np.dot(TT, AA) + np.dot(Kt, iFtnut).squeeze()
-            # AA = np.asarray(AA).squeeze()
-
-            # Pt = Pt - Pt.dot(ZZ.T).dot(iFt).dot(ZZ).dot(Pt)
-            # # Pt = (np.dot(TTPt, TT.T)
-            # #       -np.dot(Kt, sp.linalg.solve(Ft, Kt.T, sym_pos=True))
-            #       + RQR)
-            #------------------------------------------------------------
-
-
             if filt=='bootstrap':
-                eps = RRcQQ.dot(np.random.normal(size=(neps, npart)))
-                St[t+1,...] = TT.dot(St[t,...]) + eps
-            else:
-                St[t+1,...] = TT.dot(St[t,...])
-                Pt = RQR
-                Ft = np.dot(np.dot(ZZ, Pt), ZZ.T) + HH
-                iFt = np.linalg.inv(Ft)
-                nut = (np.tile((data[t, :] - np.squeeze(DD)).T, (1, npart))
-                       - ZZ.dot(St[t+1,...]))
+                #eps = RRcQQ.dot(np.random.normal(size=(neps, npart)))
+                St[t+1,...] = TT.dot(St[t,...]) + ps.rvs(size=npart).T#eps
+            elif filt=='cond-opt':
+                nut = fcst_error(t)
+                Stbar = TT.dot(St[t,...]) + PtZZpiFt.dot(nut)
+                St[t+1, ...] = Stbar + pys.rvs(size=npart).T
+                lng = pys.logpdf( (St[t+1, ...]-Stbar).T )
 
-                Stbar = TT.dot(St[t,...]) + Pt.dot(ZZ.T).dot(iFt).dot(nut)
-                Pt = Pt - Pt.dot(ZZ.T).dot(iFt).dot(ZZ).dot(Pt)
+            elif filt=='auxsimp':
+                #------------------------------------------------------------
+                # Simulate
+                #------------------------------------------------------------
+                St[t+1,...] = TT.dot(St[t,...]) + ps.rvs(size=npart).T
+                
+                phatold = ptilde.logpdf(fcst_error(t).T)
+                if t < nobs-1:
+                    phat = ptilde.logpdf(fcst_error(t+1).T)
 
-                U,s,V = sp.linalg.svd(Pt)
-                L = U.dot(np.diag(np.sqrt(s)))
-                eps = np.random.normal(size=(ns,npart))
-                St[t+1,...] = Stbar + L.dot(eps)
 
-                d = np.diag(L)
+                    
+            nut = (np.tile(demeaned_data[t].T, (1, npart))
+                           - ZZ.dot(St[t+1,...]))
 
-                iPt = np.linalg.pinv(Pt,rcond=rcond)
-                logdetPt = np.sum(np.log(s[s>rcond]))
-
-                nx = np.sum(np.sqrt(s)>rcond)
-
-                eta =  St[t+1,...] - Stbar
-                lng = (-0.5*nx*np.log(2.0*np.pi) - 0.5*logdetPt
-                       -0.5*np.einsum('ji,ji->i',np.dot(iPt,eta),eta))
-
-            nut = (np.tile((data[t, :] - np.squeeze(DD)).T, (1, npart))
-                   - ZZ.dot(St[t+1,...]))
-
-            incwt[t,:] = (-0.5*ny*np.log(2.0*np.pi) - 0.5*logdetH
-                          -0.5*np.einsum('ji,ji->i',np.dot(iH,nut),nut))
+            incwt[t,:] = py.logpdf(nut.T)
 
             if filt=='cond-opt':
-                from scipy.stats import norm
                 eta = St[t+1,...] - TT.dot(St[t,...])
                 lnps = (-0.5*neps*np.log(2.0*np.pi) - 0.5*detRQR
                         -0.5*np.einsum('ji,ji->i', np.dot(iRQR,eta),eta))
                 incwt[t,:] = incwt[t,:] + lnps - lng
+                
+            elif filt=='auxsimp':
+                incwtaux = incwt[t,:] - phatold
+                incwt[t, :] = incwt[t,:] + phat - phatold
 
             # Equation 7.7
             wtsim[t+1,:] = np.exp(incwt[t,:]) * wtsim[t,:]
             wtsim[t+1,:] = wtsim[t+1,:]/np.mean(wtsim[t+1,:])
 
             ESS[t] = npart / np.mean(wtsim[t+1,:]**2)
+            loglh[t] = np.log(np.mean(np.exp(incwt[t,:])*wtsim[t,:]))
+            
+            if filt=='auxsimp':
+                if t==0:
+                    loglh[t] = (np.log(np.mean(np.exp(phatold))) +
+                                np.log(np.mean(np.exp(incwtaux)*wtsim[t,:])))
+                    loglhalt[t] = np.log(np.mean(np.exp(incwt[t, :])*wtsim[t, :])) + np.log(np.mean(np.exp(phatold)))
+                elif t==nobs-1:
+                    loglh[t] = (-np.log(np.mean((1/np.exp(phatold))*wtsim[t, :])) + 
+                                np.log(np.mean(np.exp(incwtaux)*wtsim[t,:])) )
 
-            print t,ESS
+                    loglhalt[t] = np.log(np.mean(np.exp(incwtaux)*wtsim[t, :]))
+                else:
+                    loglh[t] = (-np.log(np.mean((1/np.exp(phatold))*wtsim[t, :])) + 
+                                np.log(np.mean(np.exp(incwtaux)*wtsim[t,:])) )
+                    loglhalt[t] = np.log(np.mean(np.exp(incwt[t, :])*wtsim[t, :]))
+
+                    #loglhalt[t] = 
             if ESS[t] < npart/2:
-                from fortran import resampling
-                resamp = resampling.resampling.multinomial_resampling
-                ind = resamp(wtsim[t+1,:]/sum(wtsim[t+1,:]), np.random.rand(npart))
+                from fortran import filter
+                resamp = filter.filter.sys_resampling
+                ind = resamp(wtsim[t+1,:]/sum(wtsim[t+1,:]), np.random.rand())
                 if ns == 1:
                     St[t+1,...] = np.squeeze(St[t+1,:,ind-1])
                 else:
                     St[t+1,...] = St[t+1,...][:,ind-1]
+
                 wtsim[t+1,:] = 1
-
-
-
-            loglh[t] = np.log(np.mean(np.exp(incwt[t,:])*wtsim[t,:]))
-            print loglh[0]
-            fjdsakfld
+                wtsim[t, :] = wtsim[t, ind-1]
+                incwt[t, :] = incwt[t, ind-1]
+                if t > 0:
+                    wtsim[t-1, :] = wtsim[t-1, ind-1]
+                    incwt[t-1, :] = incwt[t-1, ind-1]
+                            
         filtered_states = TT.dot(St[:-1,...,...]) * wtsim[:-1,:]
         filtered_states = filtered_states.mean(2).T
 
@@ -199,10 +318,12 @@ class StateSpaceModel(object):
 
         results = {}
         results['log_lik'] = loglh
+        results['log_likalt'] = loglhalt
         results['ESS'] = ESS
         results['filtered_states'] = filtered_states
-        results['St'] = St
-        results['wt'] = wtsim
+        results['St'] = St[t+1, ...]
+        results['wt'] = wtsim[t+1, ...]
+        results['incwt'] = incwt
         return results
 
     def system_matrices(self, para, *args, **kwargs):
@@ -248,19 +369,19 @@ class StateSpaceModel(object):
 
         return p.Panel(irfs)
 
-    def simulate(self, para, nsim, *args, **kwargs):
+    def simulate(self, para, nsim=200, *args, **kwargs):
 
         TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
-
         ysim  = np.zeros((nsim*2, DD.size))
-
         At = np.zeros((TT.shape[0],))
 
         for i in range(nsim*2):
             e = np.random.multivariate_normal(np.zeros((QQ.shape[0])), QQ)
             At = TT.dot(At) + RR.dot(e)
 
-            ysim[i, :] = DD.T + ZZ.dot(At)
+            h = np.random.multivariate_normal(np.zeros((HH.shape[0])), HH)
+            At = np.asarray(At).squeeze()
+            ysim[i, :] = DD.T + ZZ.dot(At) + np.atleast_2d(h) 
 
         return ysim[nsim:, :]
 
@@ -443,7 +564,8 @@ class LinearDSGEModel(StateSpaceModel):
 
     def __init__(self, yy, GAM0, GAM1, PSI, PPI,
                  QQ, DD, ZZ, HH, t0=0,
-                 shock_names=None, state_names=None, obs_names=None):
+                 shock_names=None, state_names=None, obs_names=None,
+                 prior=None):
 
         if len(yy.shape) < 2:
             yy = np.swapaxes(np.atleast_2d(yy), 0, 1)
@@ -465,6 +587,8 @@ class LinearDSGEModel(StateSpaceModel):
         self.state_names = state_names
         self.obs_names = obs_names
 
+        self.prior = prior
+
     def solve_LRE(self, para, *args, **kwargs):
 
         G0 = self.GAM0(para, *args, **kwargs)
@@ -473,8 +597,14 @@ class LinearDSGEModel(StateSpaceModel):
         PPI = self.PPI(para, *args, **kwargs)
         C0 = np.zeros(G0.shape[0])
 
-        TT, CC, RR, fmat, fwt, ywt, gev, RC, loose = gensys.gensys_wrapper.call_gensys(G0, G1, C0, PSI, PPI, 1.00000000001)
+        nf = PPI.shape[1]
 
+        if nf > 0:
+            TT, CC, RR, fmat, fwt, ywt, gev, RC, loose = gensys.gensys_wrapper.call_gensys(G0, G1, C0, PSI, PPI, 1.00000000001)
+        else:
+            TT = np.linalg.inv(G0).dot(G1)
+            RR = np.linalg.inv(G0).dot(PSI)
+            RC = 1
         return TT, RR, RC
 
     def system_matrices(self, para, *args, **kwargs):
@@ -488,7 +618,20 @@ class LinearDSGEModel(StateSpaceModel):
 
         return TT, RR, QQ, DD, ZZ, HH
 
+    def log_pr(self, para, *args, **kwargs):
+        try:
+            return self.prior.logpdf(para)
+        except:
+            pass
+            #raise("no prior specified")
+    def log_post(self, para, *args, **kwargs):
+        x = self.log_lik(para) + self.log_pr(para)
+        if np.isnan(x):
+            x = -1000000000
+        return x
 
+            
+        
 if __name__ == '__main__':
 
     import numpy as np

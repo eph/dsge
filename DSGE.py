@@ -260,6 +260,7 @@ class DSGE(dict):
         ZZ = self.ZZ
         HH = self.HH
 
+
         datafile = self['__data__']['estimation']['data']
 
         if type(datafile)==dict:
@@ -278,18 +279,55 @@ class DSGE(dict):
 
             data = np.genfromtxt(datafile, missing_values='NaN', **delim_dict)
 
-        data = p.DataFrame(data[:, :len(self['observables'])], columns=map(lambda x: str(x), self['observables']))
+        if len(self['observables']) > 1:
+            data = p.DataFrame(data[:, :len(self['observables'])], columns=map(lambda x: str(x), self['observables']))
+        else:
+            data = p.DataFrame(data, columns=map(lambda x: str(x), self['observables']))
 
         if startdate is not 0:
             nobs = data.shape[0]
             data.index = p.period_range(startdate, freq='Q', periods=nobs)
 
+        prior = None
+        if 'prior' in self['__data__']['estimation']:
+            prior_type = ['beta', 'gamma', 'normal', 'inv_gamma', 'uniform', 'fixed']
+            prior = []
+            for par in self.parameters:
+                prior_spec = self['__data__']['estimation']['prior'][par.name]
 
+                ptype = prior_spec[0]
+                pmean = prior_spec[1]
+                pstdd = prior_spec[2]
+                from scipy.stats import beta, norm, uniform, gamma
+                from OtherPriors import InvGamma
+                if ptype=='beta':
+                    a = (1-pmean)*pmean**2/pstdd**2 - pmean
+                    b = a*(1/pmean - 1)
+                    prior.append(beta(a, b))
+                if ptype=='gamma':
+                    b = pstdd**2/pmean
+                    a = pmean/b
+                    prior.append(gamma(a, scale=b))
+                if ptype=='normal':
+                    a = pmean
+                    b = pstdd
+                    prior.append(norm(loc=a, scale=b))
+                if ptype=='inv_gamma':
+                    a = pmean
+                    b = pstdd
+                    prior.append(InvGamma(a, b))
+                if ptype=='uniform':
+                    a = pmean
+                    b = pstdd
+                    prior.append(uniform(loc=a, scale=b))
+                    
+        from Prior import Prior as pri
         dsge = LinearDSGEModel(data, GAM0, GAM1, PSI, PPI,
                                QQ, DD, ZZ, HH, t0=0,
                                shock_names=map(lambda x: str(x), self.shocks),
                                state_names=map(lambda x: str(x), self.variables+self['fvars']),
-                               obs_names=map(lambda x: str(x), self['observables']))
+                               obs_names=map(lambda x: str(x), self['observables']),
+                               prior=pri(prior))
 
         return dsge
 
@@ -394,14 +432,16 @@ class DSGE(dict):
         self.__write_dec_file(os.path.join(odir, self.name+"_dec.m"))
 
 
-        datafile = self['__data__']['estimation']['data']
-        data = np.genfromtxt(datafile, delimiter=',', missing_values='NaN')
-
-        datafile = os.path.join(odir, "yy.txt")
-        np.savetxt(datafile, data)
-
-
         if 'estimation' in self['__data__']:
+            datafile = self['__data__']['estimation']['data']
+            data = np.genfromtxt(datafile, delimiter=',', missing_values='NaN')
+
+            datafile = os.path.join(odir, "yy.txt")
+            np.savetxt(datafile, data)
+
+
+
+
             prior_type = ['beta', 'gamma', 'normal', 'inv_gamma', 'uniform', 'fixed']
             prior = self['__data__']['estimation']['prior']
             pfile = open(os.path.join(odir, self.name+"_prior.txt"), 'w')
@@ -661,7 +701,7 @@ end
         #------------------------------------------------------------
         # SMC FILE
         #------------------------------------------------------------
-        smcfile = open('/mq/home/m1eph00/code/test/python_compiler/templates/smc_driver_mpi.f90', 'r')
+        smcfile = open('/mq/home/m1eph00/python-repo/dsge/templates/smc_driver_mpi.f90', 'r')
         smc_driver = smcfile.read()
         smcfile.close()
 
@@ -673,7 +713,7 @@ end
         #------------------------------------------------------------
         # RWMH
         #------------------------------------------------------------
-        rwmhfile = open('/mq/home/m1eph00/code/test/python_compiler/templates/rwmh_driver.f90', 'r')
+        rwmhfile = open('/mq/home/m1eph00/python-repo/dsge/templates/rwmh_driver.f90', 'r')
         rwmh_driver = rwmhfile.read()
         rwmhfile.close()
 
@@ -685,7 +725,7 @@ end
         #------------------------------------------------------------
         # Block MCMC
         #------------------------------------------------------------
-        rwmhfile = open('/mq/home/m1eph00/code/test/python_compiler/templates/blockmcmc.f90', 'r')
+        rwmhfile = open('/mq/home/m1eph00/python-repo/dsge/templates/blockmcmc.f90', 'r')
         rwmh_driver = rwmhfile.read()
         rwmhfile.close()
 
@@ -699,7 +739,7 @@ end
         #------------------------------------------------------------
         # MAKEFILE
         #------------------------------------------------------------
-        makefile = open('/mq/home/m1eph00/code/test/python_compiler/templates/Makefile_dsge', 'r')
+        makefile = open('/mq/home/m1eph00/python-repo/dsge/templates/Makefile_dsge', 'r')
         make = makefile.read()
         makefile.close()
 
@@ -728,7 +768,11 @@ end
 
             data = np.genfromtxt(datafile, missing_values='NaN', **delim_dict)
 
-        nobs, ny = data.shape
+        if len(data.shape) > 1:
+            nobs, ny = data.shape
+        else:
+            nobs = data.shape[0]
+            ny = 1
 
         # if not ny == self.nobs_vars:
         #     print "ERROR SECTOR 12"
@@ -958,7 +1002,8 @@ module {name}
 
   use prior
   use filter
-
+  use particle_filter
+        
   use gensys
 
 

@@ -1,13 +1,13 @@
-
+user=m1eph00
 ifeq ($(user),m1eph00)
-	FFLAGS =  -O3 -xHost -ipo -fPIC -L/mq/home/m1eph00/nlopt/lib -lnlopt -L/mq/home/m1eph00/lib/mkl -lmkl_lapack95_lp64 -lmkl_intel_lp64 -lmkl_intel_thread -lmkl_core -openmp -lpthread -heap-arrays
-	INCLUDE = -I/opt/intel/mkl/include -I/opt/intel/mkl/include/intel64/lp64/  -I/opt/intel/include -I/mq/home/m1eph00/nlopt/include
+	FFLAGS=-O3 -xHost -ipo -fPIC -L/mq/home/m1eph00/nlopt/lib -lnlopt -L/mq/home/m1eph00/lib/mkl -lmkl_lapack95_lp64 -lmkl_intel_lp64 -lmkl_intel_thread -lmkl_core -openmp -lpthread -heap-arrays
+	INCLUDE=-I/opt/intel/mkl/include -I/opt/intel/mkl/include/intel64/lp64/  -I/opt/intel/include -I/mq/home/m1eph00/nlopt/include
 	VPATH=.:/mq/home/m1eph00/code/fortran/base
 	FC=ifort
 
-	F2PYFLAGS=-I/opt/intel/mkl/include -I/opt/intel/mkl/include/intel64/lp64/ -L/mq/home/m1eph00/lib/mkl  -lmkl_intel_lp64 -lmkl_intel_thread -lmkl_core -lmkl_mc -lmkl_p4n -lmkl_mc3 -lmkl_def -lmkl_vml_mc -lmkl_vml_mc3 -liomp5 -lpthread   --compiler=intel --fcompiler=intelem
+	F2PYFLAGS=-I/opt/intel/mkl/include/ -I/opt/intel/include -I/opt/intel/mkl/include/em64t/lp64 -I/opt/intel/mkl/include/intel64/lp64/ -L/mq/home/m1eph00/lib/mkl  -lmkl_intel_lp64 -lmkl_intel_thread -lmkl_core -lmkl_mc -lmkl_p4n -lmkl_mc3 -lmkl_def -lmkl_vml_mc -lmkl_vml_mc3 -liomp5 -lpthread  --compiler=intel --fcompiler=intelem
 
-	SLICOT=-lslicot_sequential
+	SLICOT=-L/mq/home/m1eph00/lib -lslicot_sequential
 else
 	FFLAGS=-llapack -lblas
 	INCLUDE=
@@ -33,4 +33,7 @@ resampling : resampling.f90
 
 cholmod : cholmod.f90
 	f2py -c --opt=-O3 $(F2PYFLAGS) cholmod.f90 -m cholmod
+filter : kf_fortran.f90
+	f2py -c --opt=-O3 $(F2PYFLAGS) $(SLICOT) kf_fortran.f90 -m filter
+
 # for debug --debug-capi
