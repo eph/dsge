@@ -3,7 +3,7 @@
 !! Description: Driver for the RWMH simulator.
 !! 
 !! Author: Ed Herbst [edward.p.herbst@frb.gov]
-!! Last-Updated: 01/08/14
+!! Last-Updated: 01/22/15
 !! 
 program rwmh_driver
   use mkl95_precision, only: wp => dp
@@ -224,7 +224,7 @@ program rwmh_driver
      end do
   end select
         
-  lik0 = objfun_piexp(p0)
+  lik0 = objfun(p0)
   print*,lik0!,objfun(p0)
 
   ! Use a prespecificed starting location.
@@ -256,7 +256,7 @@ program rwmh_driver
 
   call system_clock(start_time)
   allocate(parasim(npara, nsim), postsim(nsim),acptsim(nsim))
-  call rwmh(p0, c**2*proposal_chol, nsim, objfun_piexp, npara, pmask, parasim, postsim, acptsim, nblocks,blockfile, folder)
+  call rwmh(p0, c**2*proposal_chol, nsim, objfun, npara, pmask, parasim, postsim, acptsim, nblocks,blockfile, folder)
   deallocate(parasim, postsim,acptsim)
   call system_clock(finish_time)
   write(*,'(a,f7.3,a)') "Elapsed time is ", (finish_time-start_time)/rate, " seconds."
