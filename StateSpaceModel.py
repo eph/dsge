@@ -42,9 +42,25 @@ class StateSpaceModel(object):
         if P0=='unconditional':
             P0, info = dlyap.dlyap(TT, RR.dot(QQ).dot(RR.T))
 
-        lik = kalman.kalman_filter(yy.T, TT, RR, QQ, DD, ZZ, HH, P0)
+        lik = filter.filter.kalman_filter(yy.T, TT, RR, QQ, DD, ZZ, HH, P0)
 
         return lik
+
+    def log_quasilik_hstep(self, para, h=4, *args, **kwargs):
+
+        t0 = kwargs.pop('t0', self.t0)
+        yy = kwargs.pop('y', self.yy)
+        P0 = kwargs.pop('P0', 'unconditional')
+
+        TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
+
+        if P0=='unconditional':
+            P0, info = dlyap.dlyap(TT, RR.dot(QQ).dot(RR.T))
+
+        lik = filter.filter.kalman_filter_hstep_quasilik(yy.T, TT, RR, QQ, DD, ZZ, HH, P0, h)
+
+        return lik
+
 
     def kf_everything(self, para, *args, **kwargs):
         t0 = kwargs.pop('t0', self.t0)
@@ -53,7 +69,7 @@ class StateSpaceModel(object):
         TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
 
         f = filter.filter.kalman_filter_missing_with_states
-        loglh, filtered_states, smoothed_states = f(yy.T, TT, RR, QQ, DD, ZZ, HH, t0)
+        loglh, filtered_states, smoothed_states = f(yy.T, TT, RR, QQ, DD.squeeze(), ZZ, HH, t0)
 
         results = {}
         results['log_lik'] = p.DataFrame(loglh, columns=['log_lik'])
@@ -63,8 +79,41 @@ class StateSpaceModel(object):
         filtered_states.index = yy.index
         results['filtered_states'] = filtered_states
 
+        smoothed_states = p.DataFrame(smoothed_states, columns=self.state_names)
+        smoothed_states.index = yy.index
+        results['smoothed_states'] = smoothed_states
+
         return results
 
+    def pred(self, para, h=20, shocks=True, append=False, *args, **kwargs):
+
+        yy = kwargs.pop('y', self.yy)
+        res = self.kf_everything(para, y=yy, *args, **kwargs)
+
+        TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)        
+
+
+
+        At = res['smoothed_states'].iloc[-1].values
+        ysim  = np.zeros((h, DD.size))
+
+        index0 = res['smoothed_states'].index[-1]+1
+        index = []
+        for i in range(h):
+            e = np.random.multivariate_normal(np.zeros((QQ.shape[0])), QQ)
+            At = TT.dot(At) + shocks*RR.dot(e)
+
+            h = np.random.multivariate_normal(np.zeros((HH.shape[0])), HH)
+            At = np.asarray(At).squeeze()
+            ysim[i, :] = DD.T + ZZ.dot(At) + shocks*np.atleast_2d(h) 
+            index.append(index0+i) 
+
+        ysim = p.DataFrame(ysim, columns=self.obs_names, index=index)
+
+        if append:
+            ysim = self.yy.append(ysim)
+        return ysim
+        
     def log_lik_pff(self, para, *args, **kwargs):
 
         t0 = kwargs.pop('t0', self.t0)
@@ -191,8 +240,6 @@ class StateSpaceModel(object):
         ESS = np.zeros((nobs))
         loglh = np.zeros((nobs))
         loglhalt = np.zeros((nobs))
-
-
 
 
 
@@ -386,7 +433,7 @@ class StateSpaceModel(object):
         return ysim[nsim:, :]
 
 
-    def forecast(self, para, h=20, *args, **kwargs):
+    def forecast(self, para, h=20, shocks=True, *args, **kwargs):
         t0 = kwargs.pop('t0', self.t0)
         yy = kwargs.pop('y', self.yy)
         P0 = kwargs.pop('P0', 'unconditional')
@@ -454,7 +501,6 @@ class StateSpaceModel(object):
         results['one_step_forecast'] = []
         results['log_lik'] = loglh
 
-        #results['updated_states'] =
         return results
 
 

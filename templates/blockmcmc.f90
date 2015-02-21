@@ -3,7 +3,7 @@
 !! Description: Driver for the block MH sampler.
 !! 
 !! Author: Ed Herbst [edward.p.herbst@frb.gov]
-!! Last-Updated: 01/28/14
+!! Last-Updated: 01/27/15
 !! 
 program blockmcmc
 
@@ -116,7 +116,7 @@ program blockmcmc
 
   p0 = pmsv()
 
-
+  fstr = '/mq/scratch/m1eph00/'
   !------------------------------
   ! Threading Options
   !------------------------------
@@ -205,7 +205,8 @@ program blockmcmc
      case('-s','--sbar')
         call get_command_argument(i+1,arg)
         read(arg, '(f)') sbar
-
+     case('--output-dir')
+        call get_command_argument(i+1,fstr)
 
      case('--langevin')
         mumethod = 'langevin'
@@ -242,7 +243,7 @@ program blockmcmc
            read(1,*) M(j,:)
         end do
         close(1)
-     case('-p0')
+     case('--p0')
         call get_command_argument(i+1,mfile)
         open(1, file=mfile, status='old',action='read')
         do j = 1, npara
@@ -269,7 +270,7 @@ program blockmcmc
   end if
   write(cirep,'(i)') irep
 
-  fstr = '/mq/scratch/m1eph00/mc-'//trim(adjustl(mname)) &
+  fstr = trim(adjustl(fstr))//'mc-'//trim(adjustl(mname)) &
        //'-'//trim(adjustl(mumethod))//'-nsim-' &
        //trim(adjustl(cnsim))//'-nblocks-'//trim(adjustl(cnblocks)) &
        //'-trial-'//trim(adjustl(cirep))//'/'
@@ -309,6 +310,12 @@ program blockmcmc
   open(1,file=trim(adjustl(fstr))//'parasim.txt',action='write')
   do i = 1, nsim
      write(1,'(100f)') parasim(:,i)
+  end do
+  close(1)
+
+  open(1,file=trim(adjustl(fstr))//'postsim.txt',action='write')
+  do i = 1, nsim
+     write(1,'(100f)') postsim(i)
   end do
   close(1)
   print*,'finished writing files to ...'

@@ -19,7 +19,7 @@ smc_driver_mpi : prior.o smc_driver_mpi.f90 rand.o {model}.o filter.o gensys.o m
 	$(MPIFC) $(FFLAGS) $(INCLUDE) -o smc_{model} rand.o hessian.o mcmc.o particle_filter.o filter.o gensys.o as63.o prior.o {model}.o smc_driver_mpi.f90 $(LIBPATH) $(LIB)
 
 rwmh_driver : prior.o rwmh_driver.f90 rand.o {model}.o mcmc.o hessian.o filter.o gensys.o particle_filter.o
-	$(MPIFC) $(FFLAGS) $(INCLUDE) -o rwmh_{model} rand.o hessian.o mcmc.o as63.o prior.o particle_filter.o filter.o gensys.o {model}.o rwmh_driver.f90 $(LIBPATH) $(LIB) 
+	$(FC) $(FFLAGS) $(INCLUDE) -o rwmh_{model} rand.o hessian.o mcmc.o as63.o prior.o particle_filter.o filter.o gensys.o {model}.o rwmh_driver.f90 $(LIBPATH) $(LIB) 
 
 blockmcmc_driver: prior.o blockmcmc.f90 rand.o {model}.o mcmc.o hessian.o filter.o gensys.o particle_filter.o
 	$(MPIFC) $(FFLAGS) $(INCLUDE) -o blockmcmc_{model} particle_filter.o rand.o hessian.o mcmc.o as63.o prior.o filter.o gensys.o {model}.o blockmcmc.f90 $(LIBPATH) $(LIB) 

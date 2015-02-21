@@ -3,7 +3,7 @@
 !! Description: Driver for the RWMH simulator.
 !! 
 !! Author: Ed Herbst [edward.p.herbst@frb.gov]
-!! Last-Updated: 01/22/15
+!! Last-Updated: 01/27/15
 !! 
 program rwmh_driver
   use mkl95_precision, only: wp => dp
@@ -16,7 +16,7 @@ program rwmh_driver
   
   implicit none
 
-  include 'mpif.h'
+!  include 'mpif.h'
 
 !!$  abstract interface
 !!$     function func (x)
@@ -63,13 +63,11 @@ program rwmh_driver
   basedir   = '/mq/scratch/m1eph00/'
   p0file    = 'pmsv'
 
-!!$  open(1, file=varfile, status='old', action='read')
-!!$  proposal_chol = 0.0_wp
-!!$  do i = 1, npara
-!!$     read(1, *) proposal_chol(i,:)
-!!$  end do
-!!$  close(1)
 
+  proposal_chol = 0.0_wp
+  do i = 1, npara
+     proposal_chol(i,i) = 1.0_wp
+  end do
 
 
   call omp_set_num_threads(1)
@@ -152,9 +150,9 @@ program rwmh_driver
 
 
 
-  call mpi_init(mpierror)
-  call mpi_comm_size(MPI_COMM_WORLD, nproc, mpierror)
-  call mpi_comm_rank(MPI_COMM_WORLD, rank, mpierror)
+!  call mpi_init(mpierror)
+!  call mpi_comm_size(MPI_COMM_WORLD, nproc, mpierror)
+!  call mpi_comm_rank(MPI_COMM_WORLD, rank, mpierror)
 
   irep = irep + rank 
   write(cirep, '(i2)') irep
@@ -256,12 +254,12 @@ program rwmh_driver
 
   call system_clock(start_time)
   allocate(parasim(npara, nsim), postsim(nsim),acptsim(nsim))
-  call rwmh(p0, c**2*proposal_chol, nsim, objfun, npara, pmask, parasim, postsim, acptsim, nblocks,blockfile, folder)
+  call rwmh(p0, c**2*proposal_chol, nsim, objfun, npara, pmask, parasim, postsim, acptsim, nblocks,blockfile,folder)
   deallocate(parasim, postsim,acptsim)
   call system_clock(finish_time)
   write(*,'(a,f7.3,a)') "Elapsed time is ", (finish_time-start_time)/rate, " seconds."
 
-  call mpi_barrier(MPI_COMM_WORLD, mpierror)
-  call mpi_finalize(mpierror)
+!  call mpi_barrier(MPI_COMM_WORLD, mpierror)
+!  call mpi_finalize(mpierror)
 
 end program rwmh_driver

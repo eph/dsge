@@ -1,7 +1,7 @@
 ! smc_driver_mpi.f90 -- MPI driver for Sequential Monte Carlo Algorithm
 !   Ed Herbst [edward.p.herbst@frb.gov]
 
-program smc_driver
+program smc_driver_mixed
   use mkl95_precision, only: wp => dp
 
   use mcmc
@@ -54,6 +54,8 @@ program smc_driver
   real(wp), allocatable :: uu(:), u(:), eps(:,:)
   real(wp) :: mu(npara), var(npara, npara), scale, ahat, zero_vec(npara)
   integer, allocatable :: paraind(:)
+
+  integer :: start_geweke, ngeweke
 
   ! containers
   real(wp), allocatable :: arate(:,:), loglh(:), prio(:), ESS(:), zi(:), loglhold(:)
@@ -133,6 +135,9 @@ program smc_driver
      call get_command_argument(i, arg)
 
      select case(arg)
+     case('--start-geweke')
+        call get_command_argument(i+1, arg)
+        read(arg, '(i)') start_geweke
      case('-p', '--nphi')
         call get_command_argument(i+1, arg)
         read(arg, '(i)') nphi 
@@ -239,27 +244,29 @@ program smc_driver
   call read_in_from_files()
 
 
+  ngeweke = nobs - start_geweke + 1 
+
 
 
   !-------------------------------------------------------------------------
   ! create heating schedule and check mod(npart/nproc) == 0
   !  see the middle of page 9
   !-------------------------------------------------------------------------
-  allocate(phi(nphi))
-  if (do_geweke==.true.) then
-     phi = 1.0_wp
-  else
-     do i = 1, nphi
-        phi(i) = (i-1.0_wp)/(nphi - 1.0_wp)
-     end do
+  allocate(phi(nphi+ngeweke))
 
-     if (phi_bend == .true.) then
-        if (rank == 0) then 
-           print*,'bending phi'
-        end if
-        phi = phi**bcoeff
+  phi = 1.0_wp
+
+  do i = 1, nphi
+     phi(i) = (i-1.0_wp)/(nphi - 1.0_wp)
+  end do
+
+  if (phi_bend == .true.) then
+     if (rank == 0) then 
+        print*,'bending phi'
      end if
+     phi = phi**bcoeff
   end if
+  
 
   !-------------------------------------------------------------------------
   ! allocate memory on nodes
@@ -268,7 +275,7 @@ program smc_driver
   allocate(nodepara(npara,ngap), nodeloglh(ngap), nodewt(ngap), & 
        nodeprio(ngap), nodeacpt(npara,ngap), nodevar(npara,npara))
   nodeacpt = 0
-  allocate(ESS(nphi), zi(nphi))
+  allocate(ESS(nphi+ngeweke), zi(nphi+ngeweke))
 
 
   fstr = trim(basedir)//trim(fstr)
@@ -284,7 +291,7 @@ program smc_driver
      phifile = trim(fstr)//'/phi.txt'
 
      open(1, file=phifile, action='write')
-     do i = 1, nphi
+     do i = 1, nphi+ngeweke
         write(1, '(1f)') phi(i)
      end do
      close(1)
@@ -313,12 +320,12 @@ program smc_driver
      method=VSL_METHOD_DGAUSSIANMV_ICDF
      mstorage=VSL_MATRIX_STORAGE_FULL
 
-     allocate(uu(nphi*npart), u(npart*nphi*nintmh*nblocks))
+     allocate(uu((nphi+ngeweke)*npart), u(npart*(nphi+ngeweke)*nintmh*nblocks))
      errcode = vslnewstream(stream, brng, seed)
-     errcode = vdrnguniform(methodu, stream, nphi*npart, uu, 0.0_wp, 1.0_wp)
-     errcode = vdrnguniform(methodu, stream, npart*nphi*nintmh*nblocks, u, 0.0_wp, 1.0_wp)
+     errcode = vdrnguniform(methodu, stream, (nphi+ngeweke)*npart, uu, 0.0_wp, 1.0_wp)
+     errcode = vdrnguniform(methodu, stream, npart*(nphi+ngeweke)*nintmh*nblocks, u, 0.0_wp, 1.0_wp)
 
-     allocate(arate(nphi, npara))
+     allocate(arate(nphi+ngeweke, npara))
      arate(:,:) = 0.0_wp
 
      call write_model_para(fstr)
@@ -356,7 +363,7 @@ program smc_driver
   if (rank == 0) then 
      allocate(parasim(npara, npart), wtsim(npart), loglh(npart),&
           & prio(npart), incwt(npart), wtsq(npart),loglhold(npart))
-     allocate(paraind(npart), acptsim(npara,npart),resamp(nphi))
+     allocate(paraind(npart), acptsim(npara,npart),resamp(nphi+ngeweke))
      parasim = transpose(priorrand(npart, pshape, pmean, pstdd, pmask, pfix, stream0=stream))
 
      write(*,'(a$)') 'Evaluating initial likelihoods. '
@@ -377,8 +384,8 @@ program smc_driver
 
 
 
-  allocate(nodeu(ngap*nintmh*nphi*nblocks))
-  call mpi_scatter(u, ngap*nphi*nintmh*nblocks, MPI_DOUBLE_PRECISION, nodeu, ngap*nphi*nintmh*nblocks, &
+  allocate(nodeu(ngap*nintmh*(nphi+ngeweke)*nblocks))
+  call mpi_scatter(u, ngap*(nphi+ngeweke)*nintmh*nblocks, MPI_DOUBLE_PRECISION, nodeu, ngap*(nphi+ngeweke)*nintmh*nblocks, &
        MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, mpierror)
 
 
@@ -404,7 +411,7 @@ program smc_driver
      if (fixed_hyper==.true.) then
         rfile = trim(hyp_fstr)//'/'//'resamp.txt'
         open(1,file=rfile,action='read')
-        do i = 1,nphi
+        do i = 1,nphi+ngeweke
            read(1,*) resamp(i)
         end do
         close(1)
@@ -415,7 +422,9 @@ program smc_driver
   !-----------------------------------------------------------------------------
   ! BEGIN SEQUENTIAL MONTE CARLO 
   !-----------------------------------------------------------------------------
-  do i = 2, nphi
+  do i = 2, nphi + ngeweke
+
+     if (i > nphi) do_geweke = .true.
 
 
      !------------------------------------------------------------
@@ -561,9 +570,9 @@ program smc_driver
            call write_files(i)
         end if
 
-        if (do_geweke==.true.) then
-           loglhold = loglh
-        end if
+        !if (do_geweke==.true.) then
+        loglhold = loglh
+        !end if
      endif
 
      call mpi_bcast(scale, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, mpierror)
@@ -591,7 +600,7 @@ program smc_driver
      open(1,file=rfile,action='write')
      open(2,file=essfile,action='write')
 
-     do i = 1,nphi
+     do i = 1,nphi+ngeweke
         write(1,'(i)') resamp(i)
         write(2,'(f)') ESS(i)
      end do
@@ -750,9 +759,9 @@ contains
 
              pr1 = pr(p1)
              if (do_geweke == .true.)   then
-                lik1 = likT(p1,i-1)
+                lik1 = likT(p1,i-1-nphi+start_geweke)
              else
-                lik1 = lik(p1)
+                lik1 = likT(p1,start_geweke)
              end if
 
              alp = exp(phi(i)*(lik1 - lik0) + pr1 - pr0 + q0 - q1)
@@ -799,7 +808,7 @@ contains
        if (do_geweke == .true.)   then
           lik0 = likT(p(:,i),1)
        else
-          lik0 = lik(p(:,i))
+          lik0 = likT(p(:,i),start_geweke)
        end if
 
        if (isnan(lik0)) then
@@ -812,7 +821,7 @@ contains
           if (do_geweke == .true.)   then
              lik0 = likT(p2(j,:),1)
           else
-             lik0 = lik(p2(j,:))
+             lik0 = lik(p2(j,:),start_geweke) !lik0 = lik(p2(j,:))
           end if
           
 
@@ -852,7 +861,7 @@ contains
 
 
     do ilik = 1, neval
-       lk(ilik) = likT(p(:,ilik),i-1)
+       lk(ilik) = likT(p(:,ilik),i-1-nphi+start_geweke)
     end do
 
   end subroutine evaluate_time_t_lik
@@ -1072,4 +1081,4 @@ contains
     print '(a)', '-i, --initrep [N]     sets the trial number = N           DEFAULT = 1'
     print '(a)', ''
   end subroutine print_help
-end program smc_driver
+end program smc_driver_mixed

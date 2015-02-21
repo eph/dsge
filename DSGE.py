@@ -211,7 +211,7 @@ class DSGE(dict):
             context[str(p)] = ss[str(p)]
             print "\r Constructing substitution dictionary [{0:20s}]".format(p.name),
         sys.stdout.flush()
-
+        print ""
 
         GAM0 = lambdify(self.parameters+self['other_para'], GAM0)
         GAM1 = lambdify(self.parameters+self['other_para'], GAM1)
