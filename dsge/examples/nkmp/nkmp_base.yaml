@@ -85,7 +85,7 @@ calibration:
     meas_int : (2*0.2237937)^2
 
 estimation:
-  data: 'examples/nkmp/us.txt'
+  data: '/home/eherbst/from-work/dsge/dsge/examples/nkmp/us.txt'
 
   prior:
     tau : [gamma, 2.00, 0.5]

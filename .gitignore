@@ -5,3 +5,8 @@
 .ipynb_checkpoints/*
 *.pyf
 /fortran/cholmod.f90~
+/build/
+/dist/
+/dsge.egg-info/
+/nose-1.3.4-py2.7.egg/
+*~

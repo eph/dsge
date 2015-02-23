@@ -3,7 +3,7 @@ from __future__ import division
 import numpy as np
 import scipy as sp
 import pandas as p
-from fortran import dlyap, kalman, gensys, filter
+from fortran import dlyap, gensysw, filter
 from helper_functions import cholpsd
 
 
@@ -24,7 +24,7 @@ class StateSpaceModel(object):
         self.ZZ = ZZ
         self.HH = HH
 
-        
+
         self.t0 = t0
 
         self.shock_names = None
@@ -73,7 +73,7 @@ class StateSpaceModel(object):
 
         results = {}
         results['log_lik'] = p.DataFrame(loglh, columns=['log_lik'])
-        
+
         results['log_lik'].index = yy.index
         filtered_states = p.DataFrame(filtered_states, columns=self.state_names)
         filtered_states.index = yy.index
@@ -90,7 +90,7 @@ class StateSpaceModel(object):
         yy = kwargs.pop('y', self.yy)
         res = self.kf_everything(para, y=yy, *args, **kwargs)
 
-        TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)        
+        TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
 
 
 
@@ -105,15 +105,15 @@ class StateSpaceModel(object):
 
             h = np.random.multivariate_normal(np.zeros((HH.shape[0])), HH)
             At = np.asarray(At).squeeze()
-            ysim[i, :] = DD.T + ZZ.dot(At) + shocks*np.atleast_2d(h) 
-            index.append(index0+i) 
+            ysim[i, :] = DD.T + ZZ.dot(At) + shocks*np.atleast_2d(h)
+            index.append(index0+i)
 
         ysim = p.DataFrame(ysim, columns=self.obs_names, index=index)
 
         if append:
             ysim = self.yy.append(ysim)
         return ysim
-        
+
     def log_lik_pff(self, para, *args, **kwargs):
 
         t0 = kwargs.pop('t0', self.t0)
@@ -137,7 +137,7 @@ class StateSpaceModel(object):
             RRhat = Z.T.dot(RR)
             ishock = np.argwhere(abs(RRhat[nmin:, :]).sum(0)>1e-10).flatten()
             neshock = ishock.size
-             
+
             if neshock>0:
                 TThat = np.hstack((T[:nmin,:][:, :nmin], T[:nmin, :][:, nmin:].dot(RRhat[nmin:, :][:, ishock])))
                 TThat = np.vstack((TThat, np.zeros((neshock, nmin+neshock))))
@@ -145,21 +145,21 @@ class StateSpaceModel(object):
                 imat = np.zeros((TT.shape[0], neshock+nmin))
                 imat[:nmin, :][:, :nmin] = np.eye(nmin)
                 imat[nmin:, :][:, nmin:] = RRhat[nmin:, :][:, ishock]
-                
+
                 x = np.zeros((neshock, RR.shape[1]))
                 x[:, ishock] = np.eye(neshock)
-             
+
                 RRhat = np.vstack((RRhat[:nmin, :], x))
                 ZZhat = ZZ.dot(Z).dot(imat)
 
             else:
                 jfdsklf
-            
+
             loglh, filtered_states, smoothed_states = f(yy.T, TT, RR, QQ, DD, ZZ, HH, t0)
 
-            TT = TThat.copy() 
-            RR = RRhat.copy() 
-            ZZ = ZZhat.copy() 
+            TT = TThat.copy()
+            RR = RRhat.copy()
+            ZZ = ZZhat.copy()
 
 
         filti = {'bootstrap':0, 'cond-opt': 1}
@@ -175,7 +175,7 @@ class StateSpaceModel(object):
         filtered_states = p.DataFrame(filtered_states, columns=self.state_names)
         filtered_states.index = yy.index
         results['filtered_states'] = filtered_states
-        
+
         return results
 
 
@@ -194,7 +194,7 @@ class StateSpaceModel(object):
         seed = kwargs.pop('seed', None)
         scale = kwargs.pop('scale', 10)
         init_s_w = kwargs.pop('init_s_w', None)
-        
+
         TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
 
         if P0=='unconditional':
@@ -204,7 +204,7 @@ class StateSpaceModel(object):
             np.random.seed(seed)
 
         from scipy.stats import multivariate_normal
-        
+
         RQR = RR.dot(QQ).dot(RR.T)
         P0 = TT.dot(P0).dot(TT.T) + RQR
         nobs = data.shape[0]
@@ -233,7 +233,7 @@ class StateSpaceModel(object):
         incwt = np.zeros((nobs,npart))
         incwtaux = np.zeros((nobs,npart))
 
-        #------------------------------------------------------------ 
+        #------------------------------------------------------------
         # p(yt|st) [in terms of dev from mean]
         #------------------------------------------------------------
         py = multivariate_normal(cov=HH)
@@ -244,7 +244,7 @@ class StateSpaceModel(object):
 
 
 
-        #------------------------------------------------------------ 
+        #------------------------------------------------------------
         # Helper Functions
         #------------------------------------------------------------
         demeaned_data = data - np.tile(np.squeeze(DD), (nobs, 1))
@@ -258,7 +258,7 @@ class StateSpaceModel(object):
             pys = multivariate_normal(cov=Pt)
 
 
-        #------------------------------------------------------------ 
+        #------------------------------------------------------------
         # AUXILIARY PARTICLE FILTER
         #------------------------------------------------------------
         if filt == 'auxsimp':
@@ -289,13 +289,13 @@ class StateSpaceModel(object):
                 # Simulate
                 #------------------------------------------------------------
                 St[t+1,...] = TT.dot(St[t,...]) + ps.rvs(size=npart).T
-                
+
                 phatold = ptilde.logpdf(fcst_error(t).T)
                 if t < nobs-1:
                     phat = ptilde.logpdf(fcst_error(t+1).T)
 
 
-                    
+
             nut = (np.tile(demeaned_data[t].T, (1, npart))
                            - ZZ.dot(St[t+1,...]))
 
@@ -306,7 +306,7 @@ class StateSpaceModel(object):
                 lnps = (-0.5*neps*np.log(2.0*np.pi) - 0.5*detRQR
                         -0.5*np.einsum('ji,ji->i', np.dot(iRQR,eta),eta))
                 incwt[t,:] = incwt[t,:] + lnps - lng
-                
+
             elif filt=='auxsimp':
                 incwtaux = incwt[t,:] - phatold
                 incwt[t, :] = incwt[t,:] + phat - phatold
@@ -317,23 +317,23 @@ class StateSpaceModel(object):
 
             ESS[t] = npart / np.mean(wtsim[t+1,:]**2)
             loglh[t] = np.log(np.mean(np.exp(incwt[t,:])*wtsim[t,:]))
-            
+
             if filt=='auxsimp':
                 if t==0:
                     loglh[t] = (np.log(np.mean(np.exp(phatold))) +
                                 np.log(np.mean(np.exp(incwtaux)*wtsim[t,:])))
                     loglhalt[t] = np.log(np.mean(np.exp(incwt[t, :])*wtsim[t, :])) + np.log(np.mean(np.exp(phatold)))
                 elif t==nobs-1:
-                    loglh[t] = (-np.log(np.mean((1/np.exp(phatold))*wtsim[t, :])) + 
+                    loglh[t] = (-np.log(np.mean((1/np.exp(phatold))*wtsim[t, :])) +
                                 np.log(np.mean(np.exp(incwtaux)*wtsim[t,:])) )
 
                     loglhalt[t] = np.log(np.mean(np.exp(incwtaux)*wtsim[t, :]))
                 else:
-                    loglh[t] = (-np.log(np.mean((1/np.exp(phatold))*wtsim[t, :])) + 
+                    loglh[t] = (-np.log(np.mean((1/np.exp(phatold))*wtsim[t, :])) +
                                 np.log(np.mean(np.exp(incwtaux)*wtsim[t,:])) )
                     loglhalt[t] = np.log(np.mean(np.exp(incwt[t, :])*wtsim[t, :]))
 
-                    #loglhalt[t] = 
+                    #loglhalt[t] =
             if ESS[t] < npart/2:
                 from fortran import filter
                 resamp = filter.filter.sys_resampling
@@ -349,7 +349,7 @@ class StateSpaceModel(object):
                 if t > 0:
                     wtsim[t-1, :] = wtsim[t-1, ind-1]
                     incwt[t-1, :] = incwt[t-1, ind-1]
-                            
+
         filtered_states = TT.dot(St[:-1,...,...]) * wtsim[:-1,:]
         filtered_states = filtered_states.mean(2).T
 
@@ -428,7 +428,7 @@ class StateSpaceModel(object):
 
             h = np.random.multivariate_normal(np.zeros((HH.shape[0])), HH)
             At = np.asarray(At).squeeze()
-            ysim[i, :] = DD.T + ZZ.dot(At) + np.atleast_2d(h) 
+            ysim[i, :] = DD.T + ZZ.dot(At) + np.atleast_2d(h)
 
         return ysim[nsim:, :]
 
@@ -646,7 +646,7 @@ class LinearDSGEModel(StateSpaceModel):
         nf = PPI.shape[1]
 
         if nf > 0:
-            TT, CC, RR, fmat, fwt, ywt, gev, RC, loose = gensys.gensys_wrapper.call_gensys(G0, G1, C0, PSI, PPI, 1.00000000001)
+            TT, CC, RR, fmat, fwt, ywt, gev, RC, loose = gensysw.gensys_wrapper.call_gensys(G0, G1, C0, PSI, PPI, 1.00000000001)
         else:
             TT = np.linalg.inv(G0).dot(G1)
             RR = np.linalg.inv(G0).dot(PSI)
@@ -676,8 +676,8 @@ class LinearDSGEModel(StateSpaceModel):
             x = -1000000000
         return x
 
-            
-        
+
+
 if __name__ == '__main__':
 
     import numpy as np
