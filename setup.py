@@ -2,29 +2,41 @@ import setuptools
 import numpy.distutils.core
 from numpy.distutils.core import Extension
 
+import os
+
 from numpy.distutils.system_info import get_info
 
-blas_opt = get_info('blas',notfound_action=2)
-lapack_opt = get_info('lapack',notfound_action=2)
+try:
+    blas_opt = get_info('blas_mkl',notfound_action=2)
+    lapack_opt = get_info('lapack_mkl',notfound_action=2)
+except:
+    blas_opt = get_info('blas',notfound_action=2)
+    lapack_opt = get_info('lapack',notfound_action=2)
 
+    
 libs = [blas_opt['libraries'][0], lapack_opt['libraries'][0]]
 lib_dirs = [blas_opt['library_dirs'][0], lapack_opt['library_dirs'][0]]
 
-print libs
+
+#buildpath =os.path.dirname(os.path.path(__file__))
+#print buildpath
 ext1 = Extension(name = 'dsge.fortran.cholmod',
-                 sources = ['dsge/fortran/cholmod.f90'])
+                 sources = ['dsge/fortran/cholmod.f90'],
+                 libraries = ['gensys'] + libs)
 ext2 = Extension(name = 'dsge.fortran.gensysw',
                  sources = ['dsge/fortran/gensys_wrapper.f90'],
-                 libraries = ['gensys','blas', 'lapack'],
-                 module_dirs = ['/home/eherbst/from-work/dsge/build/temp.linux-i686-2.7/']
+                 libraries = ['gensys'] + libs, 
+                 module_dirs = ['/mq/home/m1eph00/python-repo/dsge/build/temp.linux-x86_64-2.7/']
                  )
 ext3 = Extension(name = 'dsge.fortran.filter',
                  sources = ['dsge/fortran/kf_fortran.f90'],
-                 libraries = ['slicot','blas', 'lapack'],
+                 libraries = ['slicot'] + libs,
+                 library_dirs = ['/mq/home/m1eph00/lib']
                  )
 ext4 = Extension(name = 'dsge.fortran.dlyap',
                  sources = ['dsge/fortran/dlyap_wrapper.f90'],
-                 libraries = ['slicot','blas','lapack'],
+                 libraries = ['slicot'] + libs,
+                 library_dirs = ['/mq/home/m1eph00/lib'], 
                  f2py_options = ['--verbose'])
 
 
