@@ -92,8 +92,6 @@ class StateSpaceModel(object):
 
         TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
 
-
-
         At = res['smoothed_states'].iloc[-1].values
         ysim  = np.zeros((h, DD.size))
 
@@ -113,71 +111,6 @@ class StateSpaceModel(object):
         if append:
             ysim = self.yy.append(ysim)
         return ysim
-
-    def log_lik_pff(self, para, *args, **kwargs):
-
-        t0 = kwargs.pop('t0', self.t0)
-        yy = kwargs.pop('y', self.yy)
-        P0 = kwargs.pop('P0', 'unconditional')
-        npart = kwargs.pop('npart', 1000)
-        filt = kwargs.pop('filt', 'bootstrap')
-        seed = kwargs.pop('seed', 0)
-        resampling = kwargs.pop('resampling', 'stratified')
-        reduce_system = kwargs.pop('reduce_system', False)
-
-        TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
-
-        if reduce_system:
-            f = filter.filter.kalman_filter_missing_with_states
-            loglh, filtered_states, smoothed_states = f(yy.T, TT, RR, QQ, DD, ZZ, HH, t0)
-
-            from scipy.linalg import schur
-            (Z, T, nmin) = schur(TT, sort=lambda x: abs(x**2)>1e-15)
-
-            RRhat = Z.T.dot(RR)
-            ishock = np.argwhere(abs(RRhat[nmin:, :]).sum(0)>1e-10).flatten()
-            neshock = ishock.size
-
-            if neshock>0:
-                TThat = np.hstack((T[:nmin,:][:, :nmin], T[:nmin, :][:, nmin:].dot(RRhat[nmin:, :][:, ishock])))
-                TThat = np.vstack((TThat, np.zeros((neshock, nmin+neshock))))
-
-                imat = np.zeros((TT.shape[0], neshock+nmin))
-                imat[:nmin, :][:, :nmin] = np.eye(nmin)
-                imat[nmin:, :][:, nmin:] = RRhat[nmin:, :][:, ishock]
-
-                x = np.zeros((neshock, RR.shape[1]))
-                x[:, ishock] = np.eye(neshock)
-
-                RRhat = np.vstack((RRhat[:nmin, :], x))
-                ZZhat = ZZ.dot(Z).dot(imat)
-
-            else:
-                jfdsklf
-
-            loglh, filtered_states, smoothed_states = f(yy.T, TT, RR, QQ, DD, ZZ, HH, t0)
-
-            TT = TThat.copy()
-            RR = RRhat.copy()
-            ZZ = ZZhat.copy()
-
-
-        filti = {'bootstrap':0, 'cond-opt': 1}
-        fi = filti[filt]
-
-        resamp = {'systematic':0, 'multinomial': 1, 'stratified': 2}
-        ri = resamp[resampling]
-
-        lik, filtered_states = filter.filter.part_filter(yy.T, TT, RR, QQ, DD, ZZ, HH, t0, npart, fi, ri, seed)
-        results = {}
-        results['log_lik'] = p.DataFrame(lik, columns=['log_lik'])
-        results['log_lik'].index = yy.index
-        filtered_states = p.DataFrame(filtered_states, columns=self.state_names)
-        filtered_states.index = yy.index
-        results['filtered_states'] = filtered_states
-
-        return results
-
 
     def log_lik_pf(self, para, *args, **kwargs):
 
@@ -469,22 +402,29 @@ class StateSpaceModel(object):
             ind = (np.isnan(data[i, :])==False).nonzero()[0]
             nyact = ind.size
 
-            Ft = np.dot(np.dot(ZZ[ind, :], Pt), ZZ[ind, :].T) + HH[ind, :][:, ind]
-            Ft = 0.5*(Ft + Ft.T)
+            if nyact > 0:
+                Ft = np.dot(np.dot(ZZ[ind, :], Pt), ZZ[ind, :].T) + HH[ind, :][:, ind]
+                Ft = 0.5*(Ft + Ft.T)
 
-            dFt = np.log(np.linalg.det(Ft))
+                dFt = np.log(np.linalg.det(Ft))
 
-            iFtnut = sp.linalg.solve(Ft, nut[:, ind].T, sym_pos=True)
+                iFtnut = sp.linalg.solve(Ft, nut[:, ind].T, sym_pos=True)
 
-            if i+1 > t0:
-                loglh[i]= - 0.5*nyact*np.log(2*np.pi) - 0.5*dFt \
-                        - 0.5*np.dot(nut[:, ind], iFtnut)
+                if i+1 > t0:
+                    loglh[i]= - 0.5*nyact*np.log(2*np.pi) - 0.5*dFt \
+                              - 0.5*np.dot(nut[:, ind], iFtnut)
+
+                TTPt = np.dot(TT, Pt)
+                Kt = np.dot(TTPt, ZZ[ind, :].T)
+            else:
+                TTPt = np.dot(TT, Pt)
+
+                Kt = np.zeros((ns, ny))
+                Ft = np.eye(ny)
+                iFtnut = np.eye(ny)
 
 
-            TTPt = np.dot(TT, Pt)
-
-            Kt = np.dot(TTPt, ZZ[ind, :].T)
-
+                
             AA = np.dot(TT, AA) + np.dot(Kt, iFtnut).squeeze()
             AA = np.asarray(AA).squeeze()
 
@@ -670,10 +610,13 @@ class LinearDSGEModel(StateSpaceModel):
         except:
             pass
             #raise("no prior specified")
+
     def log_post(self, para, *args, **kwargs):
         x = self.log_lik(para) + self.log_pr(para)
         if np.isnan(x):
-            x = -1000000000
+            x = -1000000000.
+        if x < -1000000000.:
+            x = -1000000000.
         return x
 
 
@@ -693,3 +636,38 @@ if __name__ == '__main__':
     test_ss = StateSpaceModel(yy, TT, RR, QQ, DD, ZZ, HH)
     print test_ss.system_matrices(0.3)
     print test_ss.log_lik(0.3)
+    # if reduce_system:
+    #     f = filter.filter.kalman_filter_missing_with_states
+    #     loglh, filtered_states, smoothed_states = f(yy.T, TT, RR, QQ, DD, ZZ, HH, t0)
+
+    #     from scipy.linalg import schur
+    #     (Z, T, nmin) = schur(TT, sort=lambda x: abs(x**2)>1e-15)
+
+    #     RRhat = Z.T.dot(RR)
+    #     ishock = np.argwhere(abs(RRhat[nmin:, :]).sum(0)>1e-10).flatten()
+    #     neshock = ishock.size
+
+    #     if neshock>0:
+    #         TThat = np.hstack((T[:nmin,:][:, :nmin], T[:nmin, :][:, nmin:].dot(RRhat[nmin:, :][:, ishock])))
+    #         TThat = np.vstack((TThat, np.zeros((neshock, nmin+neshock))))
+
+    #         imat = np.zeros((TT.shape[0], neshock+nmin))
+    #         imat[:nmin, :][:, :nmin] = np.eye(nmin)
+    #         imat[nmin:, :][:, nmin:] = RRhat[nmin:, :][:, ishock]
+
+    #         x = np.zeros((neshock, RR.shape[1]))
+    #         x[:, ishock] = np.eye(neshock)
+
+    #         RRhat = np.vstack((RRhat[:nmin, :], x))
+    #         ZZhat = ZZ.dot(Z).dot(imat)
+
+    #     else:
+    #         jfdsklf
+
+    #     loglh, filtered_states, smoothed_states = f(yy.T, TT, RR, QQ, DD, ZZ, HH, t0)
+
+    #     TT = TThat.copy()
+    #     RR = RRhat.copy()
+    #     ZZ = ZZhat.copy()
+
+
