@@ -156,10 +156,9 @@ class TestFilter(TestCase):
 
         
         ar1 = DSGE.DSGE.read('/mq/home/m1eph00/python-repo/dsge/dsge/examples/ar1/ar1.yaml')
-        ar1 = ar1.compile_model()
+        rho, sigma = ar1.p0()
 
-        rho = 0.85
-        sigma = 1.00
+        ar1 = ar1.compile_model()
 
         res = ar1.kf_everything([rho, sigma], y=np.nan*np.ones_like(ar1.yy))
         ll = res['log_lik'].sum().values[0]
@@ -168,4 +167,18 @@ class TestFilter(TestCase):
         
         from scipy.stats import norm
         
+
+        y = ar1.yy.values.copy().squeeze()
+
+        sig = sigma*np.ones_like(y)
+        sig[0] = sigma/np.sqrt(1.-rho**2)
         
+        yyhat = np.r_[0, rho*y[:-1]]
+
+        byhand = norm.logpdf(y[:-2], loc=yyhat[:-2], scale=sig[:-2]).sum()
+        byhand += norm.logpdf(y[-1], loc=rho**2*y[-3], scale=np.sqrt(1+rho**2)*sig[-1])
+        y[-2] = np.nan
+        res = ar1.kf_everything([rho, sigma], y=y)
+        ll = res['log_lik'].sum().values[0]
+
+        self.assertAlmostEqual(ll, byhand)

@@ -183,7 +183,8 @@ module filter
 
            call dgemm('n','n', ns, ns, ns, ONE, TT, ns, Pt, ns, ZERO, C, ns)
            call dsymm('r', 'u', ns, ns, ONE, Pt, ns, TT, ns, ZERO, C, ns)
-           Pt = C + RQR
+           call dcopy(ns*ns, RQR, 1, Pt, 1)
+           call dgemm('n', 't', ns, ns, ns, ONE, C, ns, TT, ns, ONE, Pt, ns)
 
         end if
         deallocate(oind)
