@@ -1,1 +1,1 @@
-python setup.py config --fcompiler=intelem --compiler=intelem -L build --fcompiler=intelem --compiler=intelem install --force
+python setup.py clean --all && python setup.py config --fcompiler=intelem --compiler=intelem build --fcompiler=intelem --compiler=intelem install --force
