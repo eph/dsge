@@ -66,6 +66,7 @@ class StateSpaceModel(object):
         t0 = kwargs.pop('t0', self.t0)
         yy = kwargs.pop('y', self.yy)
 
+        yy = p.DataFrame(yy)
         TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
 
         f = filter.filter.kalman_filter_missing_with_states
