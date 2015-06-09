@@ -19,6 +19,8 @@ class DSGE(dict):
     max_lead = 1;
     max_lag  = 1;
 
+    smc_driver_file = '/mq/home/m1eph00/python-repo/dsge/dsge/templates/smc_driver_mpi.f90'
+
 
     def __init__(self, *kargs, **kwargs):
         super(DSGE, self).__init__(self, *kargs, **kwargs)
@@ -701,7 +703,7 @@ end
         #------------------------------------------------------------
         # SMC FILE
         #------------------------------------------------------------
-        smcfile = open('/mq/home/m1eph00/python-repo/dsge/templates/smc_driver_mpi.f90', 'r')
+        smcfile = open(self.smc_driver_file, 'r')
         smc_driver = smcfile.read()
         smcfile.close()
 
@@ -713,7 +715,7 @@ end
         #------------------------------------------------------------
         # RWMH
         #------------------------------------------------------------
-        rwmhfile = open('/mq/home/m1eph00/python-repo/dsge/templates/rwmh_driver.f90', 'r')
+        rwmhfile = open('/mq/home/m1eph00/python-repo/dsge/dsge/templates/rwmh_driver.f90', 'r')
         rwmh_driver = rwmhfile.read()
         rwmhfile.close()
 
@@ -725,7 +727,7 @@ end
         #------------------------------------------------------------
         # Block MCMC
         #------------------------------------------------------------
-        rwmhfile = open('/mq/home/m1eph00/python-repo/dsge/templates/blockmcmc.f90', 'r')
+        rwmhfile = open('/mq/home/m1eph00/python-repo/dsge/dsge/templates/blockmcmc.f90', 'r')
         rwmh_driver = rwmhfile.read()
         rwmhfile.close()
 
@@ -739,7 +741,7 @@ end
         #------------------------------------------------------------
         # MAKEFILE
         #------------------------------------------------------------
-        makefile = open('/mq/home/m1eph00/python-repo/dsge/templates/Makefile_dsge', 'r')
+        makefile = open('/mq/home/m1eph00/python-repo/dsge/dsge/templates/Makefile_dsge', 'r')
         make = makefile.read()
         makefile.close()
 
