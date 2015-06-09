@@ -50,7 +50,7 @@ if __name__ == "__main__":
         libraries = [('gensys',
                       {'sources': ['dsge/fortran/gensys.f90'],
                    })],
-        packages = ['dsge', 'dsge.tests'],
+        packages = ['dsge', 'dsge.tests', 'dsge.extension'],
         ext_modules = [ext1,ext2,ext3,ext4],
         test_suite='nose.collector',
         tests_require=['nose']
