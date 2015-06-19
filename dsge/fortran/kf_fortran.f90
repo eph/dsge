@@ -112,15 +112,22 @@ module filter
                    - 0.5_wp*ddot(ngood, nut, 1, iFtnut, 1)
            endif
 
-           ! Kt = TT*Pt*ZZ'
-           call dgemm('n','t', ns, ngood, ns, ONE, TT, ns, ZZPt, ngood, ZERO, Kt, ns)
+
+           !------------------------------------------------------------
+           ! get filtered states
+           call dgemv('n', ns, ngood, ONE, ZZPt, ns, iFtnut, 1, ZERO, gain, 1)
+           At = At + gain
+           filtered_states(t,:) = At
 
            ! At = TT*At + Kt*iFt*nut'
-           call dgemv('n', ns, ngood, ONE, Kt, ns, iFtnut, 1, ZERO, gain, 1)
-           call dgemv('n', ns, ns, ONE, TT, ns, At, 1, ONE, gain, 1)
+           call dgemv('n', ns, ns, ONE, TT, ns, At, 1, ZERO, gain, 1)
            call dcopy(ns, gain, 1, At, 1)
 
-           filtered_states(t,:) = At
+
+           ! Kt = TT*Pt*ZZ'
+           call dgemm('n','t', ns, ngood, ns, ONE, TT, ns, ZZPt, ngood, ZERO, Kt, ns)
+           !------------------------------------------------------------
+
 
            ! Pt = TT*Pt*TT' + RQR - Kt*iFt*Kt'
            call dgemm('n','n', ns, ns, ns, ONE, TT, ns, Pt, ns, ZERO, C, ns)
