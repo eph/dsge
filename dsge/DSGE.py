@@ -263,23 +263,31 @@ class DSGE(dict):
         HH = self.HH
 
 
-        datafile = self['__data__']['estimation']['data']
+        if 'observables' not in self:
+            self['observables'] = self['variables'].copy()
+            self['obs_equations'] = dict(self['observables'], self['observables'])
 
-        if type(datafile)==dict:
-            startdate = datafile['start']
-            datafile = datafile['file']
-        else:
+        try:
+            datafile = self['__data__']['estimation']['data']
+
+            if type(datafile)==dict:
+                startdate = datafile['start']
+                datafile = datafile['file']
+            else:
+                startdate = 0
+
+
+            with open(datafile, 'r') as df:
+                data = df.read()
+                delim_dict = {}
+
+                if data.find(',') > 0:
+                    delim_dict['delimiter'] = ','
+
+                data = np.genfromtxt(datafile, missing_values='NaN', **delim_dict)
+        except:
+            data = np.nan * np.ones((100, len(self['observables'])))
             startdate = 0
-
-
-        with open(datafile, 'r') as df:
-            data = df.read()
-            delim_dict = {}
-
-            if data.find(',') > 0:
-                delim_dict['delimiter'] = ','
-
-            data = np.genfromtxt(datafile, missing_values='NaN', **delim_dict)
 
         if len(self['observables']) > 1:
             data = p.DataFrame(data[:, :len(self['observables'])], columns=map(lambda x: str(x), self['observables']))
