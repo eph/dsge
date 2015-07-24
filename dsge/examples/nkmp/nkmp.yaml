@@ -3,7 +3,7 @@
 # Description: This is model file for NKMP
 # model from An and Schorfheide (2007)
 # Author: Ed Herbst [edward.p.herbst@frb.gov]
-# Last-Updated: 06/20/14
+# Last-Updated: 07/24/15
 # 
 declarations:
   name: 'nkmp'
@@ -81,7 +81,9 @@ calibration:
     
     
 estimation:
-  data: '/mq/home/m1eph00/projects/dsge-book/code/generated-code/nkmp/us.txt'
+  data:
+    file: '/mq/home/m1eph00/python-repo/dsge/dsge/examples/nkmp/us.txt'
+    start: 1983Q1
 
   prior: 
     tau : [gamma, 2.00, 0.5]
