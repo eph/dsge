@@ -8,6 +8,9 @@ from helper_functions import cholpsd
 
 
 class StateSpaceModel(object):
+    """
+    State space model.
+    """
 
     def __init__(self, yy, TT, RR, QQ, DD, ZZ, HH, t0=0,
                  shock_names=None, state_names=None, obs_names=None):
@@ -159,7 +162,7 @@ class StateSpaceModel(object):
         U,S,V = np.linalg.svd(RQR,full_matrices=0)
         detRQR = np.sum(np.log(S[S>1e-7]))
 
-        ps = multivariate_normal(cov=RQR)
+        ps = multivariate_normal(cov=RQR, allow_singular=True)
 
         # container variables
         resamp = np.zeros((nobs))
