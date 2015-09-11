@@ -14,6 +14,27 @@ import numpy as np
 import itertools
 import pandas as p
 from StateSpaceModel import LinearDSGEModel
+
+class EquationList(list):
+    """A container for holding an set of equations."""
+
+    def __init__(self, args, context={}):
+        self.context = context
+        return super(EquationList, self).__init__(args)
+
+    def __setitem__(self, key, value):
+
+        if isinstance(value, str):
+            lhs, rhs = value.split('=')
+
+            lhs = eval(lhs, self.context)
+            rhs = eval(rhs, self.context)
+
+            value = Equation(lhs, rhs)
+            
+        return super(EquationList, self).__setitem__(key, value)
+
+
 class DSGE(dict):
 
     max_lead = 1;
@@ -73,6 +94,13 @@ class DSGE(dict):
 
         else:
             self['perturb_eq'] = self['equations']
+
+        context = [(s.name, s) for s in self['parameters']+self['variables']+self['shocks']+self['para_func']]
+        context = dict(context)
+        context['log'] = sympy.log
+        context['exp'] = sympy.exp
+            
+        self['pertub_eq'] = EquationList(self['perturb_eq'], context)
 
         return
 
