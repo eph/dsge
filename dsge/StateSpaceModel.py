@@ -1,3 +1,11 @@
+"""
+This module implements two simple classes:
+
+Linear State Space Model
+Linear DSGE Model.
+
+
+"""
 from __future__ import division
 
 import numpy as np
@@ -35,6 +43,39 @@ class StateSpaceModel(object):
         self.obs_names = None
 
     def log_lik(self, para, *args, **kwargs):
+        """
+        Computes the log likelihood of the model.
+
+        Parameters
+        ----------
+        para : array-like 
+            An npara length vector of parameter values that defines the system matrices.
+        t0 : int, optional
+            Number of initial observations to condition on. (NOT IMPLEMENTED.) 
+        y : 2d array-like, optional
+            Dataset of observables (T x nobs). The default is the observable set pass during 
+            class instantiation.
+        P0 : 2d arry-like or string, optional
+            [ns x ns] initial covariance matrix of states, or `unconditional` to use the one 
+            associated with the invariant distribution.  The default is `unconditional.`
+
+        
+        Returns
+        -------
+        lik : float
+            The log likelihood.
+
+
+        See Also
+        --------
+        StateSpaceModel.kf_everything
+
+
+        Notes
+        -----
+        This method does not work with missing data. Use `kf_everything` instead. 
+        """
+
 
         t0 = kwargs.pop('t0', self.t0)
         yy = kwargs.pop('y', self.yy)
@@ -66,6 +107,35 @@ class StateSpaceModel(object):
 
 
     def kf_everything(self, para, *args, **kwargs):
+        """
+        Runs the kalman filter and returns objects of interest.
+
+        Parameters
+        ----------
+        para : array-like 
+            An npara length vector of parameter values that defines the system matrices.
+        t0 : int, optional
+            Number of initial observations to condition on. (NOT IMPLEMENTED.) 
+        y : 2d array-like, optional
+            Dataset of observables (T x nobs). The default is the observable set pass during 
+            class instantiation.
+        P0 : 2d arry-like or string, optional
+            [ns x ns] initial covariance matrix of states, or `unconditional` to use the one 
+            associated with the invariant distribution.  The default is `unconditional.`
+
+
+        Returns
+        -------
+        results : dict of p.DataFrames with 
+             `log_lik` -- the sequence of log likelihoods
+             `filted_states' -- the filtered states of the model
+             `smoothed_states' -- the smoothed states of the model
+
+        Notes
+        -----
+        Can be used with missing (NaN) observations. 
+        """
+
         t0 = kwargs.pop('t0', self.t0)
         yy = kwargs.pop('y', self.yy)
 
@@ -90,7 +160,28 @@ class StateSpaceModel(object):
         return results
 
     def pred(self, para, h=20, shocks=True, append=False, *args, **kwargs):
+        """
+        Draws from the predictive distribution $p(Y_{t+1:t+h}|Y_{1:T}, \theta)$.
 
+
+        Parameters
+        ----------
+        para : array-like 
+            An npara length vector of parameter values that defines the system matrices.
+        h : int, optional
+            The horizon of the distribution.
+        y : 2d array-like, optional
+            Dataset of observables (T x nobs). The default is the observable set pass during 
+            class instantiation.
+        append : bool, optional
+            Return the draw appended to yy (default = FALSE).
+        
+        Returns
+        -------
+        ysim : pandas.DataFrame
+            A dataframe containing the draw from the predictive distribution. 
+
+        """
         yy = kwargs.pop('y', self.yy)
         res = self.kf_everything(para, y=yy, *args, **kwargs)
 
@@ -117,6 +208,31 @@ class StateSpaceModel(object):
         return ysim
 
     def system_matrices(self, para, *args, **kwargs):
+        """
+        Returns the system matrices of the state space model. 
+        
+        Parameters
+        ----------
+        para : array-like 
+            An npara length vector of parameter values that defines the system matrices.
+ 
+        
+        Returns
+        -------
+        TT : np.array (ns x ns)
+        RR : np.array (ns x neps)
+        QQ : np.array (neps x neps)
+        DD : np.array (nobs)
+        ZZ : np.array (ny x ns)
+        HH : np.array (ny x ny)
+
+
+        Notes
+        -----
+
+        """
+
+
         TT = np.atleast_2d(self.TT(para, *args, **kwargs))
         RR = np.atleast_2d(self.RR(para, *args, **kwargs))
         QQ = np.atleast_2d(self.QQ(para, *args, **kwargs))
@@ -129,7 +245,29 @@ class StateSpaceModel(object):
 
 
     def impulse_response(self, para, h=20, *args, **kwargs):
+        """
+        Computes impulse response functions of model.
 
+        Parameters
+        ----------
+        para : array-like 
+            An npara length vector of parameter values that defines the system matrices.
+ 
+        h : int, optional
+           The maximum horizon length for the impulse responses.
+
+        
+        Returns
+        -------
+        irf : pandas.Panel (nshocks x h x nvariables)
+
+        
+        Notes
+        -----
+        These are of the model state variables impulse responses to 
+        1 standard deviation shocks.  The method does not return IRFs in terms
+        of the model observables. 
+        """
         TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
 
         if self.shock_names==None:
@@ -160,6 +298,28 @@ class StateSpaceModel(object):
         return p.Panel(irfs)
 
     def simulate(self, para, nsim=200, *args, **kwargs):
+        """
+        Simulates the observables of the model.
+
+        Parameters
+        ----------
+        para : array-like 
+            An npara length vector of parameter values that defines the system matrices.
+        
+        nsim : int, optional
+            The length of the simulation. The default value is 200.
+
+        Returns
+        -------
+        ysim : np.array (nsim x nobs)
+            
+
+        Notes
+        -----
+        The simulation is initialized from the steady-state mean and subsequently 
+        a simulation of length 2*nsim is created, with the final nsim observations
+        return. 
+        """
 
         TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
         ysim  = np.zeros((nsim*2, DD.size))

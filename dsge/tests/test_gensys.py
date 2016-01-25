@@ -12,7 +12,7 @@ class TestGensys(TestCase):
         TT = np.zeros((3,3))
 
 
-        TT, CC, RR, fmat, fwt, ywt, gev, RC, loose = gensysw.gensys_wrapper.call_gensys(G0, G1, C0, PSI, PPI, 1.00000000001)
+        #TT, CC, RR, fmat, fwt, ywt, gev, RC, loose = gensysw.gensys_wrapper.call_gensys(G0, G1, C0, PSI, PPI, 1.00000000001)
 
         #self.assertEqual(RC,0)
         #assert_equal(np.eye(3),PP)

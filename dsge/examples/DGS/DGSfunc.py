@@ -1,3 +1,6 @@
+from scipy.stats import norm
+from scipy.optimize import fsolve
+import numpy as np
 def d2Gammadomegadsigmafcn(z,sigma):
     f = (z/sigma-1)*norm.pdf(z);
     return f
@@ -24,7 +27,7 @@ def zetabomegafcn(z,sigma,sprd):
     d2Gammadomega2star = d2Gammadomega2fcn(z,sigma);
     d2Gdomega2star = d2Gdomega2fcn(z,sigma);
     f = (omegastar*mustar*nk*(d2Gammadomega2star*dGdomegastar-d2Gdomega2star*dGammadomegastar)/
-         (dGammadomegastar-mustar*dGdomegastar)^2/sprd/
+         (dGammadomegastar-mustar*dGdomegastar)**2/sprd/
          (1-Gammastar+dGammadomegastar*(Gammastar-mustar*Gstar)/(dGammadomegastar-mustar*dGdomegastar)))
     return f
 
@@ -43,7 +46,7 @@ def mufcn(z,sigma,sprd):
     return f
 
 def omegafcn(z,sigma):
-    f = exp(sigma*z-1/2*sigma^2);
+    f = np.exp(sigma*z-1/2*sigma**2);
     return f
 
 def Gfcn(z,sigma):
@@ -59,7 +62,7 @@ def dGdomegafcn(z,sigma):
     return f
 
 def d2Gdomega2fcn(z,sigma):
-    f = -z*norm.pdf(z)/omegafcn(z,sigma)/sigma^2;
+    f = -z*norm.pdf(z)/omegafcn(z,sigma)/sigma**2;
     return f
 
 def dGammadomegafcn(z):
@@ -75,7 +78,10 @@ def dGdsigmafcn(z,sigma):
     return f
 
 def d2Gdomegadsigmafcn(z,sigma):
-    f = -norm.pdf(z)*(1-z*(z-sigma))/sigma^2;
+    f = -norm.pdf(z)*(1-z*(z-sigma))/sigma**2;
     return f
 
-
+norminv = norm.ppf
+from scipy.optimize import fsolve
+def get_sigwstar(zwstar, sprd, zeta_spb):
+    return fsolve(lambda x: zetaspbfcn(zwstar, x, sprd)-zeta_spb, 0.5)

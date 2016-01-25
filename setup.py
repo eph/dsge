@@ -26,13 +26,12 @@ ext1 = Extension(name = 'dsge.fortran.cholmod',
 ext2 = Extension(name = 'dsge.fortran.gensysw',
                  sources = ['dsge/fortran/gensys_wrapper.f90'],
                  libraries = ['gensys'] + libs, 
-                 module_dirs = ['/mq/home/m1eph00/python-repo/dsge/build/temp.linux-x86_64-2.7/']
-                 )
+                 module_dirs = ['/mq/home/m1eph00/python-repo/dsge/build/temp.linux-x86_64-2.7/'])
+
 ext3 = Extension(name = 'dsge.fortran.filter',
                  sources = ['dsge/fortran/kf_fortran.f90'],
                  libraries = ['slicot'] + libs,
-                 library_dirs = ['/mq/home/m1eph00/lib'],
-                 )
+                 library_dirs = ['/mq/home/m1eph00/lib'])
 ext4 = Extension(name = 'dsge.fortran.dlyap',
                  sources = ['dsge/fortran/dlyap_wrapper.f90'],
                  libraries = ['slicot'] + libs,

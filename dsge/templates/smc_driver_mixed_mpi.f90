@@ -104,7 +104,7 @@ program smc_driver_mixed
   scale = 0.4_wp                ! starting scale on variance
 
   write_every = 10              ! write every 10th parameter (always saves mu/sig)
-
+  start_geweke = nobs
   ! initialization
   init_prior = .true.           ! initialize particles by sampling prior
   cinitdist = 'prior'           ! character holder
@@ -114,7 +114,7 @@ program smc_driver_mixed
   hyp_fstr = ''
   fixed_hyper = .false.
   save_hyper = .false. 
-  
+
   ! only one of these is used depending on SMC type
   nT = nobs 
   initpart = initfile           ! initial particles (if init_prior = .false.)
@@ -173,7 +173,7 @@ program smc_driver_mixed
         nphi = nobs + 1
         call get_command_argument(i+1, arg)
         read(arg, '(i)') irep
-        
+
      case('-i', '--initrep')
         call get_command_argument(i+1, arg)
         read(arg, '(i)') irep
@@ -266,7 +266,7 @@ program smc_driver_mixed
      end if
      phi = phi**bcoeff
   end if
-  
+
 
   !-------------------------------------------------------------------------
   ! allocate memory on nodes
@@ -530,7 +530,7 @@ program smc_driver_mixed
         errcode=vdrnggaussian(method,stream,npart*nintmh*npara,eps,0.0_wp,scale)
         acptsim = 0
 
-        
+
      endif
 
      ! scatter info to nodes
@@ -566,7 +566,7 @@ program smc_driver_mixed
         scale = scale * (0.95_wp + 0.10*exp(16.0_wp*(ahat - 0.25_wp)) / (1.0_wp + exp(16.0_wp*(ahat - 0.25_wp))))
         print*, 'adjusting chat', scale
 
-        if ((mod(i,write_every) == 0) .or. (i==nphi)) then
+        if ((mod(i,write_every) == 0) .or. (i>=nphi)) then
            call write_files(i)
         end if
 
@@ -747,7 +747,7 @@ contains
                 ind_pdf = ind_pdf/(sigi*sqrt(2.0_wp*3.1415_wp))*exp(-0.5_wp*zstat**2)
                 !q1 = q1 + (1.0_wp - kapp)/2.0_wp*1.0_wp/(sigi*sqrt(2.0_wp*M_PI))*exp(-0.5_wp*zstat**2)
              end do
-             
+
              q0 = q0 + (1.0_wp - kapp)/2.0_wp*ind_pdf
              q1 = q1 + (1.0_wp - kapp)/2.0_wp*ind_pdf
 
@@ -766,8 +766,8 @@ contains
 
              alp = exp(phi(i)*(lik1 - lik0) + pr1 - pr0 + q0 - q1)
 
-!             print*, nodeu((i-2)*neval*nintmh*nblocks + (j-1)*nintmh*nblocks + (bj-1)*nintmh +k), alp, (i-2)*neval*nintmh*nblocks + (j-1)*nintmh*nblocks + (bj-1)*nintmh +k, lik1,lik0,pr1,pr0
-!             print*,e((j-1)*nintmh + k,bi)
+             !             print*, nodeu((i-2)*neval*nintmh*nblocks + (j-1)*nintmh*nblocks + (bj-1)*nintmh +k), alp, (i-2)*neval*nintmh*nblocks + (j-1)*nintmh*nblocks + (bj-1)*nintmh +k, lik1,lik0,pr1,pr0
+             !             print*,e((j-1)*nintmh + k,bi)
              if (nodeu((i-2)*neval*nintmh*nblocks + (j-1)*nintmh*nblocks + (bj-1)*nintmh +k) < alp) then
                 p0 = p1
                 lik0 = lik1
@@ -817,13 +817,13 @@ contains
 
        do while (lik0 < -10.0_wp**9)
 
-    
+
           if (do_geweke == .true.)   then
              lik0 = likT(p2(j,:),1)
           else
-             lik0 = lik(p2(j,:),start_geweke) !lik0 = lik(p2(j,:))
+             lik0 = likT(p2(j,:),start_geweke) !lik0 = lik(p2(j,:))
           end if
-          
+
 
           if (isnan(lik0)) then
              lik0 = -10000000000000.0_wp
@@ -933,7 +933,7 @@ contains
 
     integer :: ij
 
-    
+
     write(chari,'(i3.3)') ii
 
     blockfile = trim(fstr)//'/'//trim(chari)//'blocksim.txt'
@@ -1040,11 +1040,14 @@ contains
 
   subroutine read_in_from_files()
     ! read in prior, data, translation from textfiles
-    open(1, file=priorfile, status='old', action='read')
-    do i = 1, npara
-       read(1, *) pshape(i), pmean(i), pstdd(i), pmask(i), pfix(i)
-    end do
-    close(1)
+
+    !if not(priorfile=='') then
+       open(1, file=priorfile, status='old', action='read')
+       do i = 1, npara
+          read(1, *) pshape(i), pmean(i), pstdd(i), pmask(i), pfix(i)
+       end do
+       close(1)
+    !end if
 
     open(1, file=datafile, status='old', action='read')
     do i = 1, nobs
@@ -1052,11 +1055,13 @@ contains
     end do
     close(1)
 
-    open(1, file=transfile, status='old', action='read')
-    do i = 1, npara
-       read(1, *) trspec(:,i)
-    end do
-    close(1)
+    !if not(transfile='') then
+       open(1, file=transfile, status='old', action='read')
+       do i = 1, npara
+          read(1, *) trspec(:,i)
+       end do
+       close(1)
+    !end if
   end subroutine read_in_from_files
 
   subroutine print_help()

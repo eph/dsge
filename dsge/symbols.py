@@ -2,7 +2,10 @@ import sympy
 import copy
 from sympy.printing.str import StrPrinter
 
-from sympy.printing.str import  StrPrinter
+from sympy.core.cache import clear_cache
+clear_cache()
+
+
 StrPrinter._print_TSymbol = lambda self,x: x.__str__()
 
 
@@ -26,8 +29,9 @@ class Parameter(sympy.Symbol):
 
 class TSymbol(sympy.Symbol):
 
-    def __init__(self, name, **args):
+    #__xnew_cached_ = staticmethod(sympy.Symbol.__new_stage2__)
 
+    def __init__(self, name, **args):
         super(TSymbol,self).__init__()
 
         if 'date' not in args:
@@ -46,14 +50,15 @@ class TSymbol(sympy.Symbol):
         self._mhash = None
         self.__hash__()
 
-        return 
+        return None
 
 
     def __call__(self,lead):
         newdate = int(self.date) + int(lead)
         newname = str(self.name)
-        v = type(self)(newname,date=newdate)
-        return v
+        # print 'creating', newname, newdate
+        clear_cache()
+        return self.__class__(newname,date=newdate)
 
     @property
     def date(self):
@@ -68,13 +73,13 @@ class TSymbol(sympy.Symbol):
         return (self.name,str(self.date),str(self.exp_date))
 
     def __getstate__(self):
-        return {
-            'date': self.date,
-            'name': self.name,
-            'exp_date': self.exp_date, 
-            'is_commutative': self.is_commutative,
-            '_mhash': self._mhash
-        }
+       return {
+           'date': self.date,
+           'name': self.name,
+           'exp_date': self.exp_date, 
+           'is_commutative': self.is_commutative,
+           '_mhash': self._mhash
+       }
 
     def class_key(self):
         return (2, 0, self.name, self.date)
@@ -91,23 +96,25 @@ class TSymbol(sympy.Symbol):
             result = self.name + r"(" + str(self.lag) + r")"
         return result
 
-    def __repr__(self):
-        return self.__str__()
+    # def __repr__(self):
+    #     return self.__str__()
 
-    def _repr_(self):
-        return self.__str__()
+    # def _repr_(self):
+    #     return self.__str__()
 
-    def repr(self):
-        return self.__str__()
+    # def repr(self):
+    #     return self.__str__()
         
-    def _print_TSymbol(self):
-        return self.__str__()
+    # def _print_TSymbol(self):
+    #     return self.__str__()
 
-    def _print(self):
-        return self.__str__()
+    # def _print(self):
+    #     return self.__str__()
+
 
         
 class Variable(TSymbol):
+
     @property
     def fortind(self):
         if self.date <= 0:
@@ -125,7 +132,7 @@ class Variable(TSymbol):
 
     def __repr__(self):
         return self.__str__()
-              
+            
     __sstr__ = __str__
     
 class LaggedExpectation(Variable):
@@ -185,23 +192,3 @@ class Equation(sympy.Equality):
         l = [v for v in self.atoms() if isinstance(v, Variable)]
         return l
 
-    
-    
-def map_function_to_expression(f,expr):
-    if expr.is_Atom:
-        return( f(expr) )
-    else:
-        l = list( expr._args )
-        args = []
-        for a in l:
-            args.append(map_function_to_expression(f,a))
-        return( expr.__class__(* args) )
-
-
-def timeshift(expr, tshift):
-    def fun(e):
-        if isinstance(e,TSymbol):
-            return e(tshift)
-        else:
-            return e
-    return map_function_to_expression(fun, expr)

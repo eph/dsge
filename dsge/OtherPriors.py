@@ -3,7 +3,10 @@ import numpy as np
 
 from scipy.special import gammaln
 import scipy.stats as rv
+
 class InvGamma(object):
+    
+    name = 'inv_gamma'
 
     def __init__(self, a, b):
 
@@ -25,3 +28,19 @@ class InvGamma(object):
         rn = rv.norm.rvs(size=(int(self.b), 1))
         return np.sqrt(self.b*self.a**2 / np.sum(rn**2, 0))
 
+
+class InvGamma1(object):
+    """Inverse Gamma 1 distribution
+    X ~ IG1(s, nu) if X = sqrt(Y), where Y ~IG2(s, nu) with Y = INV(Z), Z~Gamma(nu/2, 2/s)
+    """
+    def __init__(self, s, nu):
+    
+        self.s = s
+        self.nu = nu
+
+    def rvs(self):
+        return np.sqrt(1.0/rv.gamma.rvs(self.nu/2.0, scale=2.0/self.s))
+
+
+    def logpdf(self, x):
+        pass

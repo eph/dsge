@@ -6,8 +6,8 @@ module gensys
   !use mkl95_precision, only: wp => dp
   !use omp_lib
   implicit none
-
   integer, parameter :: wp = selected_real_kind(15)
+  !
 
 
 

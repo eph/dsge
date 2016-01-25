@@ -378,8 +378,18 @@ program smc_driver
 
 
   allocate(nodeu(ngap*nintmh*nphi*nblocks))
-  call mpi_scatter(u, ngap*nphi*nintmh*nblocks, MPI_DOUBLE_PRECISION, nodeu, ngap*nphi*nintmh*nblocks, &
-       MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, mpierror)
+  print*,'Distributing deviates'
+  do i = 1, ngap
+     call mpi_scatter(u((i-1)*nproc*nphi*nintmh*nblocks+1:i*nproc*nphi*nintmh*nblocks), &
+          nphi*nintmh*nblocks, MPI_DOUBLE_PRECISION, nodeu((i-1)*nphi*nintmh*nblocks+1:i*nphi*nintmh*nblocks), & 
+          nphi*nintmh*nblocks, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, mpierror)
+     call mpi_barrier(MPI_COMM_WORLD, mpierror)
+  end do
+  print*,'Done'
+
+  ! allocate(nodeu(ngap*nintmh*nphi*nblocks))
+  ! call mpi_scatter(u, ngap*nphi*nintmh*nblocks, MPI_DOUBLE_PRECISION, nodeu, ngap*nphi*nintmh*nblocks, &
+  !      MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, mpierror)
 
 
   !-----------------------------------------------------------------------------

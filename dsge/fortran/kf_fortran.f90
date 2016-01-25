@@ -115,7 +115,7 @@ module filter
 
            !------------------------------------------------------------
            ! get filtered states
-           call dgemv('n', ns, ngood, ONE, ZZPt, ns, iFtnut, 1, ZERO, gain, 1)
+           call dgemv('t', ngood, ns, ONE, ZZPt, ngood, iFtnut, 1, ZERO, gain, 1)
            At = At + gain
            filtered_states(t,:) = At
 
