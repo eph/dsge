@@ -53,11 +53,13 @@ Object for holding state space model
         Define the observable transition matrices as function of a parameter vector.
     log_lik(para)
         Computes the likelihood of the model at parameter value para.
-    impulse_response(para,h=20)
+    impulse_response(para, h=20)
         Computes the impulse response function at parameter value para.
-    pred(self, para, h=20, shocks=True, append=False)
+    pred(para, h=20, shocks=True, append=False)
         Simulates a draw from the predictive distribution at parameter
         value para.
+    kf_everything(para)
+        Generates the filtered and smoothed posterior means of the state vector.
     """
 
     def __init__(self, yy, TT, RR, QQ, DD, ZZ, HH, t0=0,
