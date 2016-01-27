@@ -22,7 +22,7 @@ calibration:
   parafunc:
     d: rho^2
 estimation:
-  data: /mq/home/m1eph00/python-repo/dsge/dsge/examples/ar1/arma23_sim200.txt
+  data: dsge/examples/ar1/arma23_sim200.txt
 
   prior:
     rho: [uniform, 0, 1]

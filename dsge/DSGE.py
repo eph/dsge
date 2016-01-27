@@ -28,7 +28,7 @@ class EquationList(list):
             rhs = eval(rhs, self.context)
 
             value = Equation(lhs, rhs)
-            
+
         return super(EquationList, self).__setitem__(key, value)
 
 
@@ -36,9 +36,6 @@ class DSGE(dict):
 
     max_lead = 1;
     max_lag  = 1;
-
-    smc_driver_file = '/mq/home/m1eph00/python-repo/dsge/dsge/templates/smc_driver_mpi.f90'
-
 
     def __init__(self, *kargs, **kwargs):
         super(DSGE, self).__init__(self, *kargs, **kwargs)
@@ -290,7 +287,6 @@ class DSGE(dict):
         return GAM0, GAM1, PSI, PPI
 
     def compile_model(self):
-        print 'in compile', self['perturb_eq'][0]
         self.python_sims_matrices()
 
         GAM0 = self.GAM0
@@ -378,7 +374,7 @@ class DSGE(dict):
                     pr = uniform(loc=a, scale=b)
                     pr.name = 'uniform'
                     prior.append(pr)
-                    
+
         from Prior import Prior as pri
         dsge = LinearDSGEModel(data, GAM0, GAM1, PSI, PPI,
                                QQ, DD, ZZ, HH, t0=0,
@@ -409,7 +405,7 @@ class DSGE(dict):
     @staticmethod
     def read(mfile):
         """
-        
+
         """
 
         f = open(mfile)
@@ -473,7 +469,10 @@ class DSGE(dict):
 
         equations = []
 
-        raw_equations = model_yaml['equations']['model']
+        if 'model' in model_yaml['equations']:
+            raw_equations = model_yaml['equations']['model']
+        else:
+            raw_equations = model_yaml['equations']
 
 
         for eq in raw_equations:
@@ -481,7 +480,7 @@ class DSGE(dict):
                 lhs, rhs = str.split(eq, '=')
             else:
                 lhs, rhs = eq, '0'
-    
+
 
             lhs = eval(lhs, context)
             rhs = eval(rhs, context)
@@ -571,7 +570,7 @@ class DSGE(dict):
                 indi = shk_ordering.index(shocki)
                 indj = shk_ordering.index(shockj)
 
-                QQ[indi, indj] = eval(value, context)
+                QQ[indi, indj] = eval(str(value), context)
                 QQ[indj, indi] = QQ[indi, indj]
 
             else:
@@ -608,6 +607,9 @@ class DSGE(dict):
 
         calibration = model_yaml['calibration']['parameters']
 
+        if 'parafunc' not in cal:
+            cal['parafunc'] = {}
+
         model_dict = {
             'var_ordering': var_ordering,
             'par_ordering': par_ordering,
@@ -630,7 +632,6 @@ class DSGE(dict):
             'obs_equations': obs_equations
             }
 
-        print 'before initialization', equations[0]
         model = DSGE(**model_dict)
         return model
 

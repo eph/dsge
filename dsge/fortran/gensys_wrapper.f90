@@ -13,7 +13,7 @@ contains
   subroutine call_gensys(TT,CC,RR,fmat,fwt,ywt,gev,eu,loose, &
        G0, G1, C0, PSI, PI, DIV, ns, neps, neta)
 
-    !use mkl95_precision, only: wp => dp 
+    !use mkl95_precision, only: wp => dp
 
     integer, intent(in) :: ns, neps, neta
 

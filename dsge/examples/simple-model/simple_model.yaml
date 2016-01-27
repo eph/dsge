@@ -1,0 +1,15 @@
+declarations:
+  name: 'simple_model'
+  variables: [y,x]
+  shocks: [e]
+  parameters: [beta, rho, sigma]
+equations:
+  - y = beta * y(+1) + x
+  - x = rho*x(-1) + e
+calibration:
+  parameters:
+    beta: 0.99
+    rho: 0.8
+    sigma: 1.0
+  covariances:
+    e: sigma^2

@@ -12,16 +12,16 @@ module gensys
 
 
 
-  real, parameter :: verysmall = 0.000001_wp
+  double precision, parameter :: verysmall = 0.000001d0
 
-  complex(wp), parameter :: CPLX_ZERO = dcmplx(0.0_wp,0.0_wp)
-  complex(wp), parameter :: CPLX_ONE = dcmplx(1.0_wp, 0.0_wp)
-  complex(wp), parameter :: CPLX_NEGONE = dcmplx(-1.0_wp, 0.0_wp)
+  double complex, parameter :: CPLX_ZERO = dcmplx(0.0d0,0.0d0)
+  double complex, parameter :: CPLX_ONE = dcmplx(1.0d0, 0.0d0)
+  double complex, parameter :: CPLX_NEGONE = dcmplx(-1.0d0, 0.0d0)
 
   integer :: nunstab = 0
   integer :: zxz = 0
   integer :: fixdiv = 1
-  real(wp) :: stake = 1.01_wp
+  double precision :: stake = 1.01d0
 
   !$OMP THREADPRIVATE(nunstab,stake,zxz,fixdiv)
 
@@ -32,28 +32,28 @@ contains
 
     implicit none
 
-    real(wp), intent(inout) :: G0(:,:), G1(:,:), C0(:), PSI(:,:), PI(:,:), div, loose
-    real(wp), intent(out) :: TT(size(G0,1),size(G0,1)), CC(size(G0,1)), RR(size(G0,1),size(PSI,2)), fmat, fwt, ywt, gev
+    double precision, intent(inout) :: G0(:,:), G1(:,:), C0(:), PSI(:,:), PI(:,:), div, loose
+    double precision, intent(out) :: TT(size(G0,1),size(G0,1)), CC(size(G0,1)), RR(size(G0,1),size(PSI,2)), fmat, fwt, ywt, gev
     !f2py depend(size(G0,1)) TT, C0, RR
-    complex(wp), dimension(size(G0,1), size(G0, 1)) :: Q, Z, AA, BB, cG0,cG1
-    complex(wp), dimension(size(G0,1)) :: alpha, beta
-    complex(wp) :: cRR(size(G0,1), size(PSI,2))
+    double complex, dimension(size(G0,1), size(G0, 1)) :: Q, Z, AA, BB, cG0,cG1
+    double complex, dimension(size(G0,1)) :: alpha, beta
+    double complex :: cRR(size(G0,1), size(PSI,2))
     integer, intent(out) :: eu(2)
-    complex(wp), allocatable :: etawt(:,:), zwt(:,:)
+    double complex, allocatable :: etawt(:,:), zwt(:,:)
     integer :: info, pin, n, i, ipiv(size(G0,1)), ldzt, nstab
 
-    complex(wp), allocatable :: Qstab(:,:), Qunstab(:,:)
+    double complex, allocatable :: Qstab(:,:), Qunstab(:,:)
     ! svd  stuff
-    complex(wp), allocatable :: eta_u(:,:), eta_v(:,:), zwt_u(:,:), zwt_v(:,:)
-    real(wp), allocatable :: eta_s(:), zwt_s(:)
-    complex(wp), allocatable :: zwt_u_tran(:,:), int_mat(:,:), int_mat2(:,:), tmat(:,:), vv2(:,:), cPI(:,:)
+    double complex, allocatable :: eta_u(:,:), eta_v(:,:), zwt_u(:,:), zwt_v(:,:)
+    double precision, allocatable :: eta_s(:), zwt_s(:)
+    double complex, allocatable :: zwt_u_tran(:,:), int_mat(:,:), int_mat2(:,:), tmat(:,:), vv2(:,:), cPI(:,:)
 
     integer :: ldvt, lmin, nbigev
     logical :: unique
-    real(wp) :: norm
+    double precision :: norm
 
     !test stuff
-    real(wp), dimension(50,50) :: sreal, simag, treal, timag, qreal, qimag, zreal, zimag
+    double precision, dimension(50,50) :: sreal, simag, treal, timag, qreal, qimag, zreal, zimag
 
 
     eu      = (/0, 0/)
@@ -62,7 +62,7 @@ contains
     pin     = size(PI,2)
     zxz     = 0
     nunstab = 0
-    stake   = 1.01_wp
+    stake   = 1.01d0
     fixdiv  = 1
 
     fmat = 0
@@ -70,9 +70,9 @@ contains
     gev = 0
     fwt = 0
 
-    TT = 0.0_wp
-    CC = 0.0_wp
-    RR = 0.0_wp
+    TT = 0.0d0
+    CC = 0.0d0
+    RR = 0.0d0
 
     allocate(cPI(n, pin))
 
@@ -80,7 +80,6 @@ contains
 
     call qz(G0, G1, AA, BB, Q, Z, alpha, beta, n, info)
     Q = transpose(conjg(Q))
-
 
     if (zxz == 1) then
        print *, "Coincident zeros. Indeterminacy and/or nonexistance."
@@ -99,6 +98,8 @@ contains
     end if
 
     allocate(Qstab(nstab, n), Qunstab(nunstab, n))
+
+
 
     Qstab = Q(1:nstab, :)
     Qunstab = Q(nstab+1:n,:)
@@ -157,7 +158,7 @@ contains
 
     ! eta_v => deta/veta' (recall zsvd returns v', not v)
     do i = 1, lmin
-       call zdscal(lmin, 1.0_wp/eta_s(i), eta_v(i,:), 1)
+       call zdscal(lmin, 1.0d0/eta_s(i), eta_v(i,:), 1)
     end do
 
     ! zwt_u_tran => deta1*uu'
@@ -171,9 +172,9 @@ contains
 
 
     allocate(tmat(nstab, n), int_mat(lmin, nstab))
-    tmat = 0.0_wp
+    tmat = 0.0d0
     do i  = 1, nstab
-       tmat(i,i) = 1.0_wp
+       tmat(i,i) = 1.0d0
     end do
 
     ! int mat = deta\veta'*veta1*deta1*ueta1'
@@ -183,27 +184,27 @@ contains
          eta_u, nunstab, CPLX_ZERO, tmat(:, nstab+1:n), nstab)
 
 
-    cG0 = cmplx(0.0_wp,0.0_wp)
+    cG0 = dcmplx(0.0d0,0.0d0)
     cG0(1:(n-nunstab),:) = matmul(tmat,AA)
 
     do i = n-nunstab+1,n
-       cG0(i,i) = dcmplx(1.0_wp, 0.0_wp)
+       cG0(i,i) = dcmplx(1.0d0, 0.0d0)
     end do
 
-    cG1 = dcmplx(0.0_wp,0.0_wp)
+    cG1 = dcmplx(0.0d0,0.0d0)
     cG1(1:(n-nunstab),:) = matmul(tmat,BB)
 
     call zgesv(n, n, cG0, n, ipiv, cG1, n, info)
 
     TT = real(matmul(matmul(Z, cG1), transpose(conjg(Z))));
-    cRR = dcmplx(0.0_wp)
+    cRR = dcmplx(0.0d0)
     cRR(1:n-nunstab,:) = matmul(matmul(tmat,Q),PSI)
 
-    cG0 = cmplx(0.0_wp,0.0_wp)
+    cG0 = dcmplx(0.0d0,0.0d0)
     cG0(1:(n-nunstab),:) = matmul(tmat,AA)
 
     do i = n-nunstab+1,n
-       cG0(i,i) = cmplx(1.0_wp, 0.0_wp)
+       cG0(i,i) = dcmplx(1.0d0, 0.0d0)
     end do
 
     call zgesv(n, size(RR, 2), cG0, n, ipiv, cRR, n, info)
@@ -218,17 +219,17 @@ contains
 
   subroutine compute_norm(d, norm, m, n)
     ! computes 2-norm of matrix d [m x n]
-    complex(wp), intent(in) :: d(m, n)
-    real(wp), intent(out) :: norm
+    double complex, intent(in) :: d(m, n)
+    double precision, intent(out) :: norm
     integer, intent(in) :: m, n
 
     integer :: md, lwork, info
-    real(wp), allocatable :: rwork(:), norm_m(:)
-    complex(wp), allocatable :: work(:)
+    double precision, allocatable :: rwork(:), norm_m(:)
+    double complex, allocatable :: work(:)
 
     md = minval((/ m, n /),1)
     lwork = -1
-    norm = 10.0_wp
+    norm = 10.0d0
     allocate(rwork(5*md), norm_m(md), work(100))
     call zgesvd('N','N', m, n, d, m, norm_m, 0, m, 0, md, work, lwork, rwork, info)
     lwork = work(1)
@@ -249,16 +250,16 @@ contains
 
   logical function delctg(alpha, beta)
 
-    complex(wp), intent(in) :: alpha, beta
-    real(wp) :: A, B, divhat
+    double complex, intent(in) :: alpha, beta
+    double precision :: A, B, divhat
 
     A = sqrt(real(alpha)**2 + aimag(alpha)**2)
     B = abs(real(beta))!sqrt(real(beta)**2.0 + aimag(beta)**2.0)
 
-    if (A > 0.0_wp) then
+    if (A > 0.0d0) then
        divhat = B/A
-       if (((fixdiv == 1) .and. (1.0_wp + verysmall < divhat)) .and. divhat < stake) then
-          stake = (1.0_wp + divhat) / 2.0_wp
+       if (((fixdiv == 1) .and. (1.0d0 + verysmall < divhat)) .and. divhat < stake) then
+          stake = (1.0d0 + divhat) / 2.0d0
        end if
 
     end if
@@ -281,13 +282,13 @@ contains
   subroutine qz(a, b, aa, bb, q, z, alpha, beta, n, info)
 
     double precision, intent(in) :: a(n,n), b(n,n)
-    complex(wp), intent(out), dimension(n,n) :: q, z, aa, bb
-    complex(wp), intent(out) :: alpha(n), beta(n)
+    double complex, intent(out), dimension(n,n) :: q, z, aa, bb
+    double complex, intent(out) :: alpha(n), beta(n)
     integer, intent(out) :: info
 
     integer :: n, sdim, lwork, i
-    complex(wp), dimension(n, n) :: cplxa, cplxb
-    complex(wp), allocatable :: work(:)
+    double complex, dimension(n, n) :: cplxa, cplxb
+    double complex, allocatable :: work(:)
     double precision, dimension(8*n) :: rwork
     logical, dimension(4*n) :: bwork
 
@@ -326,15 +327,15 @@ contains
   subroutine zsvd(A, U, S, V, nrow, ncolumn, nmin)
 
     integer, intent(in) :: nrow, ncolumn, nmin
-    complex(wp), intent(in) :: A(nrow, ncolumn)
+    double complex, intent(in) :: A(nrow, ncolumn)
 
-    complex(wp), intent(out) :: U(nrow, nmin), V(nmin, ncolumn)
-    real(wp), intent(out) :: S(nmin)
+    double complex, intent(out) :: U(nrow, nmin), V(nmin, ncolumn)
+    double precision, intent(out) :: S(nmin)
 
-    complex(wp) :: AA(nrow, ncolumn)
+    double complex :: AA(nrow, ncolumn)
     integer :: info, lwork
-    complex(wp), allocatable :: work(:)
-    real(wp) :: rwork(5*nmin)
+    double complex, allocatable :: work(:)
+    double precision :: rwork(5*nmin)
 
     AA = A
     ! query workspace
@@ -352,4 +353,5 @@ contains
     deallocate(work)
 
   end subroutine zsvd
+
 end module gensys

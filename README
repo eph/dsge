@@ -1,11 +1,26 @@
-This is the README file for the python package dsge.
+====
+dsge
+====
+A simple Python (2.7) package for Dynamic Stochastic General Equilibrium (DSGE) models.
+
+This was originally forked from Pablo Winant's (excellent) package
+dolo.  (See [https://github.com/EconForge/dolo].)  I wrote this mainly
+for my own personal use; as such it may contain bugs, and the
+documentation might be lacking in some (many) places.
 
 Installation
 ------------
-At the command line, type: 
+For linux/mac users, at the command line type:
 
-This package was originally forked from Pablo Winant's (excellent) package dolo.  
-See: albop.github.com.
+``pip install http://dsge.edherbst.net/dist/dsge-0.0.2.tar.gz``
 
-edward.p.herbst@frb.gov
+For windows users, use
 
+``pip install http://dsge.edherbst.net/dist/dsge-0.0.2.zip``
+
+
+Bugs and Questions
+------------------
+For bug reports and questions, send me an email at
+edward.p.herbst@frb.gov.  If there is enough interest,
+I'll mirror the source on github.

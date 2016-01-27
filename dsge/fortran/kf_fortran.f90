@@ -12,13 +12,13 @@ module filter
 
 
  contains
-   subroutine kalman_filter_missing_with_states(y, TT, RR, QQ, DD, ZZ, HH, t0, ny, nobs, neps, ns, &
+   subroutine kalman_filter_missing_with_states(y, TT, RR, QQ, DD, ZZ, HH, P0, t0, ny, nobs, neps, ns, &
         loglh, filtered_states, smooth_states)
      ! Evaluating the log likelihood of LGSS via the Kalman Filter.
      !  Can handle missing data entered as `NaN.'
      !--------------------------------------------------------------------------------
      integer, intent(in) :: ny, nobs, neps, ns, t0
-     double precision, intent(in) :: y(ny,nobs), TT(ns,ns), RR(ns,neps), QQ(neps,neps), DD(ny), ZZ(ny,ns), HH(ny,ny)
+     double precision, intent(in) :: y(ny,nobs), TT(ns,ns), RR(ns,neps), QQ(neps,neps), DD(ny), ZZ(ny,ns), HH(ny,ny), P0(ns,ns)
      double precision, intent(out) :: loglh(nobs), smooth_states(nobs,ns)
      double precision :: smooth_shocks(nobs,neps), smooth_vars(ns,ns,nobs)
      double precision, intent(out) :: filtered_states(nobs,ns)
@@ -40,10 +40,11 @@ module filter
      call dgemm('n','t', neps, ns, neps, 1.0_wp, QQ, neps, RR, ns, 0.0_wp, QQRRp, neps)
      call dgemm('n','n', ns, ns, neps, 1.0_wp, RR, ns, QQRRp, neps, 0.0_wp, RQR, ns)
 
-     call dlyap(TT, RQR, Pt, ns, info)
+
+     !call dlyap(TT, RQR, Pt, ns, info)
 
      ! Pt = TT*Pt*TT' + RQR
-
+     Pt = P0
      call dgemm('n','n', ns, ns, ns, 1.0_wp, TT, ns, Pt, ns, 0.0_wp, TTPt, ns)
      Pt = RQR
      call dgemm('n','t', ns, ns, ns, 1.0_wp, TTPt, ns, TT, ns, 1.0_wp, Pt, ns)
@@ -80,7 +81,7 @@ module filter
         smooth_states(t,:) = At
         P_mat(:,:,t) = Pt
 
-        if (ngood > 0) then 
+        if (ngood > 0) then
            ! yhat = ZZ*At + DD
            call dcopy(ngood, DD(oind), 1, yhat, 1)
            call dgemv('n', ngood, ns, ONE, ZZ(oind,:), ngood, At, 1, ONE, yhat, 1)
@@ -778,52 +779,52 @@ module filter
     end do
   end subroutine determinant
 
-subroutine dlyap(TT, RQR, P0, ns, info)
-  ! Computes the solution to the discrete Lyapunov equation,
-  !      P0 = TT*P0*TT' + RQR
-  ! where (inputs) TT, RQR and (output) P0 are ns x ns (real) matrices.
-  !--------------------------------------------------------------------------------
-  !use mkl95_precision, only: wp => dp
+! subroutine dlyap(TT, RQR, P0, ns, info)
+!   ! Computes the solution to the discrete Lyapunov equation,
+!   !      P0 = TT*P0*TT' + RQR
+!   ! where (inputs) TT, RQR and (output) P0 are ns x ns (real) matrices.
+!   !--------------------------------------------------------------------------------
+!   !use mkl95_precision, only: wp => dp
 
-  integer, intent(in) :: ns
-  double precision, intent(in) :: TT(ns,ns), RQR(ns,ns)
+!   integer, intent(in) :: ns
+!   double precision, intent(in) :: TT(ns,ns), RQR(ns,ns)
 
-  integer, intent(out) :: info
-  double precision, intent(out) :: P0(ns,ns)
+!   integer, intent(out) :: info
+!   double precision, intent(out) :: P0(ns,ns)
 
-  ! for slicot
-  double precision :: scale, U(ns,ns), UH(ns, ns), rcond, ferr, wr(ns), wi(ns), dwork(14*ns*ns*ns), sepd
-  integer :: iwork(ns*ns), ldwork
+!   ! for slicot
+!   double precision :: scale, U(ns,ns), UH(ns, ns), rcond, ferr, wr(ns), wi(ns), dwork(14*ns*ns*ns), sepd
+!   integer :: iwork(ns*ns), ldwork
 
-  integer :: t
+!   integer :: t
 
-  UH = TT
-  P0 = -1.0d0*RQR
-
-
-  call sb03md('D','X', 'N', 'T', ns, UH, ns, U, ns, P0, ns, &
-       scale, sepd, ferr, wr, wi, iwork, dwork, 14*ns*ns*ns, info)
-
-  !if (ferr > 0.000001d0) call dlyap_symm(TT, RQR, P0, ns, info)
-  if (info .ne. 0) then
-     print*,'SB03MD failed. (info = ', info, ')'
-     P0 = 0.0d0
-     info = 1
-     do t = 1,ns
-	P0(t,t)=1.0d0
-     end do
-
-     return
-  else
-
-     !	     P0 = 0.5d0*P0 + 0.5d0*transpose(P0)
-     info = 0
-
-  end if
+!   UH = TT
+!   P0 = -1.0d0*RQR
 
 
+!   call sb03md('D','X', 'N', 'T', ns, UH, ns, U, ns, P0, ns, &
+!        scale, sepd, ferr, wr, wi, iwork, dwork, 14*ns*ns*ns, info)
 
-end subroutine dlyap
+!   !if (ferr > 0.000001d0) call dlyap_symm(TT, RQR, P0, ns, info)
+!   if (info .ne. 0) then
+!      print*,'SB03MD failed. (info = ', info, ')'
+!      P0 = 0.0d0
+!      info = 1
+!      do t = 1,ns
+! 	P0(t,t)=1.0d0
+!      end do
+
+!      return
+!   else
+
+!      !	     P0 = 0.5d0*P0 + 0.5d0*transpose(P0)
+!      info = 0
+
+!   end if
+
+
+
+! end subroutine dlyap
 
 
 end module filter

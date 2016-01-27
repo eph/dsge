@@ -1,6 +1,5 @@
 declarations:
   name: 'sw'
-  type: 'sticky-information'
   variables: [r, labobs, robs, pinfobs, dy, dc, dinve, dw, zcapf, rkf, kf, pkf, cf, invef, yf, labf, w, wf, rrf, mc, zcap, rk, k, pk, c, inve, y, lab, pinf, kpf, kp,flexgap, a, b, g,  spinf, sw, ms, qs]
 
   shocks: [ea,  eb,  eg, epinf, ew, em, eqs]
@@ -133,7 +132,7 @@ calibration:
 
 estimation:
   data:
-    file: '/home/eherbst/from-work/dsge/dsge/examples/sw/YY.txt'
+    file: 'dsge/examples/sw/YY.txt'
     start: 1966Q1
 
   prior:

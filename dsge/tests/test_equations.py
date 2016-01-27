@@ -4,14 +4,14 @@ from numpy.testing import assert_equal
 from unittest import TestCase
 
 from dsge.DSGE import DSGE
-from dsge.symbols import Variable, Equation, timeshift
+from dsge.symbols import Variable, Equation
 
 from numpy.testing import assert_equal
 
 class TestEquations(TestCase):
-    
+
     def test_equation(self):
-        
+
         y = Variable('y')
         eq = Equation(y, 0.6*y(-1))
         print y.date

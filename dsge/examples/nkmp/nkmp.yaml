@@ -1,16 +1,16 @@
-# nkmp.yaml --- 
-# 
+# nkmp.yaml ---
+#
 # Description: This is model file for NKMP
 # model from An and Schorfheide (2007)
 # Author: Ed Herbst [edward.p.herbst@frb.gov]
 # Last-Updated: 11/24/15
-# 
+#
 declarations:
   name: 'nkmp'
   variables: [c, ppi, R, z, y, g, ylag]
   parameters: [tau, kap, psi1, psi2, rhor, rhogg, rhozz, rhogz, rhozg, rA, piA, gamQ, sigr, sigg, sigz, corrgz]
-  shocks: [epsg, epsz, epsr, epsr4]
-  observables: [ygr, infl, int] 
+  shocks: [epsg, epsz, epsr]
+  observables: [ygr, infl, int]
   para_func: [nu, bet, gam, piss, phi, gss]
 
 equations:
@@ -25,13 +25,13 @@ equations:
     - exp(c - y) = exp(-g) - phi*piss^2*gss/2*(exp(ppi) - 1)^2
 
     # Monetary Policy
-    - R = rhor * R(-1) + (1-rhor)*psi1*ppi + (1-rhor)*psi2*(y-g) + epsr 
+    - R = rhor * R(-1) + (1-rhor)*psi1*ppi + (1-rhor)*psi2*(y-g) + epsr
 
     # Demand Shock
-    - g = rhogg * g(-1) + rhogz * z(-1)  + epsg 
+    - g = rhogg * g(-1) + rhogz * z(-1)  + epsg
 
     # Technology Shock
-    - z = rhozz * z(-1) + rhozg * g(-1)  + epsz 
+    - z = rhozz * z(-1) + rhozg * g(-1)  + epsz
 
     # hack
     - ylag = y(-1)
@@ -39,7 +39,7 @@ equations:
   observables:
     # Output growth
     ygr : gamQ + (y - ylag + z)
-    
+
     # Observed inflation
     infl : piA + 4.0*ppi;
 
@@ -73,19 +73,18 @@ calibration:
     bet: 1/(1 + rA/400)
     piss: 1 + piA/400
 
-  covariances: 
+  covariances:
     epsg: sigg^2
     epsr: sigr^2
     epsz: sigz^2
     epsg, epsz: corrgz*sigg*sigz
-    epsr4 : sigr^2
-    
+
 estimation:
   data:
-    file: '/mq/home/m1eph00/python-repo/dsge/dsge/examples/nkmp/us.txt'
+    file: 'dsge/examples/nkmp/us.txt'
     start: 1983Q1
 
-  prior: 
+  prior:
     tau : [gamma, 2.00, 0.5]
     kap : [uniform, 0.00, 1.0]
     psi1: [gamma, 1.50, 0.25]

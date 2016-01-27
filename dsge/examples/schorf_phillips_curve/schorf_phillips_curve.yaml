@@ -1,0 +1,25 @@
+declarations:
+  name: pc
+  variables : [y,inf,r]
+  shocks: [er,ephi,exi]
+  parameters: [tau,psi,beta,kap]
+
+equations:
+  - y = y(+1) - tau*(r-inf(+1)) + ephi
+  - r = psi*inf + er
+  - inf = beta*inf(+1) + kap*y + exi
+
+calibration:
+  parameters:
+    beta: 0.99
+    psi: 1.5
+    tau: 1
+    kap: 0.2
+
+  covariances:
+    ephi : 1.0
+    er : 1.0
+    exi : 1.0
+
+estimation:
+  blah:

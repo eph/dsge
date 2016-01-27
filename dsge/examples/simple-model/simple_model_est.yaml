@@ -1,0 +1,26 @@
+declarations:
+  name: 'simple_model'
+  variables: [y,x]
+  shocks: [e]
+  parameters: [beta, rho, sigma]
+  observables: [y_obs]
+equations:
+  model:
+    - y = beta * y(+1) + x
+    - x = rho*x(-1) + e
+  observables:
+    y_obs : y
+calibration:
+  parameters:
+    beta: 0.99
+    rho: 0.8
+    sigma: 1.0
+  covariances:
+    e: sigma^2
+estimation:
+  data: examples/simple-model/yy.txt
+
+  prior:
+    beta: [normal, 0.99, 1e-3]
+    rho: [beta, 0.6, 0.3]
+    sigma: [inv_gamma, 0.1, 2]
