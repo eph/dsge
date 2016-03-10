@@ -1,47 +1,85 @@
-import setuptools
+from setuptools import find_packages
 import numpy.distutils.core
-from numpy.distutils.core import Extension
 
-import os
-import sysconfig
-from numpy.distutils.system_info import get_info
+from setuptools import find_packages
 
 
-
-try:
-    blas_opt = get_info('blas_mkl',notfound_action=2)
-    lapack_opt = get_info('lapack_mkl',notfound_action=2)
-
-    extra_info = get_info('mkl', 2)
-
-except:
-    blas_opt = get_info('blas',notfound_action=2)
-    lapack_opt = get_info('lapack',notfound_action=2)
-
-    extra_info = {'libraries': []}
+# import os
+# import sysconfig
+#
 
 
-libs = [blas_opt['libraries'][0], lapack_opt['libraries'][0]] + extra_info['libraries']
-lib_dirs = [blas_opt['library_dirs'][0], lapack_opt['library_dirs'][0]]
 
+#try:
+#    blas_opt = get_info('blas_mkl',notfound_action=2)
+#    lapack_opt = get_info('lapack_mkl',notfound_action=2)
+#
+#    extra_info = get_info('mkl', 2)
+
+# except:
+#blas_opt = get_info('blas',notfound_action=2)
+#lapack_opt = get_info('lapack',notfound_action=2)
+#
+#extra_info = {'libraries': []}
+#
+#
+#libs = [blas_opt['libraries'][0], lapack_opt['libraries'][0]] + extra_info['libraries']
+#lib_dirs = [blas_opt['library_dirs'][0], lapack_opt['library_dirs'][0]]
+
+
+def build_ext(config):
+
+    from numpy.distutils.system_info import get_info
+
+    lapack_info = get_info('lapack_opt',1)
+
+    f_sources = ['dsge/fortran/cholmod.f90',
+                 'dsge/fortran/kf_fortran.f90',
+                 'dsge/fortran/gensys_wrapper.f90']
+
+    lapack_info['libraries'].remove('mkl_lapack95')
+
+    if lapack_info:
+        config.add_library('gensys', 'dsge/fortran/gensys.f90')
+
+
+        config.add_extension(name='fortran.cholmod',
+                             sources=['dsge/fortran/cholmod.f90'],
+                             extra_info = lapack_info)##libraries=['lapack', 'blas'])
+
+        config.add_extension(name='fortran.filter',
+                             sources=['dsge/fortran/kf_fortran.f90'],
+                             extra_info = lapack_info)#                             libr
+
+
+        config.add_extension(name='fortran.gensysw',
+                             sources=['dsge/fortran/gensys.f90'],
+                             libraries = ['gensys'],
+                             extra_info = lapack_info,
+                             )
+
+    config_dict = config.todict()
+    config_dict.pop('name')
+    return config_dict
+#config_dict.pop('packages')
 
 
 # from numpy.distutils.misc_util import Configuration
 
 # config = Configuration('dsge',parent_package='',top_path=None)
 
-ext1 = Extension(name='dsge.fortran.cholmod',
-                 sources=['dsge/fortran/cholmod.f90'],
-                 libraries=libs)
+# ext1 = Extension(name='dsge.fortran.cholmod',
+#                  sources=['dsge/fortran/cholmod.f90'],
+#                  libraries=libs)
 
-ext2 = Extension(name='dsge.fortran.filter',
-                 sources=['dsge/fortran/kf_fortran.f90'],
-                 libraries=libs)
+# ext2 = Extension(name='dsge.fortran.filter',
+#                  sources=['dsge/fortran/kf_fortran.f90'],
+#                  libraries=libs)
 
-ext3 = Extension(name='dsge.fortran.gensysw',
-                 sources=['dsge/fortran/gensys_wrapper.f90'],
-                 libraries=['gensys']+libs,
-                 module_dirs=['build/temp.'+sysconfig.get_platform()+'-2.7'])
+# ext3 = Extension(name='dsge.fortran.gensysw',
+#                  sources=['dsge/fortran/gensys_wrapper.f90'],
+#                  libraries=['gensys']+libs,
+#                  module_dirs=['build/temp.'+sysconfig.get_platform()+'-2.7'])
 
 # config.version = '0.0.2'
 
@@ -60,22 +98,29 @@ ext3 = Extension(name='dsge.fortran.gensysw',
 
 if __name__ == "__main__":
 
+    from numpy.distutils.misc_util import Configuration
+    config_dict = build_ext(Configuration('dsge',parent_package=None,
+                                          top_path=None))
     numpy.distutils.core.setup(
         name = 'dsge',
         version = '0.0.2',
         platforms = 'linux',
-        libraries = [('gensys',
-                      {'sources': ['dsge/fortran/gensys.f90'],
-
-                   })],
-        packages = ['dsge', 'dsge.tests', 'dsge.extension','dsge.fortran'],
-        ext_modules = [ext1,ext2,ext3],
+        packages = find_packages(),
         test_suite='nose.collector',
         tests_require=['nose'],
+        package_data = {'dsge':
+                        ['examples/ar1/*',
+                         'examples/DGS/*',
+                         'examples/edo/*',
+                         'examples/nkmp/*',
+                         'examples/schorf_phillips_curve/*',
+                         'examples/simple-model/*',
+                         'examples/sw/*']},
         install_requires=[
             'pandas',
-            'slycot',
-            'sympy'
+            #'slycot',
+            #'sympy',
+            #'scipy'
          ],
-
+        **(config_dict)
    )

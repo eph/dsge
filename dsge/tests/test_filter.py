@@ -7,11 +7,18 @@ from unittest import TestCase
 
 from dsge import DSGE
 
+import pkg_resources
+
 class TestFilter(TestCase):
 
     def test_sw_lik(self):
+        relative_loc = 'examples/sw/'
+        model_file = pkg_resources.resource_filename('dsge', relative_loc+'sw.yaml')
+        data_file = pkg_resources.resource_filename('dsge', relative_loc+'YY.txt')
 
-        sw = DSGE.DSGE.read('dsge/examples/sw/sw.yaml')
+        sw = DSGE.DSGE.read(model_file)
+        sw['__data__']['estimation']['data']['file'] = data_file
+
         sw = sw.compile_model()
 
         # p0 = [0.108643019053367,
@@ -56,7 +63,13 @@ class TestFilter(TestCase):
         self.assertAlmostEqual(-829.7412615500879, lik0, places=6)
 
     def test_sw_qlik(self):
-        sw = DSGE.DSGE.read('dsge/examples/sw/sw.yaml')
+        relative_loc = 'examples/sw/'
+        model_file = pkg_resources.resource_filename('dsge', relative_loc+'sw.yaml')
+        data_file = pkg_resources.resource_filename('dsge', relative_loc+'YY.txt')
+
+        sw = DSGE.DSGE.read(model_file)
+        sw['__data__']['estimation']['data']['file'] = data_file
+
         sw = sw.compile_model()
 
         p0 = [0.108643019053367,
@@ -103,8 +116,12 @@ class TestFilter(TestCase):
 
 
     def test_ar1(self):
+        relative_loc = 'examples/ar1/'
+        model_file = pkg_resources.resource_filename('dsge', relative_loc+'ar1.yaml')
+        data_file = pkg_resources.resource_filename('dsge', relative_loc+'arma23_sim200.txt')
+        ar1 = DSGE.DSGE.read(model_file)
+        ar1['__data__']['estimation']['data'] = data_file
 
-        ar1 = DSGE.DSGE.read('dsge/examples/ar1/ar1.yaml')
         ar1 = ar1.compile_model()
 
         rho = 0.85
@@ -154,9 +171,12 @@ class TestFilter(TestCase):
 
 
     def test_missing(self):
+        relative_loc = 'examples/ar1/'
+        model_file = pkg_resources.resource_filename('dsge', relative_loc+'ar1.yaml')
+        data_file = pkg_resources.resource_filename('dsge', relative_loc+'arma23_sim200.txt')
+        ar1 = DSGE.DSGE.read(model_file)
+        ar1['__data__']['estimation']['data'] = data_file
 
-
-        ar1 = DSGE.DSGE.read('dsge/examples/ar1/ar1.yaml')
         rho, sigma = ar1.p0()
 
         ar1 = ar1.compile_model()
@@ -188,8 +208,13 @@ class TestFilter(TestCase):
         pass
 
     def test_filtered_values(self):
+        relative_loc = 'examples/nkmp/'
+        model_file = pkg_resources.resource_filename('dsge', relative_loc+'nkmp.yaml')
+        data_file = pkg_resources.resource_filename('dsge', relative_loc+'us.txt')
 
-        dsge = DSGE.DSGE.read('dsge/examples/nkmp/nkmp.yaml')
+        dsge = DSGE.DSGE.read(model_file)
+        dsge['__data__']['estimation']['data']['file'] = data_file
+
         p0 = dsge.p0()
         model = dsge.compile_model()
 

@@ -8,6 +8,8 @@ from unittest import TestCase
 from dsge.fortran import gensysw
 from dsge.DSGE import DSGE
 
+import pkg_resources
+
 class TestGensys(TestCase):
 
     def test_simple(self):
@@ -21,8 +23,12 @@ class TestGensys(TestCase):
         #assert_equal(np.eye(3),PP)
 
     def test_pc(self):
-        pc = DSGE.read('dsge/examples/schorf_phillips_curve/'
-                       'schorf_phillips_curve.yaml')
+        relative_loc = ('examples/schorf_phillips_curve/'
+                        'schorf_phillips_curve.yaml')
+        model_file = pkg_resources.resource_filename('dsge', relative_loc)
+
+
+        pc = DSGE.read(model_file)
         p0 = pc.p0()
         model = pc.compile_model()
 
@@ -38,6 +44,7 @@ class TestGensys(TestCase):
                               [-kap*tau, kap, 1],
                               [1, kap*psi, psi]]))
         assert_array_almost_equal(RR[:3,:3], RRexact)
+
     # def test_single_equation(self):
     #     simple = DSGE.read('dsge/examples/simple-model/simple_model_est.yaml')
     #     p0 = simple.p0()

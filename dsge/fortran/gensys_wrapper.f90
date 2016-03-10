@@ -35,6 +35,7 @@ contains
 
 
     call do_gensys(TT, CC, RR, fmat, fwt, ywt, gev, eu, loose, &
+         ns, neps, neta, &
        GG0, GG1, CC0, PPSI, PPI,ddiv)
 
 
