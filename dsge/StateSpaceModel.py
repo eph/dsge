@@ -35,13 +35,17 @@ Object for holding state space model
     ----------
     yy : array_like or pandas.DataFrame
         Dataset containing the observables of the model.
+
     t0 : int, optional
         Number of initial observations to condition on for
         likelihood evaluation. The default is 0.
+
     shock_names : list or None, optional
         Names of the shocks.
+
     state_names : list or None, optional
         Names of the states.
+
     obs_names : list or None, optional
         Names of observables.
 
@@ -609,7 +613,7 @@ class LinearDSGEModel(StateSpaceModel):
         nf = PPI.shape[1]
 
         if nf > 0:
-            TT, CC, RR, fmat, fwt, ywt, gev, RC, loose = gensysw.gensys_wrapper.call_gensys(G0, G1, C0, PSI, PPI, 1.00000000001)
+            TT, CC, RR, fmat, fwt, ywt, gev, RC, loose = gensysw.gensys.call_gensys(G0, G1, C0, PSI, PPI, 1.00000000001)
         else:
             TT = np.linalg.inv(G0).dot(G1)
             RR = np.linalg.inv(G0).dot(PSI)

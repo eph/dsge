@@ -3,17 +3,12 @@ import copy
 from sympy.printing.str import StrPrinter
 
 from sympy.core.cache import clear_cache
+
 clear_cache()
 
 
 StrPrinter._print_TSymbol = lambda self,x: x.__str__()
 
-
-# class CustomStrPrinter(StrPrinter):
-
-#     def _print_TSymbol(self, expr):
-#         return expr.__str__()
-        
 class Parameter(sympy.Symbol):
 
     def __init__(self, name, exp_date=0):
@@ -24,8 +19,8 @@ class Parameter(sympy.Symbol):
 
     def __set_prior(self, prior):
         self.prior = prior
-        
-        
+
+
 
 class TSymbol(sympy.Symbol):
 
@@ -76,7 +71,7 @@ class TSymbol(sympy.Symbol):
        return {
            'date': self.date,
            'name': self.name,
-           'exp_date': self.exp_date, 
+           'exp_date': self.exp_date,
            'is_commutative': self.is_commutative,
            '_mhash': self._mhash
        }
@@ -104,7 +99,7 @@ class TSymbol(sympy.Symbol):
 
     # def repr(self):
     #     return self.__str__()
-        
+
     # def _print_TSymbol(self):
     #     return self.__str__()
 
@@ -112,7 +107,7 @@ class TSymbol(sympy.Symbol):
     #     return self.__str__()
 
 
-        
+
 class Variable(TSymbol):
 
     @property
@@ -132,15 +127,15 @@ class Variable(TSymbol):
 
     def __repr__(self):
         return self.__str__()
-            
+
     __sstr__ = __str__
-    
+
 class LaggedExpectation(Variable):
 
     def __init__(self, name, date=0, exp_date=0):
         Variable.__init__(self, name, date)
         self.exp_date = exp_date;
-        
+
 
     def __getstate_(self):
         return {
@@ -173,9 +168,9 @@ class Shock(TSymbol):
             return('e_'+self.name)
         else:
             return('e_E'+self.name)
-    
 
-    
+
+
 
 
 class Equation(sympy.Equality):
@@ -191,4 +186,3 @@ class Equation(sympy.Equality):
     def variables(self):
         l = [v for v in self.atoms() if isinstance(v, Variable)]
         return l
-

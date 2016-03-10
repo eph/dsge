@@ -9,19 +9,20 @@ class Prior(object):
         else:
             self.npara = len(individual_prior)
 
-        
+
     def logpdf(self, para):
         if self.priors is None:
             return None
-            
+
         ind_density = [x.logpdf(y) for x, y in zip(self.priors, para)]
         ldens = np.sum(ind_density)
         if ldens == -np.inf:
             ldens = -100000000000.
         return ldens
-    def rvs(self):
+    def rvs(self,size=None):
         if self.priors is None:
             return None
-        return np.array([x.rvs() for x in self.priors])
-        
-        
+        if size==None:
+            return np.array([x.rvs() for x in self.priors])
+        else:
+            return np.array([[x.rvs() for x in self.priors] for _ in range(size)])
