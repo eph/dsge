@@ -12,12 +12,7 @@ import pkg_resources
 class TestFilter(TestCase):
 
     def test_sw_lik(self):
-        relative_loc = 'examples/sw/'
-        model_file = pkg_resources.resource_filename('dsge', relative_loc+'sw.yaml')
-        data_file = pkg_resources.resource_filename('dsge', relative_loc+'YY.txt')
-
-        sw = DSGE.DSGE.read(model_file)
-        sw['__data__']['estimation']['data']['file'] = data_file
+        from dsge.examples import sw
 
         sw = sw.compile_model()
 
@@ -208,12 +203,7 @@ class TestFilter(TestCase):
         pass
 
     def test_filtered_values(self):
-        relative_loc = 'examples/nkmp/'
-        model_file = pkg_resources.resource_filename('dsge', relative_loc+'nkmp.yaml')
-        data_file = pkg_resources.resource_filename('dsge', relative_loc+'us.txt')
-
-        dsge = DSGE.DSGE.read(model_file)
-        dsge['__data__']['estimation']['data']['file'] = data_file
+        from dsge.examples import nkmp as dsge
 
         p0 = dsge.p0()
         model = dsge.compile_model()

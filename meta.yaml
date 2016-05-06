@@ -1,0 +1,79 @@
+package:
+  name: dsge
+  version: "0.0.2"
+
+source:
+  path: .
+  #fn: dsge-0.0.2.tar.gz
+  #url: http://dsge.edherbst.net/dist/dsge-0.0.2.tar.gz
+  # md5:
+#  patches:
+   # List any patch files here
+   # - fix.patch
+
+#  build:
+  # noarch_python: True
+  # preserve_egg_dir: True
+  # entry_points:
+    # Put any entry points (scripts to be generated automatically) here. The
+    # syntax is module:function.  For example
+    #
+    # - dsge = dsge:main
+    #
+    # Would create an entry point called dsge that calls dsge.main()
+
+
+  # If this is a new build for the same version, increment the build
+  # number. If you do not include this key, it defaults to 0.
+  # number: 1
+
+requirements:
+
+  build:
+    - python
+    - setuptools
+    - numpy
+    - pandas
+    - libgcc
+    #- slycot
+    # - sympy
+    # - scipy
+
+
+  run:
+    - python
+    - pandas
+    #- slycot
+    - sympy
+    - pyyaml
+    - scipy
+
+test:
+  # Python imports
+  #imports:
+    #- dsge
+    # - dsge.extension
+    # - dsge.fortran
+    #- dsge.tests
+
+  # commands:
+    # You can put test commands to be run here.  Use this to test that the
+    # entry points work.
+
+
+  # You can also put a file called run_test.py in the recipe that will be run
+  # at test time.
+
+  requires:
+    - nose
+    # Put any additional test requirements here.  For example
+    # - nose
+
+about:
+  #home: The package home page
+  license: bsd
+  #summary: Summary of the package
+
+# See
+# http://docs.continuum.io/conda/build.html for
+# more information about meta.yaml
