@@ -2,7 +2,7 @@ from __future__ import division
 
 import sympy
 import yaml
-from symbols import Variable, Equation, Shock, Parameter, TSymbol
+from .symbols import Variable, Equation, Shock, Parameter, TSymbol
 
 import scipy.stats as stats
 from sympy.matrices import Matrix, zeros
@@ -10,7 +10,7 @@ import re
 import numpy as np
 import itertools
 import pandas as p
-from StateSpaceModel import LinearDSGEModel
+from .StateSpaceModel import LinearDSGEModel
 
 class EquationList(list):
     """A container for holding an set of equations."""
@@ -149,7 +149,7 @@ class DSGE(dict):
         return len(self.parameters)
 
     def p0(self):
-        return map(lambda x: self['calibration'][str(x)], self.parameters)
+        return list(map(lambda x: self['calibration'][str(x)], self.parameters))
 
     def python_sims_matrices(self, matrix_format='numeric'):
 
@@ -248,9 +248,9 @@ class DSGE(dict):
         for p in self['other_para']:
             ss[str(p)] = eval(str(self['para_func'][p.name]), context)
             context[str(p)] = ss[str(p)]
-            print "\r Constructing substitution dictionary [{0:20s}]".format(p.name),
+            #print("\r Constructing substitution dictionary [{0:20s}]".format(p.name),)
         #sys.stdout.flush()
-        print ""
+        #print ""
 
         GAM0 = lambdify(self.parameters+self['other_para'], GAM0)
         GAM1 = lambdify(self.parameters+self['other_para'], GAM1)
@@ -327,9 +327,9 @@ class DSGE(dict):
             startdate = 0
 
         if len(self['observables']) > 1:
-            data = p.DataFrame(data[:, :len(self['observables'])], columns=map(lambda x: str(x), self['observables']))
+            data = p.DataFrame(data[:, :len(self['observables'])], columns=list(map(lambda x: str(x), self['observables'])))
         else:
-            data = p.DataFrame(data, columns=map(lambda x: str(x), self['observables']))
+            data = p.DataFrame(data, columns=list(map(lambda x: str(x), self['observables'])))
 
         if startdate is not 0:
             nobs = data.shape[0]
@@ -346,7 +346,7 @@ class DSGE(dict):
                 pmean = prior_spec[1]
                 pstdd = prior_spec[2]
                 from scipy.stats import beta, norm, uniform, gamma
-                from OtherPriors import InvGamma
+                from .OtherPriors import InvGamma
                 if ptype=='beta':
                     a = (1-pmean)*pmean**2/pstdd**2 - pmean
                     b = a*(1/pmean - 1)
@@ -375,12 +375,12 @@ class DSGE(dict):
                     pr.name = 'uniform'
                     prior.append(pr)
 
-        from Prior import Prior as pri
+        from .Prior import Prior as pri
         dsge = LinearDSGEModel(data, GAM0, GAM1, PSI, PPI,
                                QQ, DD, ZZ, HH, t0=0,
-                               shock_names=map(str, self.shocks),
-                               state_names=map(str, self.variables+self['fvars']),
-                               obs_names=map(str, self['observables']),
+                               shock_names=list(map(str, self.shocks)),
+                               state_names=list(map(str, self.variables+self['fvars'])),
+                               obs_names=list(map(str, self['observables'])),
                                prior=pri(prior))
 
         return dsge
@@ -557,7 +557,7 @@ class DSGE(dict):
 
         info = {'nshock': nshock, 'npara': npara}
         QQ = sympy.zeros(nshock, nshock)
-        for key, value in cov.iteritems():
+        for key, value in cov.items():
             shocks = key.split(",")
 
             if len(shocks)==1:
@@ -580,7 +580,7 @@ class DSGE(dict):
         HH = sympy.zeros(nobs, nobs)
 
         if measurement_errors is not None:
-            for key, value in cal['measurement_errors'].iteritems():
+            for key, value in cal['measurement_errors'].items():
                 shocks = key.split(",")
 
                 if len(shocks)==1:
@@ -601,7 +601,7 @@ class DSGE(dict):
 
         context['sum'] = np.sum
         context['range'] = range
-        for obs in obs_equations.iteritems():
+        for obs in obs_equations.items():
             obs_equations[obs[0]] = eval(obs[1], context)
 
 
@@ -636,5 +636,3 @@ class DSGE(dict):
         return model
 
 
-def iteritems(d):
-    return zip(d.keys(), d.values())

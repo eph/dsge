@@ -26,7 +26,7 @@ from setuptools import find_packages
 #libs = [blas_opt['libraries'][0], lapack_opt['libraries'][0]] + extra_info['libraries']
 #lib_dirs = [blas_opt['library_dirs'][0], lapack_opt['library_dirs'][0]]
 
-
+#print("Packages",find_packages())
 def build_ext(config):
 
     from numpy.distutils.system_info import get_info
@@ -37,7 +37,8 @@ def build_ext(config):
                  'dsge/fortran/kf_fortran.f90',
                  'dsge/fortran/gensys_wrapper.f90']
 
-    lapack_info['libraries'].remove('mkl_lapack95')
+    
+    lapack_info['libraries'].remove('mkl_lapack95_lp64')
 
     if lapack_info:
         config.add_library('gensys', 'dsge/fortran/gensys.f90')

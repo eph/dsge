@@ -35,28 +35,31 @@ requirements:
     - numpy
     - pandas
     - libgcc
+    - scipy
     #- slycot
-    # - sympy
-    # - scipy
+    - sympy
+    - scipy
 
 
   run:
     - python
+    - libgcc
     - pandas
-    #- slycot
+    - slycot
     - sympy
     - pyyaml
     - scipy
 
 test:
   # Python imports
-  #imports:
-    #- dsge
+  imports:
+    - dsge
+
     # - dsge.extension
     # - dsge.fortran
     #- dsge.tests
 
-  # commands:
+  commands:
     # You can put test commands to be run here.  Use this to test that the
     # entry points work.
 

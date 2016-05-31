@@ -14,7 +14,7 @@ class TestEquations(TestCase):
 
         y = Variable('y')
         eq = Equation(y, 0.6*y(-1))
-        print y.date
+        print(y.date)
         var_list = [y]
         subs_dict = {}
 

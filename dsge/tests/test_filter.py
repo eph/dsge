@@ -146,7 +146,7 @@ class TestFilter(TestCase):
         byhand = norm.logpdf(yymean[:-(h-1)], loc=yyhat[:-(h-1)], scale=sig[:-(h-1)]).sum()
 
         lik0 = ar1.log_quasilik_hstep([rho, sigma], h=2)
-        print byhand, lik0
+        print(byhand, lik0)
         self.assertAlmostEqual(byhand, lik0)
 
         h = 3
@@ -161,7 +161,7 @@ class TestFilter(TestCase):
         byhand = norm.logpdf(yymean, loc=yyhat[:-(h-1)], scale=sig[:-(h-1)]).sum()
         lik0 = ar1.log_quasilik_hstep([rho, sigma], h=h)
 
-        print byhand, lik0
+        print(byhand, lik0)
         self.assertAlmostEqual(byhand, lik0)
 
 
@@ -210,6 +210,6 @@ class TestFilter(TestCase):
 
         res = model.kf_everything(p0)
 
-        print res['filtered_states']
+        print(res['filtered_states'])
 
         self.assertAlmostEqual(0, 0)

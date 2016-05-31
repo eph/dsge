@@ -34,10 +34,10 @@ def translate(model, output_dir='.', language='fortran'):
 
     try: 
         os.mkdir(output_dir)
-        print "Created directory: "
-        print "\t", output_dir
+        print("Created directory: ")
+        print("\t", output_dir)
     except:
-        print "Directory already exists."
+        print("Directory already exists.")
 
     
     if language=='fortran':
@@ -218,7 +218,7 @@ def write_model_file(model, output_dir, language='fortran', nobs=None):
                                   npara=len(model.parameters), t0=0, extra_includes='', 
                                   deff='', pmsv=pmsv, **model)
 
-    print out
+    print(out)
     
 def translate_fortran(model, output_dir):
 

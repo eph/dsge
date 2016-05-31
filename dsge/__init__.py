@@ -1,6 +1,6 @@
-import tests
+import dsge.tests
 
-import DSGE
+import dsge.DSGE as DSGE
 
 from numpy.testing import Tester
 

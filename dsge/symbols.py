@@ -12,7 +12,10 @@ StrPrinter._print_TSymbol = lambda self,x: x.__str__()
 class Parameter(sympy.Symbol):
 
     def __init__(self, name, exp_date=0):
-        super(Parameter,self).__init__(name)
+        super(Parameter,self).__init__()
+        self.name = name
+    # def __new__(self, name, exp_date=0):
+    #     super(Parameter,self).__new__( name)
 
     def __repr__(self):
         return(self.name)
@@ -175,8 +178,10 @@ class Shock(TSymbol):
 
 class Equation(sympy.Equality):
 
-    def __init__(self, lhs, rhs, name=None):
-        super(sympy.Equality, self).__init__(lhs, rhs)
+    #def __init__(self, lhs, rhs, name=None):
+    #    super(sympy.Equality, self).__init__(lhs, rhs)
+    def __new__(cls, lhs, rhs, name=None):
+        return super(sympy.Equality, cls).__new__(cls, lhs, rhs)
 
     @property
     def set_eq_zero(self):

@@ -15,9 +15,9 @@ from __future__ import division
 import numpy as np
 import scipy as sp
 import pandas as p
-from fortran import gensysw, filter
-from helper_functions import cholpsd
-import dlyap
+from .fortran import gensysw, filter
+from .helper_functions import cholpsd
+from dsge import dlyap
 
 class StateSpaceModel(object):
     r"""
@@ -188,13 +188,15 @@ Object for holding state space model
 
 
         yy = p.DataFrame(yy)
+
         TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
 
         if P0=='unconditional':
             P0, info = dlyap.dlyap(TT, RR.dot(QQ).dot(RR.T))
 
         f = filter.filter.kalman_filter_missing_with_states
-        loglh, filtered_states, smoothed_states = f(yy.T, TT, RR, QQ, DD.squeeze(), ZZ, HH, P0, t0)
+        loglh, filtered_states, smoothed_states = f(np.atleast_2d(yy.T), TT, RR,
+                                                    QQ, DD.squeeze(), ZZ, HH, P0, t0)
 
         results = {}
         results['log_lik'] = p.DataFrame(loglh, columns=['log_lik'])
@@ -662,8 +664,8 @@ if __name__ == '__main__':
     HH = lambda rho: 0.1
 
     test_ss = StateSpaceModel(yy, TT, RR, QQ, DD, ZZ, HH)
-    print test_ss.system_matrices(0.3)
-    print test_ss.log_lik(0.3)
+    print( test_ss.system_matrices(0.3))
+    print( test_ss.log_lik(0.3))
     # if reduce_system:
     #     f = filter.filter.kalman_filter_missing_with_states
     #     loglh, filtered_states, smoothed_states = f(yy.T, TT, RR, QQ, DD, ZZ, HH, t0)
