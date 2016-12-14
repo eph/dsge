@@ -251,16 +251,17 @@ class DSGE(dict):
             #print("\r Constructing substitution dictionary [{0:20s}]".format(p.name),)
         #sys.stdout.flush()
         #print ""
+        context_f['numpy'] = 'numpy'
+        GAM0 = lambdify([self.parameters+self['other_para']], GAM0, 'numpy')
+        GAM1 = lambdify([self.parameters+self['other_para']], GAM1, 'numpy')
+        PSI = lambdify([self.parameters+self['other_para']], PSI, 'numpy')
+        PPI = lambdify([self.parameters+self['other_para']], PPI, 'numpy')
 
-        GAM0 = lambdify(self.parameters+self['other_para'], GAM0)
-        GAM1 = lambdify(self.parameters+self['other_para'], GAM1)
-        PSI = lambdify(self.parameters+self['other_para'], PSI)
-        PPI = lambdify(self.parameters+self['other_para'], PPI)
+        psi = lambdify([self.parameters], [ss[str(px)] for px in self['other_para']], modules=context_f)
 
-        psi = lambdify(self.parameters, [ss[str(px)] for px in self['other_para']], modules=context_f)
         def add_para_func(f):
             def wrapped_f(px):
-                return f(*np.append(px, psi(*px)))
+                return f([px, psi(px)])
             return wrapped_f
 
         self.GAM0 = add_para_func(GAM0)
@@ -274,10 +275,10 @@ class DSGE(dict):
         DD = DD.subs(subs_dict)
         ZZ = ZZ.subs(subs_dict)
 
-        QQ = lambdify(self.parameters+self['other_para'], self['covariance'])
-        HH = lambdify(self.parameters+self['other_para'], self['measurement_errors'])
-        DD = lambdify(self.parameters+self['other_para'], DD)
-        ZZ = lambdify(self.parameters+self['other_para'], ZZ)
+        QQ = lambdify([self.parameters+self['other_para']], self['covariance'])
+        HH = lambdify([self.parameters+self['other_para']], self['measurement_errors'])
+        DD = lambdify([self.parameters+self['other_para']], DD)
+        ZZ = lambdify([self.parameters+self['other_para']], ZZ)
 
         self.QQ = add_para_func(QQ)
         self.DD = add_para_func(DD)
@@ -346,7 +347,7 @@ class DSGE(dict):
                 pmean = prior_spec[1]
                 pstdd = prior_spec[2]
                 from scipy.stats import beta, norm, uniform, gamma
-                from .OtherPriors import InvGamma
+                from dsge.OtherPriors import InvGamma
                 if ptype=='beta':
                     a = (1-pmean)*pmean**2/pstdd**2 - pmean
                     b = a*(1/pmean - 1)

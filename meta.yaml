@@ -1,6 +1,6 @@
 package:
   name: dsge
-  version: "0.0.2"
+  version: "0.0.3"
 
 source:
   path: .
@@ -36,10 +36,9 @@ requirements:
     - pandas
     - libgcc
     - scipy
-    #- slycot
     - sympy
     - scipy
-
+    - numba 
 
   run:
     - python
@@ -49,6 +48,7 @@ requirements:
     - sympy
     - pyyaml
     - scipy
+    - numba
 
 test:
   # Python imports

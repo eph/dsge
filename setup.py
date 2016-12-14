@@ -38,7 +38,8 @@ def build_ext(config):
                  'dsge/fortran/gensys_wrapper.f90']
 
     
-    lapack_info['libraries'].remove('mkl_lapack95_lp64')
+
+    #lapack_info['libraries'].remove('mkl_lapack95_lp64')
 
     if lapack_info:
         config.add_library('gensys', 'dsge/fortran/gensys.f90')

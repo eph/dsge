@@ -5,9 +5,8 @@ A module for Linear Gaussian State Space models.
 Classes
 -------
 StateSpaceModel
-Linear DSGE Model
+LinearDSGEModel
 LinLagExModel
-
 """
 
 from __future__ import division
@@ -16,8 +15,46 @@ import numpy as np
 import scipy as sp
 import pandas as p
 from .fortran import gensysw, filter
+from .gensys import gensys
 from .helper_functions import cholpsd
 from dsge import dlyap
+
+import numba
+
+@numba.jit('f8(f8[:,:],f8[:,:],f8[:,:],f8[:,:],f8[:,:],f8[:,:],f8[:,:],f8[:,:])', nopython=True)
+def kalman_filter(y, TT, RR, QQ, DD, ZZ, HH, P0):
+
+    #y = np.asarray(y)
+    nobs, ny = y.shape
+    ns = TT.shape[0]
+
+    RQR = np.dot(np.dot(RR, QQ), RR.T)
+    Pt = P0
+
+    loglh = 0.0
+    AA = np.zeros(shape=(ns))
+    for i in range(nobs):
+
+        yhat = ZZ @ AA + DD.flatten()
+
+        nut = y[i] - yhat
+
+        Ft = ZZ @ Pt @ ZZ.T + HH 
+        Ft = 0.5 * (Ft + Ft.T)
+
+        dFt = np.log(np.linalg.det(Ft))
+        iFtnut = np.linalg.solve(Ft, nut)
+
+        loglh = loglh - 0.5*ny*np.log(2*np.pi) - 0.5*dFt - 0.5*np.dot(nut, iFtnut)
+ 
+        TTPt = TT @ Pt
+        Kt = TTPt @ ZZ.T
+
+        AA = TT @ AA + Kt @ iFtnut
+        Pt = TTPt @ TT.T - Kt @ np.linalg.solve(Ft, Kt.T) + RQR
+
+    return loglh
+
 
 class StateSpaceModel(object):
     r"""
@@ -127,13 +164,21 @@ Object for holding state space model
         yy = kwargs.pop('y', self.yy)
         P0 = kwargs.pop('P0', 'unconditional')
 
+        use_fortran = kwargs.pop('fortran', False)
+        
         TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
 
         if P0=='unconditional':
             P0, info = dlyap.dlyap(TT, RR.dot(QQ).dot(RR.T))
 
-        lik = filter.filter.kalman_filter(yy.T, TT, RR, QQ, DD, ZZ, HH, P0)
-
+        if use_fortran:
+            lik = filter.filter.kalman_filter(yy.T, TT, RR, QQ, DD, ZZ, HH, P0)
+        else:
+            lik = kalman_filter(np.asarray(yy), TT, RR, QQ,
+                                np.asarray(DD,dtype=float),
+                                np.asarray(ZZ,dtype=float),
+                                np.asarray(HH,dtype=float),
+                                np.asarray(P0,dtype=float))
         return lik
 
     def log_quasilik_hstep(self, para, h=4, *args, **kwargs):
@@ -248,7 +293,6 @@ Object for holding state space model
         for i in range(h):
             e = np.random.multivariate_normal(np.zeros((QQ.shape[0])), QQ)
             At = TT.dot(At) + shocks*RR.dot(e)
-
             h = np.random.multivariate_normal(np.zeros((HH.shape[0])), HH)
             At = np.asarray(At).squeeze()
             ysim[i, :] = DD.T + ZZ.dot(At) + shocks*np.atleast_2d(h)
@@ -297,6 +341,41 @@ Object for holding state space model
         return TT, RR, QQ, DD, ZZ, HH
 
 
+    def abcd_representation(self, para, *args, **kwargs):
+        """
+        Returns ABCD representation of state space system.
+
+        Parameters
+        ----------
+        para : array-like
+            An npara length vector of parameter values that defines the system matrices.
+        
+
+        Returns 
+        -------
+        A, B, C, D
+
+
+        Notes
+        -----
+        
+
+        """
+
+        TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
+
+        if not(np.all(HH==0)): fdkjsl
+        
+        A = TT
+        B = RR
+
+        C = ZZ.dot(TT) #ZZ @ TT
+        D = ZZ.dot(RR )
+
+        return A, B, C, D
+        
+        
+        
     def impulse_response(self, para, h=20, *args, **kwargs):
         """
         Computes impulse response functions of model.
@@ -615,7 +694,9 @@ class LinearDSGEModel(StateSpaceModel):
         nf = PPI.shape[1]
 
         if nf > 0:
-            TT, CC, RR, fmat, fwt, ywt, gev, RC, loose = gensysw.gensys.call_gensys(G0, G1, C0, PSI, PPI, 1.00000000001)
+            TT, RR, RC = gensys(G0, G1, PSI,PPI, C0)
+            RC = RC[0]*RC[1]
+            #TT, CC, RR, fmat, fwt, ywt, gev, RC, loose = gensysw.gensys.call_gensys(G0, G1, C0, PSI, PPI, 1.00000000001)
         else:
             TT = np.linalg.inv(G0).dot(G1)
             RR = np.linalg.inv(G0).dot(PSI)
