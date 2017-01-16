@@ -6,6 +6,8 @@ def gensys(G0, G1, PSI, PI, DIV=1+1e-8, REALSMALL=1e-6):
     """
     Solves a Linear Rational Expectations model via GENSYS. 
 
+    Γ₀xₜ = Γ₁xₜ₋₁ + Ψεₜ + Πηₜ 
+
     Returns 
     -------
 
@@ -70,7 +72,8 @@ def gensys(G0, G1, PSI, PI, DIV=1+1e-8, REALSMALL=1e-6):
     if unique:
         RC[1] = 1
     else:
-        print("Indeterminancy")
+        pass
+        #print("Indeterminancy")
 
     deta = np.diag(1.0/deta)
     deta1 = np.diag(deta1)

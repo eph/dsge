@@ -151,6 +151,9 @@ class DSGE(dict):
     def p0(self):
         return list(map(lambda x: self['calibration'][str(x)], self.parameters))
 
+    def calibrate(**kwargs):
+        pass
+        
     def python_sims_matrices(self, matrix_format='numeric'):
 
 
@@ -605,6 +608,7 @@ class DSGE(dict):
         for obs in obs_equations.items():
             obs_equations[obs[0]] = eval(obs[1], context)
 
+            
 
         calibration = model_yaml['calibration']['parameters']
 

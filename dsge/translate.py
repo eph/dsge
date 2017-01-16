@@ -1,6 +1,7 @@
 import numpy as np
 
 import os 
+from dsge.symbols import Parameter
 
 template_path = os.path.join(os.path.dirname(__file__), 'templates')
 
@@ -14,6 +15,148 @@ pdict = {'gamma': 1,
          'norm': 3, 
          'inv_gamma': 4, 
          'uniform': 5}
+
+fortran_model = """
+module model_t
+  use, intrinsic :: iso_fortran_env, only: wp => real64
+
+  use gensys, only: do_gensys
+  use fortress, only : fortress_lgss_model
+  use fortress_prior_t, only: model_prior => prior
+
+  implicit none
+
+  type, public, extends(fortress_lgss_model) :: model
+     integer :: neta
+
+   contains
+     procedure :: system_matrices
+  end type model
+
+
+  interface model
+     module procedure new_model
+  end interface model
+  
+  
+contains
+
+  type(model) function new_model() result(self)
+
+    character(len=144) :: name, datafile, priorfile
+    integer :: nobs, T, ns, npara, neps
+    
+    name = '{model[name]}'
+    datafile = 'data.txt'
+    priorfile = 'prior.txt'
+
+    nobs = {yy.shape[1]}
+    T = {yy.shape[0]}
+
+    ns = {model.neq_fort}
+    npara = {model.npara}
+    neps = {model.neps}
+    
+    call self%construct_model(name, datafile, priorfile, npara, nobs, T, ns, neps)
+
+!    self%p0 = {p0}
+    self%neta = {model.neta}
+  end function new_model
+
+  subroutine system_matrices(self, para, error)
+
+    class(model), intent(inout) :: self
+    real(wp), intent(in) :: para(self%npara)
+
+    integer, intent(out) :: error 
+    
+    ! double precision, intent(out) :: TT(self%ns, self%ns), RR(self%ns, neps), QQ(neps, neps)
+    ! double precision, intent(out) :: DD(self%nobs), ZZ(self%nobs, self%ns), HH(self%nobs,self%nobs)
+    double precision :: DD2(self%nobs,1)
+    integer :: info
+
+    double precision :: GAM0(self%ns, self%ns), GAM1(self%ns, self%ns), C(self%ns)
+    double precision :: PSI(self%ns, self%neps), PPI(self%ns, self%neta), CC(self%ns)
+
+    ! gensys
+    double precision :: fmat, fwt, ywt, gev, loose, DIV
+    integer :: eu(2)
+
+    error = 0
+
+    GAM0 = 0.0d0
+    GAM1 = 0.0d0
+    PSI = 0.0d0
+    PPI = 0.0d0
+    C = 0.0d0
+
+    DD2 = 0.0d0
+
+    self%QQ = 0.0d0
+    self%ZZ = 0.0d0
+    self%HH = 0.0d0
+
+    {sims_mat}
+
+    self%DD = DD2(:,1)
+    call do_gensys(self%TT, CC, self%RR, fmat, fwt, ywt, gev, eu, loose, GAM0, GAM1, C, PSI, PPI, DIV)
+
+
+
+    info = eu(1)*eu(2)
+
+    if (info==1) error = 0
+
+  end subroutine system_matrices
+
+
+end module model_t
+"""
+def smc(model):
+    import sympy
+    from sympy.printing import fcode
+    cmodel = model.compile_model()
+    template = fortran_model #open('fortran_model.f90').read()
+    write_prior_file(cmodel.prior,'.')
+
+    system_matrices = model.python_sims_matrices(matrix_format='symbolic')
+    npara = len(model.parameters)
+    para = sympy.IndexedBase('para',shape=(npara+1,))
+
+    fortran_subs = dict(zip([sympy.symbols('garbage') ]+model.parameters, para))
+    fortran_subs[0] = 0.0
+    fortran_subs[1] = 1.0
+    fortran_subs[100] = 100.0
+    fortran_subs[2] = 2.0
+    fortran_subs[400] = 400.0
+    fortran_subs[4] = 4.0
+
+    context = dict([(p.name, p) for p in model.parameters+model['other_para']])
+    context['exp'] = sympy.exp
+    context['log'] = sympy.log
+
+    to_replace = {}
+    for p in model['other_para']:
+            to_replace[p] = eval(str(model['para_func'][p.name]), context)
+
+
+    to_replace = list(to_replace.items())
+    print(to_replace)
+    from itertools import combinations, permutations
+
+    edges = [(i,j) for i,j in permutations(to_replace,2) if type(i[1]) not in [float,int] and i[1].has(j[0])]
+
+    from sympy import default_sort_key, topological_sort
+    para_func = topological_sort([to_replace, edges], default_sort_key)
+
+    to_write = ['GAM0','GAM1','PSI','PPI','self%QQ','DD2','self%ZZ','self%HH']
+    fmats = [fcode((mat.subs(para_func)).subs(fortran_subs), assign_to=n, source_format='free',
+		   standard=95, contract=False)
+	     for mat, n in zip(system_matrices, to_write)]
+    sims_mat = '\n\n'.join(fmats)
+    template = template.format(model=model, yy=cmodel.yy, p0='',sims_mat=sims_mat)
+
+    return template
 
 
 def translate(model, output_dir='.', language='fortran'):

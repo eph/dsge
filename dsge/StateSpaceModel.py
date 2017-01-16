@@ -168,6 +168,10 @@ Object for holding state space model
         
         TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
 
+        if (np.isnan(TT)).any():
+            lik = -1000000000000.0
+            return lik
+
         if P0=='unconditional':
             P0, info = dlyap.dlyap(TT, RR.dot(QQ).dot(RR.T))
 
@@ -712,6 +716,9 @@ class LinearDSGEModel(StateSpaceModel):
         DD = np.atleast_1d(self.DD(para, *args, **kwargs))
         ZZ = np.atleast_2d(self.ZZ(para, *args, **kwargs))
         HH = np.atleast_1d(self.HH(para, *args, **kwargs))
+
+        if RC!=1:
+            TT = np.nan*TT
 
         return TT, RR, QQ, DD, ZZ, HH
 
