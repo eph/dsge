@@ -375,7 +375,7 @@ class DSGE(dict):
                     prior.append(InvGamma(a, b))
                 if ptype=='uniform':
                     a, b = pmean, pstdd
-                    pr = uniform(loc=a, scale=b)
+                    pr = uniform(loc=a, scale=(b-a))
                     pr.name = 'uniform'
                     prior.append(pr)
 
