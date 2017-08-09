@@ -5,7 +5,7 @@ from numpy.testing import assert_equal, assert_array_almost_equal
 
 from unittest import TestCase
 
-from dsge.fortran import gensysw
+#from dsge.fortran import gensysw
 from dsge.DSGE import DSGE
 #from dsge.gensys import gensy
 import pkg_resources

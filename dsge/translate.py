@@ -82,7 +82,7 @@ contains
     double precision :: fmat, fwt, ywt, gev, loose, DIV
     integer :: eu(2)
 
-    error = 0
+    error = 1
 
     GAM0 = 0.0d0
     GAM1 = 0.0d0

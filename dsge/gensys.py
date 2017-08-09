@@ -87,12 +87,17 @@ def gensys(G0, G1, PSI, PI, DIV=1+1e-8, REALSMALL=1e-6):
     G1 = np.r_[tmat.dot(BB), np.zeros((nunstab,n))]
 
     G0i = np.linalg.inv(G0) 
-
     G1 = G0i.dot(G1)
-    G1 = np.real(Z.dot(G1).dot(Z.conjugate().T))
 
+    #C = G0i.dot(np.r_[tmat.dot(Q).dot(C)
+    
     impact = G0i.dot(np.r_[tmat.dot(Q).dot(PSI), np.zeros((nunstab, PSI.shape[1]))])
+    # fmat = np.linalg.solve(BB[-nunstab:,-nunstab:], AA[-nunstab:,-nunstab:])
+    # fwt = -np.linalg.solve(BB[-nunstab:,-nunstab:], Q)
+
+    G1 = np.real(Z.dot(G1).dot(Z.conjugate().T))
     impact = np.real(Z.dot(impact))
+    
     return G1, impact, RC 
 
 
