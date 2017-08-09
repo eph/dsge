@@ -56,6 +56,67 @@ def kalman_filter(y, TT, RR, QQ, DD, ZZ, HH, P0):
     return loglh
 
 
+def kf_everything_python(y, TT, RR, QQ, DD, ZZ, HH, P0):
+    y = np.atleast_2d(np.asarray(y))
+    DD = np.atleast_1d(DD)
+
+    nobs, ny = y.shape
+    ns = TT.shape[0]
+
+    RQR = np.dot(np.dot(RR, QQ), RR.T)
+    Pt = P0
+    At = np.zeros(shape=(ns))
+
+    loglh = 0.0
+
+    forecast_means = np.zeros((nobs, ns))
+    forecast_stds = np.zeros((nobs, ns))
+
+    filtered_means = np.zeros((nobs, ns))
+    filtered_stds = np.zeros((nobs, ns))
+
+    smoothed_means = np.zeros((nobs, ns))
+    smoothed_stds = np.zeros((nobs, ns))
+
+    liks = np.zeros((nobs))
+
+    for i in range(nobs):
+
+        observed = np.isnan(y[i]) == False
+        nact = np.sum(observed)
+
+        forecast_means[i] = At
+        forecast_stds[i] = np.sqrt(np.diag(Pt))
+
+        if nact > 0:
+
+            yhat = (ZZ @ At)[observed] + DD[observed].flatten()
+            nut = y[i][observed] - yhat 
+
+            Ft = (ZZ @ Pt @ ZZ.T + HH)[observed, :][:, observed]
+            Ft = 0.5 * (Ft + Ft.T)
+
+            dFt = np.log(np.linalg.det(Ft))
+            iFtnut = np.linalg.solve(Ft, nut)
+
+            liks[i] = - 0.5*nact*np.log(2*np.pi) - 0.5*dFt - 0.5*np.dot(nut, iFtnut)
+
+            Kt = Pt @ ZZ[observed, :].T
+
+            At1 = At + Kt @ iFtnut
+            Pt1 = Pt - Kt @ np.linalg.solve(Ft, Kt.T)
+        else:
+            At1 = At
+            Pt1 = Pt
+
+        filtered_means[i] = At1
+        filtered_stds[i] = np.sqrt(np.diag(Pt1))
+
+        At = TT @ At1
+        Pt = TT @ Pt1 @ TT.T + RQR
+
+    return liks, filtered_means, smoothed_means 
+
 class StateSpaceModel(object):
     r"""
 Object for holding state space model
@@ -243,22 +304,24 @@ Object for holding state space model
         if P0=='unconditional':
             P0, info = dlyap.dlyap(TT, RR.dot(QQ).dot(RR.T))
 
-        f = filter.filter.kalman_filter_missing_with_states
-        loglh, filtered_states, smoothed_states = f(np.atleast_2d(yy.T), TT, RR,
-                                                    QQ, DD.squeeze(), ZZ, HH, P0, t0)
+        #f = filter.filter.kalman_filter_missing_with_states
+        #loglh, filtered_states, smoothed_states = f(np.atleast_2d(yy.T), TT, RR,
+        #                                            QQ, DD.squeeze(), ZZ, HH, P0, t0)
 
+        loglh, filtered_means, smoothed_means = kf_everything_python(yy, TT, RR, QQ, DD.squeeze(), ZZ, HH, P0)
         results = {}
         results['log_lik'] = p.DataFrame(loglh, columns=['log_lik'])
 
         results['log_lik'].index = yy.index
-        filtered_states = p.DataFrame(filtered_states, columns=self.state_names)
-        filtered_states.index = yy.index
-        results['filtered_states'] = filtered_states
+        filtered_means = p.DataFrame(filtered_means, columns=self.state_names)
+        filtered_means.index = yy.index
+        results['filtered_means'] = filtered_means
 
-        smoothed_states = p.DataFrame(smoothed_states, columns=self.state_names)
-        smoothed_states.index = yy.index
-        results['smoothed_states'] = smoothed_states
+        smoothed_means = p.DataFrame(smoothed_means, columns=self.state_names)
+        smoothed_means.index = yy.index
+        results['smoothed_means'] = smoothed_means
 
+        results['filtered_states'] = results['filtered_means']
         return results
 
     def pred(self, para, h=20, shocks=True, append=False, *args, **kwargs):
