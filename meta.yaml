@@ -12,7 +12,6 @@ requirements:
     - setuptools
     - numpy
     - pandas
-    - libgcc
     - scipy
     - sympy
     - scipy
@@ -20,7 +19,6 @@ requirements:
 
   run:
     - python
-    - libgcc
     - pandas
     - slycot
     - sympy

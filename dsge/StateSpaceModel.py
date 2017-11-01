@@ -14,7 +14,7 @@ from __future__ import division
 import numpy as np
 import scipy as sp
 import pandas as p
-from .fortran import gensysw, filter
+#from .fortran import gensysw, filter
 from .gensys import gensys
 from .helper_functions import cholpsd
 from dsge import dlyap
@@ -71,9 +71,11 @@ def kf_everything_python(y, TT, RR, QQ, DD, ZZ, HH, P0):
 
     forecast_means = np.zeros((nobs, ns))
     forecast_stds = np.zeros((nobs, ns))
+    forecast_cov = np.zeros((nobs, ns, ns))
 
     filtered_means = np.zeros((nobs, ns))
     filtered_stds = np.zeros((nobs, ns))
+    filtered_cov = np.zeros((nobs, ns, ns))
 
     smoothed_means = np.zeros((nobs, ns))
     smoothed_stds = np.zeros((nobs, ns))
@@ -86,7 +88,8 @@ def kf_everything_python(y, TT, RR, QQ, DD, ZZ, HH, P0):
         nact = np.sum(observed)
 
         forecast_means[i] = At
-        forecast_stds[i] = np.sqrt(np.diag(Pt))
+        #forecast_stds[i] = np.sqrt(np.diag(Pt))
+        forecast_cov[i] = Pt
 
         if nact > 0:
 
@@ -105,12 +108,15 @@ def kf_everything_python(y, TT, RR, QQ, DD, ZZ, HH, P0):
 
             At1 = At + Kt @ iFtnut
             Pt1 = Pt - Kt @ np.linalg.solve(Ft, Kt.T)
+
         else:
+
             At1 = At
             Pt1 = Pt
 
         filtered_means[i] = At1
-        filtered_stds[i] = np.sqrt(np.diag(Pt1))
+        #filtered_stds[i] = np.sqrt(np.diag(Pt1))
+        filtered_cov[i] = Pt1
 
         At = TT @ At1
         Pt = TT @ Pt1 @ TT.T + RQR
@@ -237,7 +243,8 @@ Object for holding state space model
             P0, info = dlyap.dlyap(TT, RR.dot(QQ).dot(RR.T))
 
         if use_fortran:
-            lik = filter.filter.kalman_filter(yy.T, TT, RR, QQ, DD, ZZ, HH, P0)
+            pass
+            #lik = filter.filter.kalman_filter(yy.T, TT, RR, QQ, DD, ZZ, HH, P0)
         else:
             lik = kalman_filter(np.asarray(yy), TT, RR, QQ,
                                 np.asarray(DD,dtype=float),

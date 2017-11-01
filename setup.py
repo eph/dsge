@@ -3,62 +3,38 @@ import numpy.distutils.core
 
 from setuptools import find_packages
 
-
-# import os
-# import sysconfig
-#
-
-
-
-#try:
-#    blas_opt = get_info('blas_mkl',notfound_action=2)
-#    lapack_opt = get_info('lapack_mkl',notfound_action=2)
-#
-#    extra_info = get_info('mkl', 2)
-
-# except:
-#blas_opt = get_info('blas',notfound_action=2)
-#lapack_opt = get_info('lapack',notfound_action=2)
-#
-#extra_info = {'libraries': []}
-#
-#
-#libs = [blas_opt['libraries'][0], lapack_opt['libraries'][0]] + extra_info['libraries']
-#lib_dirs = [blas_opt['library_dirs'][0], lapack_opt['library_dirs'][0]]
-
-#print("Packages",find_packages())
 def build_ext(config):
 
-    from numpy.distutils.system_info import get_info
+    # from numpy.distutils.system_info import get_info
 
-    lapack_info = get_info('lapack_opt',1)
+    # lapack_info = get_info('lapack_opt',1)
 
-    f_sources = ['dsge/fortran/cholmod.f90',
-                 'dsge/fortran/kf_fortran.f90',
-                 'dsge/fortran/gensys_wrapper.f90']
+    # f_sources = ['dsge/fortran/cholmod.f90',
+    #              'dsge/fortran/kf_fortran.f90',
+    #              'dsge/fortran/gensys_wrapper.f90']
 
     
 
-    #lapack_info['libraries'].remove('mkl_lapack95_lp64')
+    # #lapack_info['libraries'].remove('mkl_lapack95_lp64')
 
-    if lapack_info:
-        config.add_library('gensys', 'dsge/fortran/gensys.f90')
-
-
-        config.add_extension(name='fortran.cholmod',
-                             sources=['dsge/fortran/cholmod.f90'],
-                             extra_info = lapack_info)##libraries=['lapack', 'blas'])
-
-        config.add_extension(name='fortran.filter',
-                             sources=['dsge/fortran/kf_fortran.f90'],
-                             extra_info = lapack_info)#                             libr
+    # if lapack_info:
+    #     config.add_library('gensys', 'dsge/fortran/gensys.f90')
 
 
-        config.add_extension(name='fortran.gensysw',
-                             sources=['dsge/fortran/gensys.f90'],
-                             libraries = ['gensys'],
-                             extra_info = lapack_info,
-                             )
+    #     config.add_extension(name='fortran.cholmod',
+    #                          sources=['dsge/fortran/cholmod.f90'],
+    #                          extra_info = lapack_info)##libraries=['lapack', 'blas'])
+
+    #     config.add_extension(name='fortran.filter',
+    #                          sources=['dsge/fortran/kf_fortran.f90'],
+    #                          extra_info = lapack_info)#                             libr
+
+
+    #     config.add_extension(name='fortran.gensysw',
+    #                          sources=['dsge/fortran/gensys.f90'],
+    #                          libraries = ['gensys'],
+    #                          extra_info = lapack_info,
+    #                          )
 
     config_dict = config.todict()
     config_dict.pop('name')
@@ -124,5 +100,4 @@ if __name__ == "__main__":
             #'sympy',
             #'scipy'
          ],
-        **(config_dict)
    )
