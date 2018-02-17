@@ -406,8 +406,8 @@ class DSGE(dict):
         return TT, RR, RC
 
 
-    @staticmethod
-    def read(mfile):
+    @classmethod
+    def read(cls, mfile):
         """
 
         """
@@ -637,7 +637,7 @@ class DSGE(dict):
             'obs_equations': obs_equations
             }
 
-        model = DSGE(**model_dict)
+        model = cls(**model_dict)
         return model
 
 
