@@ -8,16 +8,14 @@ StateSpaceModel
 LinearDSGEModel
 LinLagExModel
 """
-
-from __future__ import division
-
 import numpy as np
 import scipy as sp
 import pandas as p
-#from .fortran import gensysw, filter
+
+from scipy.linalg import solve_discrete_lyapunov
+
 from .gensys import gensys
 from .helper_functions import cholpsd
-from dsge import dlyap
 
 import numba
 
@@ -125,9 +123,9 @@ def kf_everything_python(y, TT, RR, QQ, DD, ZZ, HH, P0):
 
 class StateSpaceModel(object):
     r"""
-Object for holding state space model
+    Object for holding state space model
 
-.. math::
+    .. math::
 
     s_t &=& T(\theta) s_{t-1} + R(\theta) \epsilon_t,
     \quad \epsilon_t \sim N(0,Q(\theta)) \\
@@ -240,7 +238,7 @@ Object for holding state space model
             return lik
 
         if P0=='unconditional':
-            P0, info = dlyap.dlyap(TT, RR.dot(QQ).dot(RR.T))
+            P0 = solve_discrete_lyapunov(TT.T, RR.dot(QQ).dot(RR.T))
 
         if use_fortran:
             pass
@@ -262,7 +260,8 @@ Object for holding state space model
         TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
 
         if P0=='unconditional':
-            P0, info = dlyap.dlyap(TT, RR.dot(QQ).dot(RR.T))
+            P0 = solve_discrete_lyapunov(TT.T, RR.dot(QQ).dot(RR.T))
+
 
         lik = filter.filter.kalman_filter_hstep_quasilik(yy.T, TT, RR, QQ, DD, ZZ, HH, P0, h)
 
@@ -309,7 +308,7 @@ Object for holding state space model
         TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
 
         if P0=='unconditional':
-            P0, info = dlyap.dlyap(TT, RR.dot(QQ).dot(RR.T))
+            P0 = solve_discrete_lyapunov(TT.T, RR.dot(QQ).dot(RR.T))
 
         #f = filter.filter.kalman_filter_missing_with_states
         #loglh, filtered_states, smoothed_states = f(np.atleast_2d(yy.T), TT, RR,
@@ -550,7 +549,7 @@ Object for holding state space model
         TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
 
         if P0=='unconditional':
-            P0, info = dlyap.dlyap(TT, RR.dot(QQ).dot(RR.T))
+            P0 = solve_discrete_lyapunov(TT.T, RR.dot(QQ).dot(RR.T))
 
         data = np.asarray(yy)
         nobs, ny = yy.shape
