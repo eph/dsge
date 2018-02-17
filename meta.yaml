@@ -20,7 +20,6 @@ requirements:
   run:
     - python
     - pandas
-    - slycot
     - sympy
     - pyyaml
     - scipy
