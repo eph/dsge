@@ -1,4 +1,4 @@
-<from __future__ import division
+from __future__ import division
 
 import numpy as np
 from numpy.testing import assert_equal, assert_array_almost_equal

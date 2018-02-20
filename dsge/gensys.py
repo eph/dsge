@@ -2,7 +2,7 @@
 import numpy as np 
 from scipy.linalg import ordqz, svd
 
-def gensys(G0, G1, PSI, PI, DIV=1+1e-8, REALSMALL=1e-6):
+def gensys(G0, G1, PSI, PI, DIV=1+1e-8, REALSMALL=1e-6, return_everything=False):
     """
     Solves a Linear Rational Expectations model via GENSYS. 
 
@@ -69,6 +69,11 @@ def gensys(G0, G1, PSI, PI, DIV=1+1e-8, REALSMALL=1e-6):
         ul,dl,vl = svd(loose)
         unique = (dl < REALSMALL).all()
         
+        # existence for general epsilon[t]
+        AA22 = AA[-nunstab:, :][:, -nunstab:]
+        BB22 = BB[-nunstab:, :][:, -nunstab:]
+        M = np.linalg.inv(BB22).dot(AA22)
+
     if unique:
         RC[1] = 1
     else:
@@ -88,16 +93,19 @@ def gensys(G0, G1, PSI, PI, DIV=1+1e-8, REALSMALL=1e-6):
 
     G0i = np.linalg.inv(G0) 
     G1 = G0i.dot(G1)
-
-    #C = G0i.dot(np.r_[tmat.dot(Q).dot(C)
     
     impact = G0i.dot(np.r_[tmat.dot(Q).dot(PSI), np.zeros((nunstab, PSI.shape[1]))])
-    # fmat = np.linalg.solve(BB[-nunstab:,-nunstab:], AA[-nunstab:,-nunstab:])
-    # fwt = -np.linalg.solve(BB[-nunstab:,-nunstab:], Q)
 
     G1 = np.real(Z.dot(G1).dot(Z.conjugate().T))
     impact = np.real(Z.dot(impact))
     
-    return G1, impact, RC 
+    if return_everything:
+        GZ = -np.linalg.inv(BB22).dot(Qunstab).dot(PSI)
+        GY = Z.dot(G0i[:, -nunstab:])
+
+        return G1, impact, M, GZ, GY, RC
+
+    else:
+        return G1, impact, RC 
 
 
