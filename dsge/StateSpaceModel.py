@@ -228,8 +228,6 @@ class StateSpaceModel(object):
         t0 = kwargs.pop('t0', self.t0)
         yy = kwargs.pop('y', self.yy)
         P0 = kwargs.pop('P0', 'unconditional')
-
-        use_fortran = kwargs.pop('fortran', False)
         
         TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
 
@@ -238,33 +236,13 @@ class StateSpaceModel(object):
             return lik
 
         if P0=='unconditional':
-            P0 = solve_discrete_lyapunov(TT.T, RR.dot(QQ).dot(RR.T))
+            P0 = solve_discrete_lyapunov(TT, RR.dot(QQ).dot(RR.T))
 
-        if use_fortran:
-            pass
-            #lik = filter.filter.kalman_filter(yy.T, TT, RR, QQ, DD, ZZ, HH, P0)
-        else:
-            lik = kalman_filter(np.asarray(yy), TT, RR, QQ,
-                                np.asarray(DD,dtype=float),
-                                np.asarray(ZZ,dtype=float),
-                                np.asarray(HH,dtype=float),
-                                np.asarray(P0,dtype=float))
-        return lik
-
-    def log_quasilik_hstep(self, para, h=4, *args, **kwargs):
-
-        t0 = kwargs.pop('t0', self.t0)
-        yy = kwargs.pop('y', self.yy)
-        P0 = kwargs.pop('P0', 'unconditional')
-
-        TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
-
-        if P0=='unconditional':
-            P0 = solve_discrete_lyapunov(TT.T, RR.dot(QQ).dot(RR.T))
-
-
-        lik = filter.filter.kalman_filter_hstep_quasilik(yy.T, TT, RR, QQ, DD, ZZ, HH, P0, h)
-
+        lik = kalman_filter(np.asarray(yy), TT, RR, QQ,
+                            np.asarray(DD,dtype=float),
+                            np.asarray(ZZ,dtype=float),
+                            np.asarray(HH,dtype=float),
+                            np.asarray(P0,dtype=float))
         return lik
 
 
@@ -308,7 +286,7 @@ class StateSpaceModel(object):
         TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
 
         if P0=='unconditional':
-            P0 = solve_discrete_lyapunov(TT.T, RR.dot(QQ).dot(RR.T))
+            P0 = solve_discrete_lyapunov(TT, RR.dot(QQ).dot(RR.T))
 
         #f = filter.filter.kalman_filter_missing_with_states
         #loglh, filtered_states, smoothed_states = f(np.atleast_2d(yy.T), TT, RR,
@@ -549,7 +527,7 @@ class StateSpaceModel(object):
         TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
 
         if P0=='unconditional':
-            P0 = solve_discrete_lyapunov(TT.T, RR.dot(QQ).dot(RR.T))
+            P0 = solve_discrete_lyapunov(TT, RR.dot(QQ).dot(RR.T))
 
         data = np.asarray(yy)
         nobs, ny = yy.shape
