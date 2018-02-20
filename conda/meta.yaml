@@ -14,7 +14,6 @@ requirements:
     - pandas
     - scipy
     - sympy
-    - scipy
     - numba 
 
   run:
