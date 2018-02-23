@@ -2,8 +2,9 @@ import numpy as np
 
 from numba import jit
 
-@jit('f8(f8[:,:],f8[:,:],f8[:,:],f8[:,:],f8[:,:],f8[:,:],f8[:,:],f8[:,:])', nopython=True)
-def chand_recursion(y, TT, RR, QQ, DD, ZZ, HH, P0):
+
+@jit(nopython=True)
+def chand_recursion(y, TT, RR, QQ, DD, ZZ, HH, P0,t0=0):
     nobs, ny = y.shape
     ns = TT.shape[0]
 
@@ -28,7 +29,8 @@ def chand_recursion(y, TT, RR, QQ, DD, ZZ, HH, P0):
         dFt = np.log(np.linalg.det(Ft))
         iFtnut = np.linalg.solve(Ft, nut)
 
-        loglh = loglh - 0.5*ny*np.log(2*np.pi) - 0.5*dFt - 0.5*np.dot(nut, iFtnut)
+        if i > t0:
+            loglh = loglh - 0.5*ny*np.log(2*np.pi) - 0.5*dFt - 0.5*np.dot(nut, iFtnut)
 
         At = TT@At + Kt @ nut.T
         
@@ -50,9 +52,8 @@ def chand_recursion(y, TT, RR, QQ, DD, ZZ, HH, P0):
     return loglh
 
 
-
-@jit('f8(f8[:,:],f8[:,:],f8[:,:],f8[:,:],f8[:,:],f8[:,:],f8[:,:],f8[:,:])', nopython=True)
-def kalman_filter(y, TT, RR, QQ, DD, ZZ, HH, P0):
+@jit(nopython=True)
+def kalman_filter(y, TT, RR, QQ, DD, ZZ, HH, P0,t0=0):
 
     #y = np.asarray(y)
     nobs, ny = y.shape
@@ -77,7 +78,8 @@ def kalman_filter(y, TT, RR, QQ, DD, ZZ, HH, P0):
         dFt = np.log(np.linalg.det(Ft))
         iFtnut = np.linalg.solve(Ft, nut)
 
-        loglh = loglh - 0.5*nact*np.log(2*np.pi) - 0.5*dFt - 0.5*np.dot(nut, iFtnut)
+        if i > t0:
+            loglh = loglh - 0.5*nact*np.log(2*np.pi) - 0.5*dFt - 0.5*np.dot(nut, iFtnut)
  
         TTPt = TT @ Pt
         Kt = TTPt @ ZZ[not_missing,:].T
@@ -86,3 +88,74 @@ def kalman_filter(y, TT, RR, QQ, DD, ZZ, HH, P0):
         Pt = TTPt @ TT.T - Kt @ np.linalg.solve(Ft, Kt.T) + RQR
 
     return loglh
+
+
+
+@jit(nopython=True)
+def filter_and_smooth(y, TT, RR, QQ, DD, ZZ, HH, P0,t0=0):
+    #y = np.atleast_2d(y)
+    #DD = np.atleast_1d(DD)
+
+    nobs, ny = y.shape
+    ns = TT.shape[0]
+
+    RQR = np.dot(np.dot(RR, QQ), RR.T)
+    Pt = P0
+    At = np.zeros(shape=(ns))
+
+    loglh = 0.0
+
+    forecast_means = np.zeros((nobs, ns))
+    forecast_stds = np.zeros((nobs, ns))
+    forecast_cov = np.zeros((nobs, ns, ns))
+
+    filtered_means = np.zeros((nobs, ns))
+    filtered_stds = np.zeros((nobs, ns))
+    filtered_cov = np.zeros((nobs, ns, ns))
+
+    smoothed_means = np.zeros((nobs, ns))
+    smoothed_stds = np.zeros((nobs, ns))
+
+    liks = np.zeros(nobs)
+
+    for i in range(nobs):
+
+        observed = ~np.isnan(y[i])
+        nact = np.sum(observed)
+
+        forecast_means[i] = At
+        #forecast_stds[i] = np.sqrt(np.diag(Pt))
+        forecast_cov[i] = Pt
+
+        if nact > 0:
+
+            yhat = (ZZ @ At)[observed] + DD[observed].flatten()
+            nut = y[i][observed] - yhat 
+
+            Ft = (ZZ @ Pt @ ZZ.T + HH)[observed, :][:, observed]
+            Ft = 0.5 * (Ft + Ft.T)
+
+            dFt = np.log(np.linalg.det(Ft))
+            iFtnut = np.linalg.solve(Ft, nut)
+
+            if i > t0:
+                liks[i] = - 0.5*nact*np.log(2*np.pi) - 0.5*dFt - 0.5*np.dot(nut, iFtnut)
+
+            Kt = Pt @ ZZ[observed, :].T
+
+            At1 = At + Kt @ iFtnut
+            Pt1 = Pt - Kt @ np.linalg.solve(Ft, Kt.T)
+
+        else:
+
+            At1 = At
+            Pt1 = Pt
+
+        filtered_means[i] = At1
+        filtered_stds[i] = np.sqrt(np.diag(Pt1))
+        filtered_cov[i] = Pt1
+
+        At = TT @ At1
+        Pt = TT @ Pt1 @ TT.T + RQR
+
+    return liks, filtered_means, smoothed_means 

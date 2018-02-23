@@ -8,90 +8,15 @@ StateSpaceModel
 LinearDSGEModel
 """
 import numpy as np
-import scipy as sp
 import pandas as p
 
 from scipy.linalg import solve_discrete_lyapunov
 
 from .gensys import gensys
-from .helper_functions import cholpsd
-
-
-
-
-
-from .filters import chand_recursion, kalman_filter
+from .filters import chand_recursion, kalman_filter, filter_and_smooth
 
 filt_choices = {'chand_recursion': chand_recursion,
                 'kalman_filter': kalman_filter}
-
-
-def kf_everything_python(y, TT, RR, QQ, DD, ZZ, HH, P0):
-    y = np.atleast_2d(np.asarray(y))
-    DD = np.atleast_1d(DD)
-
-    nobs, ny = y.shape
-    ns = TT.shape[0]
-
-    RQR = np.dot(np.dot(RR, QQ), RR.T)
-    Pt = P0
-    At = np.zeros(shape=(ns))
-
-    loglh = 0.0
-
-    forecast_means = np.zeros((nobs, ns))
-    forecast_stds = np.zeros((nobs, ns))
-    forecast_cov = np.zeros((nobs, ns, ns))
-
-    filtered_means = np.zeros((nobs, ns))
-    filtered_stds = np.zeros((nobs, ns))
-    filtered_cov = np.zeros((nobs, ns, ns))
-
-    smoothed_means = np.zeros((nobs, ns))
-    smoothed_stds = np.zeros((nobs, ns))
-
-    liks = np.zeros(nobs)
-
-    for i in range(nobs):
-
-        observed = np.isnan(y[i]) == False
-        nact = np.sum(observed)
-
-        forecast_means[i] = At
-        #forecast_stds[i] = np.sqrt(np.diag(Pt))
-        forecast_cov[i] = Pt
-
-        if nact > 0:
-
-            yhat = (ZZ @ At)[observed] + DD[observed].flatten()
-            nut = y[i][observed] - yhat 
-
-            Ft = (ZZ @ Pt @ ZZ.T + HH)[observed, :][:, observed]
-            Ft = 0.5 * (Ft + Ft.T)
-
-            dFt = np.log(np.linalg.det(Ft))
-            iFtnut = np.linalg.solve(Ft, nut)
-
-            liks[i] = - 0.5*nact*np.log(2*np.pi) - 0.5*dFt - 0.5*np.dot(nut, iFtnut)
-
-            Kt = Pt @ ZZ[observed, :].T
-
-            At1 = At + Kt @ iFtnut
-            Pt1 = Pt - Kt @ np.linalg.solve(Ft, Kt.T)
-
-        else:
-
-            At1 = At
-            Pt1 = Pt
-
-        filtered_means[i] = At1
-        filtered_stds[i] = np.sqrt(np.diag(Pt1))
-        filtered_cov[i] = Pt1
-
-        At = TT @ At1
-        Pt = TT @ Pt1 @ TT.T + RQR
-
-    return liks, filtered_means, smoothed_means 
 
 class StateSpaceModel(object):
     r"""
@@ -220,10 +145,10 @@ class StateSpaceModel(object):
             P0 = solve_discrete_lyapunov(TT, RR.dot(QQ).dot(RR.T))
 
         lik = filt_func(np.asarray(yy), TT, RR, QQ,
-                 np.asarray(DD,dtype=float),
-                 np.asarray(ZZ,dtype=float),
-                 np.asarray(HH,dtype=float),
-                 np.asarray(P0,dtype=float))
+                        np.asarray(DD,dtype=float),
+                        np.asarray(ZZ,dtype=float),
+                        np.asarray(HH,dtype=float),
+                        np.asarray(P0,dtype=float),t0=t0)
         return lik
 
 
@@ -263,7 +188,6 @@ class StateSpaceModel(object):
         yy = kwargs.pop('y', self.yy)
         P0 = kwargs.pop('P0', 'unconditional')
 
-
         yy = p.DataFrame(yy)
 
         TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
@@ -271,7 +195,12 @@ class StateSpaceModel(object):
         if P0=='unconditional':
             P0 = solve_discrete_lyapunov(TT, RR.dot(QQ).dot(RR.T))
 
-        loglh, filtered_means, smoothed_means = kf_everything_python(yy, TT, RR, QQ, DD.squeeze(), ZZ, HH, P0)
+        
+        loglh, filtered_means, smoothed_means = filter_and_smooth(np.asarray(yy), TT, RR, QQ,
+                                                                  np.asarray(DD,dtype=float),
+                                                                  np.asarray(ZZ,dtype=float),
+                                                                  np.asarray(HH,dtype=float),
+                                                                  np.asarray(P0,dtype=float),t0=t0)
         results = {}
         results['log_lik'] = p.DataFrame(loglh, columns=['log_lik'])
 
@@ -358,8 +287,6 @@ class StateSpaceModel(object):
         -----
 
         """
-
-
         TT = np.atleast_2d(self.TT(para, *args, **kwargs))
         RR = np.atleast_2d(self.RR(para, *args, **kwargs))
         QQ = np.atleast_2d(self.QQ(para, *args, **kwargs))
@@ -400,7 +327,7 @@ class StateSpaceModel(object):
         B = RR
 
         C = ZZ.dot(TT) #ZZ @ TT
-        D = ZZ.dot(RR )
+        D = ZZ.dot(RR)
 
         return A, B, C, D
         
