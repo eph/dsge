@@ -6,7 +6,6 @@ Classes
 -------
 StateSpaceModel
 LinearDSGEModel
-LinLagExModel
 """
 import numpy as np
 import scipy as sp
@@ -17,41 +16,14 @@ from scipy.linalg import solve_discrete_lyapunov
 from .gensys import gensys
 from .helper_functions import cholpsd
 
-import numba
 
-@numba.jit('f8(f8[:,:],f8[:,:],f8[:,:],f8[:,:],f8[:,:],f8[:,:],f8[:,:],f8[:,:])', nopython=True)
-def kalman_filter(y, TT, RR, QQ, DD, ZZ, HH, P0):
 
-    #y = np.asarray(y)
-    nobs, ny = y.shape
-    ns = TT.shape[0]
 
-    RQR = np.dot(np.dot(RR, QQ), RR.T)
-    Pt = P0
 
-    loglh = 0.0
-    AA = np.zeros(shape=(ns))
-    for i in range(nobs):
+from .filters import chand_recursion, kalman_filter
 
-        yhat = ZZ @ AA + DD.flatten()
-
-        nut = y[i] - yhat
-
-        Ft = ZZ @ Pt @ ZZ.T + HH 
-        Ft = 0.5 * (Ft + Ft.T)
-
-        dFt = np.log(np.linalg.det(Ft))
-        iFtnut = np.linalg.solve(Ft, nut)
-
-        loglh = loglh - 0.5*ny*np.log(2*np.pi) - 0.5*dFt - 0.5*np.dot(nut, iFtnut)
- 
-        TTPt = TT @ Pt
-        Kt = TTPt @ ZZ.T
-
-        AA = TT @ AA + Kt @ iFtnut
-        Pt = TTPt @ TT.T - Kt @ np.linalg.solve(Ft, Kt.T) + RQR
-
-    return loglh
+filt_choices = {'chand_recursion': chand_recursion,
+                'kalman_filter': kalman_filter}
 
 
 def kf_everything_python(y, TT, RR, QQ, DD, ZZ, HH, P0):
@@ -78,7 +50,7 @@ def kf_everything_python(y, TT, RR, QQ, DD, ZZ, HH, P0):
     smoothed_means = np.zeros((nobs, ns))
     smoothed_stds = np.zeros((nobs, ns))
 
-    liks = np.zeros((nobs))
+    liks = np.zeros(nobs)
 
     for i in range(nobs):
 
@@ -113,7 +85,7 @@ def kf_everything_python(y, TT, RR, QQ, DD, ZZ, HH, P0):
             Pt1 = Pt
 
         filtered_means[i] = At1
-        #filtered_stds[i] = np.sqrt(np.diag(Pt1))
+        filtered_stds[i] = np.sqrt(np.diag(Pt1))
         filtered_cov[i] = Pt1
 
         At = TT @ At1
@@ -167,6 +139,8 @@ class StateSpaceModel(object):
     kf_everything(para)
         Generates the filtered and smoothed posterior means of the state vector.
     """
+
+    fast_filter = 'chand_recursion'
 
     def __init__(self, yy, TT, RR, QQ, DD, ZZ, HH, t0=0,
                  shock_names=None, state_names=None, obs_names=None):
@@ -224,12 +198,19 @@ class StateSpaceModel(object):
         This method does not work with missing data. Use `kf_everything` instead.
         """
 
-
         t0 = kwargs.pop('t0', self.t0)
         yy = kwargs.pop('y', self.yy)
         P0 = kwargs.pop('P0', 'unconditional')
-        
-        TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
+
+        if np.isnan(yy).any().any():
+            def_filter = 'kalman_filter'
+        else:
+            def_filter = 'chand_recursion'
+
+        filt = kwargs.pop('filter', def_filter)
+        filt_func = filt_choices[filt]
+
+        TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para)
 
         if (np.isnan(TT)).any():
             lik = -1000000000000.0
@@ -238,11 +219,11 @@ class StateSpaceModel(object):
         if P0=='unconditional':
             P0 = solve_discrete_lyapunov(TT, RR.dot(QQ).dot(RR.T))
 
-        lik = kalman_filter(np.asarray(yy), TT, RR, QQ,
-                            np.asarray(DD,dtype=float),
-                            np.asarray(ZZ,dtype=float),
-                            np.asarray(HH,dtype=float),
-                            np.asarray(P0,dtype=float))
+        lik = filt_func(np.asarray(yy), TT, RR, QQ,
+                 np.asarray(DD,dtype=float),
+                 np.asarray(ZZ,dtype=float),
+                 np.asarray(HH,dtype=float),
+                 np.asarray(P0,dtype=float))
         return lik
 
 
@@ -268,8 +249,10 @@ class StateSpaceModel(object):
         -------
         results : dict of p.DataFrames with
              `log_lik` -- the sequence of log likelihoods
-             `filted_states' -- the filtered states of the model
-             `smoothed_states' -- the smoothed states of the model
+             `filtered_means' -- the filtered means of the states 
+             `filtered_std' -- the filtered stds of the states
+             `smoothed_means' -- the smoothed means of the model
+             `smoothed_stds' -- the smoothed stds of the model 
 
         Notes
         -----
@@ -287,10 +270,6 @@ class StateSpaceModel(object):
 
         if P0=='unconditional':
             P0 = solve_discrete_lyapunov(TT, RR.dot(QQ).dot(RR.T))
-
-        #f = filter.filter.kalman_filter_missing_with_states
-        #loglh, filtered_states, smoothed_states = f(np.atleast_2d(yy.T), TT, RR,
-        #                                            QQ, DD.squeeze(), ZZ, HH, P0, t0)
 
         loglh, filtered_means, smoothed_means = kf_everything_python(yy, TT, RR, QQ, DD.squeeze(), ZZ, HH, P0)
         results = {}
