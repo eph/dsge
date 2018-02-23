@@ -1,5 +1,3 @@
-from __future__ import division
-
 import sympy
 import yaml
 from .symbols import Variable, Equation, Shock, Parameter, TSymbol
@@ -11,6 +9,8 @@ import numpy as np
 import itertools
 import pandas as p
 from .StateSpaceModel import LinearDSGEModel
+
+import warnings
 
 class EquationList(list):
     """A container for holding an set of equations."""
@@ -32,6 +32,83 @@ class EquationList(list):
         return super(EquationList, self).__setitem__(key, value)
 
 
+def read_data_file(datafile, obs_names):
+    
+    if type(datafile)==dict:
+        startdate = datafile['start']
+        datafile = datafile['file']
+    else:
+        startdate = 0
+
+    try:
+        with open(datafile, 'r') as df:
+            data = df.read()
+            delim_dict = {}
+
+            if data.find(',') > 0:
+                delim_dict['delimiter'] = ','
+
+            data = np.genfromtxt(datafile, missing_values='NaN', **delim_dict)
+    except:
+        warnings.warn("%s could not be opened." % datafile)
+        data = np.nan * np.ones((100, len(obs_names)))
+        startdate = 0
+
+    if len(obs_names) > 1:
+        data = p.DataFrame(data[:, :len(obs_names)], columns=list(map(lambda x: str(x), obs_names)))
+    else:
+        data = p.DataFrame(data, columns=list(map(lambda x: str(x), obs_names)))
+
+    if startdate is not 0:
+        nobs = data.shape[0]
+        data.index = p.period_range(startdate, freq='Q', periods=nobs)
+
+    return data
+
+def construct_prior(prior_list, parameters):
+
+    prior_type = ['beta', 'gamma', 'normal', 'inv_gamma', 'uniform', 'fixed']
+    prior = []
+    for par in parameters:
+        prior_spec = prior_list[par.name]
+
+        ptype = prior_spec[0]
+        pmean = prior_spec[1]
+        pstdd = prior_spec[2]
+        from scipy.stats import beta, norm, uniform, gamma
+        from dsge.OtherPriors import InvGamma
+        if ptype=='beta':
+            a = (1-pmean)*pmean**2/pstdd**2 - pmean
+            b = a*(1/pmean - 1)
+            pr = beta(a, b)
+            pr.name = 'beta'
+            prior.append(pr)
+        if ptype=='gamma':
+            b = pstdd**2/pmean
+            a = pmean/b
+            pr = gamma(a, scale=b)
+            pr.name = 'gamma'
+            prior.append(pr)
+        if ptype=='normal':
+            a = pmean
+            b = pstdd
+            pr = norm(loc=a, scale=b)
+            pr.name='norm'
+            prior.append(pr)
+        if ptype=='inv_gamma':
+            a = pmean
+            b = pstdd
+            prior.append(InvGamma(a, b))
+        if ptype=='uniform':
+            a, b = pmean, pstdd
+            pr = uniform(loc=a, scale=(b-a))
+            pr.name = 'uniform'
+            prior.append(pr)
+
+    return prior
+
+
+
 class DSGE(dict):
 
     max_lead = 1;
@@ -49,10 +126,8 @@ class DSGE(dict):
             variable_too_far = [v for v in eq.atoms() if isinstance(v, Variable) and v.date > 1]
             variable_too_early = [v for v in eq.atoms() if isinstance(v, Variable) and v.date < -1]
 
-
             eq_fvars = [v for v in eq.atoms() if isinstance(v, TSymbol) and v.date > 0]
             eq_lvars = [v for v in eq.atoms() if isinstance(v, TSymbol) and v.date < 0]
-
 
             fvars = list(set(fvars).union(eq_fvars))
             lvars = list(set(lvars).union(set(eq_lvars)))
@@ -308,76 +383,14 @@ class DSGE(dict):
             self['observables'] = self['variables'].copy()
             self['obs_equations'] = dict(self['observables'], self['observables'])
 
-        try:
-            datafile = self['__data__']['estimation']['data']
-
-            if type(datafile)==dict:
-                startdate = datafile['start']
-                datafile = datafile['file']
-            else:
-                startdate = 0
-
-
-            with open(datafile, 'r') as df:
-                data = df.read()
-                delim_dict = {}
-
-                if data.find(',') > 0:
-                    delim_dict['delimiter'] = ','
-
-                data = np.genfromtxt(datafile, missing_values='NaN', **delim_dict)
-        except:
-            data = np.nan * np.ones((100, len(self['observables'])))
-            startdate = 0
-
-        if len(self['observables']) > 1:
-            data = p.DataFrame(data[:, :len(self['observables'])], columns=list(map(lambda x: str(x), self['observables'])))
+        if 'data' in self['__data__']['estimation']:
+            data = read_data_file(self['__data__']['estimation']['data'], self['observables'])
         else:
-            data = p.DataFrame(data, columns=list(map(lambda x: str(x), self['observables'])))
-
-        if startdate is not 0:
-            nobs = data.shape[0]
-            data.index = p.period_range(startdate, freq='Q', periods=nobs)
-
+            data = np.nan * np.ones((100, len(self['observables'])))
+            
         prior = None
         if 'prior' in self['__data__']['estimation']:
-            prior_type = ['beta', 'gamma', 'normal', 'inv_gamma', 'uniform', 'fixed']
-            prior = []
-            for par in self.parameters:
-                prior_spec = self['__data__']['estimation']['prior'][par.name]
-
-                ptype = prior_spec[0]
-                pmean = prior_spec[1]
-                pstdd = prior_spec[2]
-                from scipy.stats import beta, norm, uniform, gamma
-                from dsge.OtherPriors import InvGamma
-                if ptype=='beta':
-                    a = (1-pmean)*pmean**2/pstdd**2 - pmean
-                    b = a*(1/pmean - 1)
-                    pr = beta(a, b)
-                    pr.name = 'beta'
-                    prior.append(pr)
-                if ptype=='gamma':
-                    b = pstdd**2/pmean
-                    a = pmean/b
-                    pr = gamma(a, scale=b)
-                    pr.name = 'gamma'
-                    prior.append(pr)
-                if ptype=='normal':
-                    a = pmean
-                    b = pstdd
-                    pr = norm(loc=a, scale=b)
-                    pr.name='norm'
-                    prior.append(pr)
-                if ptype=='inv_gamma':
-                    a = pmean
-                    b = pstdd
-                    prior.append(InvGamma(a, b))
-                if ptype=='uniform':
-                    a, b = pmean, pstdd
-                    pr = uniform(loc=a, scale=(b-a))
-                    pr.name = 'uniform'
-                    prior.append(pr)
+            prior = construct_prior(self['__data__']['estimation']['prior'], self.parameters)
 
         from .Prior import Prior as pri
         dsge = LinearDSGEModel(data, GAM0, GAM1, PSI, PPI,

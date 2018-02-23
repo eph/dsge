@@ -1,14 +1,14 @@
 package:
   name: dsge
-  version: "0.0.3"
+  version: "0.0.4"
 
 source:
-  path: .
+  path: ..
 
 requirements:
 
   build:
-    - python
+    - python {{ python }} 
     - setuptools
     - numpy
     - pandas
