@@ -91,7 +91,7 @@ def kalman_filter(y, TT, RR, QQ, DD, ZZ, HH, P0,t0=0):
 
 
 
-@jit(nopython=True)
+#@jit(nopython=True)
 def filter_and_smooth(y, TT, RR, QQ, DD, ZZ, HH, P0,t0=0):
     #y = np.atleast_2d(y)
     #DD = np.atleast_1d(DD)
@@ -115,6 +115,7 @@ def filter_and_smooth(y, TT, RR, QQ, DD, ZZ, HH, P0,t0=0):
 
     smoothed_means = np.zeros((nobs, ns))
     smoothed_stds = np.zeros((nobs, ns))
+    smoothed_cov = np.zeros((nobs, ns, ns))
 
     liks = np.zeros(nobs)
 
@@ -124,8 +125,8 @@ def filter_and_smooth(y, TT, RR, QQ, DD, ZZ, HH, P0,t0=0):
         nact = np.sum(observed)
 
         forecast_means[i] = At
-        #forecast_stds[i] = np.sqrt(np.diag(Pt))
-        forecast_cov[i] = Pt
+        forecast_stds[i] = np.sqrt(np.diag(Pt))
+        forecast_cov[i] = 0.5*(Pt + Pt.T)
 
         if nact > 0:
 
@@ -153,9 +154,31 @@ def filter_and_smooth(y, TT, RR, QQ, DD, ZZ, HH, P0,t0=0):
 
         filtered_means[i] = At1
         filtered_stds[i] = np.sqrt(np.diag(Pt1))
-        filtered_cov[i] = Pt1
+        filtered_cov[i] = 0.5*Pt1 
 
+        # forecast 
         At = TT @ At1
         Pt = TT @ Pt1 @ TT.T + RQR
 
-    return liks, filtered_means, smoothed_means 
+
+    # smoother
+    smoothed_means[-1] = filtered_means[-1]
+    smoothed_stds[-1] = filtered_stds[-1]
+    smoothed_cov[-1] = filtered_cov[-1]
+   
+    for i in range(nobs-2,-1,-1):
+        invPt1 = np.linalg.pinv(forecast_cov[i+1])
+        J = filtered_cov[i] @ TT.T @ invPt1
+   
+        smoothed_means[i] = filtered_means[i] + (
+            J @ (smoothed_means[i+1] - forecast_means[i+1]) )
+
+        PtT = filtered_cov[i] + J @ (smoothed_cov[i+1] - forecast_cov[i+1]) @ J.T
+        PtT = 0.5*(PtT.T + PtT)
+        smoothed_stds[i] = np.sqrt(np.diag(PtT))
+        smoothed_cov[i] = PtT
+
+
+    return (liks, filtered_means, filtered_stds, filtered_cov,
+            forecast_means, forecast_stds, forecast_cov,
+            smoothed_means, smoothed_stds, smoothed_cov)
