@@ -98,11 +98,11 @@ class StateSpaceModel(object):
         para : array-like
             An npara length vector of parameter values that defines the system matrices.
         t0 : int, optional
-            Number of initial observations to condition on. (NOT IMPLEMENTED.)
+            Number of initial observations to condition on. 
         y : 2d array-like, optional
             Dataset of observables (T x nobs). The default is the observable set pass during
             class instantiation.
-        P0 : 2d arry-like or string, optional
+        P0 : 2d array-like or string, optional
             [ns x ns] initial covariance matrix of states, or `unconditional` to use the one
             associated with the invariant distribution.  The default is `unconditional.`
 
@@ -117,10 +117,6 @@ class StateSpaceModel(object):
         --------
         StateSpaceModel.kf_everything
 
-
-        Notes
-        -----
-        This method does not work with missing data. Use `kf_everything` instead.
         """
 
         t0 = kwargs.pop('t0', self.t0)
@@ -128,11 +124,11 @@ class StateSpaceModel(object):
         P0 = kwargs.pop('P0', 'unconditional')
 
         if np.isnan(yy).any().any():
-            def_filter = 'kalman_filter'
+            default_filter = 'kalman_filter'
         else:
-            def_filter = 'chand_recursion'
+            default_filter = 'chand_recursion'
 
-        filt = kwargs.pop('filter', def_filter)
+        filt = kwargs.pop('filter', default_filter)
         filt_func = filt_choices[filt]
 
         TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para)
@@ -161,7 +157,7 @@ class StateSpaceModel(object):
         para : array-like
             An npara length vector of parameter values that defines the system matrices.
         t0 : int, optional
-            Number of initial observations to condition on. (NOT IMPLEMENTED.)
+            Number of initial observations to condition on. 
         y : 2d array-like, optional
             Dataset of observables (T x nobs). The default is the observable set pass during
             class instantiation.
@@ -176,6 +172,8 @@ class StateSpaceModel(object):
              `log_lik` -- the sequence of log likelihoods
              `filtered_means' -- the filtered means of the states 
              `filtered_std' -- the filtered stds of the states
+             `forecast_means' -- the forecasted means of the states 
+             `forecast_std' -- the forecasted stds of the states
              `smoothed_means' -- the smoothed means of the model
              `smoothed_stds' -- the smoothed stds of the model 
 
@@ -196,24 +194,30 @@ class StateSpaceModel(object):
             P0 = solve_discrete_lyapunov(TT, RR.dot(QQ).dot(RR.T))
 
         
-        loglh, filtered_means, smoothed_means = filter_and_smooth(np.asarray(yy), TT, RR, QQ,
-                                                                  np.asarray(DD,dtype=float),
-                                                                  np.asarray(ZZ,dtype=float),
-                                                                  np.asarray(HH,dtype=float),
-                                                                  np.asarray(P0,dtype=float),t0=t0)
+        res = filter_and_smooth(np.asarray(yy), TT, RR, QQ,
+                                np.asarray(DD,dtype=float),
+                                np.asarray(ZZ,dtype=float),
+                                np.asarray(HH,dtype=float),
+                                np.asarray(P0,dtype=float),t0=t0)
+
+        (loglh, filtered_means, filtered_stds, filtered_cov,
+         forecast_means, forecast_stds, forecast_cov,
+         smoothed_means, smoothed_stds, smoothed_cov) = res
+
         results = {}
-        results['log_lik'] = p.DataFrame(loglh, columns=['log_lik'])
+        results['log_lik'] = p.DataFrame(loglh, columns=['log_lik'],
+                                         index=yy.index)
 
-        results['log_lik'].index = yy.index
-        filtered_means = p.DataFrame(filtered_means, columns=self.state_names)
-        filtered_means.index = yy.index
-        results['filtered_means'] = filtered_means
+        for resname, res in [('filtered_means', filtered_means),
+                             ('filtered_stds',  filtered_stds),
+                             ('forecast_means', forecast_means),
+                             ('forecast_stds',  forecast_stds),
+                             ('smoothed_means', smoothed_means),
+                             ('smoothed_stds',  smoothed_stds)]:
 
-        smoothed_means = p.DataFrame(smoothed_means, columns=self.state_names)
-        smoothed_means.index = yy.index
-        results['smoothed_means'] = smoothed_means
+            resdf = p.DataFrame(res, columns=self.state_names, index=yy.index)
+            results[resname] = resdf
 
-        results['filtered_states'] = results['filtered_means']
         return results
 
     def pred(self, para, h=20, shocks=True, append=False, *args, **kwargs):
@@ -505,103 +509,6 @@ class StateSpaceModel(object):
 
 
     def historical_decomposition(self, para, *args, **kwargs):
-        pass
-
-
-
-class LinLagExModel(StateSpaceModel):
-
-    def __init__(self, yy, A, B, C, F, G, N, Q,
-                 Aj, Bj, Cj, Fj, Gj,
-                 Ainf, Binf, Cinf, Finf, Ginf,
-                 t0=0,
-                 shock_names=None, state_names=None, obs_names=None):
-        import meyer_gohde
-        self.A = A
-        self.B = B
-        self.C = C
-        self.F = F
-        self.G = G
-
-        self.N = N
-        self.Q = Q
-
-
-        self.Aj = Aj
-        self.Bj = Bj
-        self.Cj = Cj
-        self.Fj = Fj
-        self.Gj = Gj
-
-        self.Ainf = Ainf
-        self.Binf = Binf
-        self.Cinf = Cinf
-        self.Finf = Finf
-        self.Ginf = Ginf
-
-        self.t0 = t0
-
-        self.yy = yy
-
-        self.shock_names = shock_names
-        self.state_names = state_names
-        self.obs_names = obs_names
-
-    def find_max_it(self, p0):
-
-        Aj = lambda j: np.array(self.Aj(p0, j), dtype=float)
-        Bj = lambda j: np.array(self.Bj(p0, j), dtype=float)
-        Cj = lambda j: np.array(self.Cj(p0, j), dtype=float)
-        Fj = lambda j: np.array(self.Fj(p0, j), dtype=float)
-        Gj = lambda j: np.array(self.Gj(p0, j), dtype=float)
-
-        F = np.array(self.F(p0), dtype=float)
-
-        find_max_it = meyer_gohde.mg.find_max_it
-        max_it = find_max_it(Aj, Bj, Cj, Fj, Gj, F.shape[0], F.shape[1])
-
-        return max_it
-
-    def impulse_response(self, p0, h=20):
-
-        A = np.array(self.A(p0), dtype=float)
-        B = np.array(self.B(p0), dtype=float)
-        C = np.array(self.C(p0), dtype=float)
-        F = np.array(self.F(p0), dtype=float)
-        G = np.array(self.G(p0), dtype=float)
-        N = np.array(self.N(p0), dtype=float)
-        Q = np.array(self.Q(p0), dtype=float)
-
-        Aj = lambda j: np.array(self.Aj(p0, j), dtype=float)
-        Bj = lambda j: np.array(self.Bj(p0, j), dtype=float)
-        Cj = lambda j: np.array(self.Cj(p0, j), dtype=float)
-        Fj = lambda j: np.array(self.Fj(p0, j), dtype=float)
-        Gj = lambda j: np.array(self.Gj(p0, j), dtype=float)
-
-        Ainf = np.array(self.Ainf(p0), dtype=float)
-        Binf = np.array(self.Binf(p0), dtype=float)
-        Cinf = np.array(self.Cinf(p0), dtype=float)
-        Ginf = np.array(self.Ginf(p0), dtype=float)
-        Finf = np.array(self.Finf(p0),dtype=float)
-
-
-        ma_solve = meyer_gohde.mg.solve_ma_alt
-        MA_VECTOR, ALPHA, BETA, RC = ma_solve(A, B, C, F, G, N,
-                                              Aj, Bj, Cj, Fj, Gj,
-                                              Ainf, Binf, Cinf, Ginf, Finf,h-1)
-
-        nshocks = MA_VECTOR.shape[1]
-        nvars = MA_VECTOR.shape[0]/h
-        irfs = {}
-        i = 0
-
-        for respi in MA_VECTOR.T:
-            irfs[self.shock_names[i]] = p.DataFrame(np.reshape(respi, (h, nvars))*np.sqrt(Q[i, i]), columns=self.state_names)
-            i = i + 1
-        return irfs
-
-
-    def system_matrices(self, p0):
         pass
 
 
