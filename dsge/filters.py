@@ -91,7 +91,7 @@ def kalman_filter(y, TT, RR, QQ, DD, ZZ, HH, P0,t0=0):
 
 
 
-#@jit(nopython=True)
+@jit(nopython=True)
 def filter_and_smooth(y, TT, RR, QQ, DD, ZZ, HH, P0,t0=0):
     #y = np.atleast_2d(y)
     #DD = np.atleast_1d(DD)
