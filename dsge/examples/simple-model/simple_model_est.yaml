@@ -2,7 +2,8 @@ declarations:
   name: 'simple_model'
   variables: [y,x]
   shocks: [e]
-  parameters: [beta, rho, sigma]
+  parameters: [rho, sigma]
+  para_func : [beta]
   observables: [y_obs]
 equations:
   model:
@@ -11,8 +12,9 @@ equations:
   observables:
     y_obs : y
 calibration:
-  parameters:
+  parafunc:
     beta: 0.99
+  parameters:
     rho: 0.8
     sigma: 1.0
   covariances:
@@ -21,6 +23,6 @@ estimation:
   data: examples/simple-model/yy.txt
 
   prior:
-    beta: [normal, 0.99, 1e-3]
+    #beta: [normal, 0.99, 1e-3]
     rho: [beta, 0.6, 0.3]
     sigma: [inv_gamma, 0.1, 2]

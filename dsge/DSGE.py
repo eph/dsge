@@ -329,13 +329,13 @@ class DSGE(dict):
             #print("\r Constructing substitution dictionary [{0:20s}]".format(p.name),)
         #sys.stdout.flush()
         #print ""
-        context_f['numpy'] = 'numpy'
-        GAM0 = lambdify([self.parameters+self['other_para']], GAM0, 'numpy')
-        GAM1 = lambdify([self.parameters+self['other_para']], GAM1, 'numpy')
-        PSI = lambdify([self.parameters+self['other_para']], PSI, 'numpy')
-        PPI = lambdify([self.parameters+self['other_para']], PPI, 'numpy')
+        #context_f['numpy'] = 'numpy'
+        GAM0 = lambdify([self.parameters+self['other_para']], GAM0)#, modules={'ImmutableDenseMatrix': np.array})#'numpy')
+        GAM1 = lambdify([self.parameters+self['other_para']], GAM1)#, modules={'ImmutableDenseMatrix': np.array})#'numpy')
+        PSI = lambdify([self.parameters+self['other_para']], PSI)#, modules={'ImmutableDenseMatrix': np.array})#'numpy')
+        PPI = lambdify([self.parameters+self['other_para']], PPI)#, modules={'ImmutableDenseMatrix': np.array})#'numpy')
 
-        psi = lambdify([self.parameters], [ss[str(px)] for px in self['other_para']], modules=context_f)
+        psi = lambdify([self.parameters], [ss[str(px)] for px in self['other_para']])#, modules=context_f)
 
         def add_para_func(f):
             def wrapped_f(px):
@@ -498,9 +498,12 @@ class DSGE(dict):
             else:
                 lhs, rhs = eq, '0'
 
-
-            lhs = eval(lhs, context)
-            rhs = eval(rhs, context)
+            try:
+                lhs = eval(lhs, context)
+                rhs = eval(rhs, context)
+            except TypeError as e:
+                print('While parsing %s, got this error: %s' % (eq, repr(e)))
+                return
 
             equations.append(Equation(lhs, rhs))
 
