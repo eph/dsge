@@ -91,6 +91,6 @@ class TestFilter(TestCase):
 
         res = model.kf_everything(p0)
 
-        print(res['filtered_states'])
+        #print(res['filtered_states'])
 
         self.assertAlmostEqual(0, 0)

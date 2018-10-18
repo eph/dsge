@@ -29,7 +29,7 @@ def chand_recursion(y, TT, RR, QQ, DD, ZZ, HH, P0,t0=0):
         dFt = np.log(np.linalg.det(Ft))
         iFtnut = np.linalg.solve(Ft, nut)
 
-        if i > t0:
+        if i >= t0:
             loglh = loglh - 0.5*ny*np.log(2*np.pi) - 0.5*dFt - 0.5*np.dot(nut, iFtnut)
 
         At = TT@At + Kt @ nut.T
@@ -78,7 +78,7 @@ def kalman_filter(y, TT, RR, QQ, DD, ZZ, HH, P0,t0=0):
         dFt = np.log(np.linalg.det(Ft))
         iFtnut = np.linalg.solve(Ft, nut)
 
-        if i > t0:
+        if i >= t0:
             loglh = loglh - 0.5*nact*np.log(2*np.pi) - 0.5*dFt - 0.5*np.dot(nut, iFtnut)
  
         TTPt = TT @ Pt
@@ -139,7 +139,7 @@ def filter_and_smooth(y, TT, RR, QQ, DD, ZZ, HH, P0,t0=0):
             dFt = np.log(np.linalg.det(Ft))
             iFtnut = np.linalg.solve(Ft, nut)
 
-            if i > t0:
+            if i >= t0:
                 liks[i] = - 0.5*nact*np.log(2*np.pi) - 0.5*dFt - 0.5*np.dot(nut, iFtnut)
 
             Kt = Pt @ ZZ[observed, :].T
