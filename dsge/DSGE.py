@@ -339,7 +339,7 @@ class DSGE(dict):
 
         def add_para_func(f):
             def wrapped_f(px):
-                return f([px, psi(px)])
+                return f([*px, *psi(px)])
             return wrapped_f
 
         self.GAM0 = add_para_func(GAM0)
