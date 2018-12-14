@@ -67,7 +67,7 @@ class StateSpaceModel(object):
 
     fast_filter = 'chand_recursion'
 
-    def __init__(self, yy, TT, RR, QQ, DD, ZZ, HH, t0=0,
+    def __init__(self, yy, CC, TT, RR, QQ, DD, ZZ, HH, t0=0,
                  shock_names=None, state_names=None, obs_names=None):
 
         if len(yy.shape) < 2:
@@ -75,6 +75,7 @@ class StateSpaceModel(object):
 
         self.yy = yy
 
+        self.CC = CC
         self.TT = TT
         self.RR = RR
         self.QQ = QQ
@@ -123,6 +124,7 @@ class StateSpaceModel(object):
         yy = kwargs.pop('y', self.yy)
         P0 = kwargs.pop('P0', 'unconditional')
 
+
         if np.isnan(yy).any().any():
             default_filter = 'kalman_filter'
         else:
@@ -131,8 +133,8 @@ class StateSpaceModel(object):
         filt = kwargs.pop('filter', default_filter)
         filt_func = filt_choices[filt]
 
-        TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para)
-
+        CC, TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para)
+        A0 = kwargs.pop('A0', np.zeros(CC.shape))
         if (np.isnan(TT)).any():
             lik = -1000000000000.0
             return lik
@@ -140,10 +142,11 @@ class StateSpaceModel(object):
         if P0=='unconditional':
             P0 = solve_discrete_lyapunov(TT, RR.dot(QQ).dot(RR.T))
 
-        lik = filt_func(np.asarray(yy), TT, RR, QQ,
+        lik = filt_func(np.asarray(yy), CC, TT, RR, QQ,
                         np.asarray(DD,dtype=float),
                         np.asarray(ZZ,dtype=float),
                         np.asarray(HH,dtype=float),
+                        np.asarray(A0,dtype=float),
                         np.asarray(P0,dtype=float),t0=t0)
         return lik
 
@@ -186,18 +189,20 @@ class StateSpaceModel(object):
         yy = kwargs.pop('y', self.yy)
         P0 = kwargs.pop('P0', 'unconditional')
 
+
         yy = p.DataFrame(yy)
 
-        TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
-
+        CC, TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
+        A0 = kwargs.pop('A0', np.zeros(CC.shape))
         if P0=='unconditional':
             P0 = solve_discrete_lyapunov(TT, RR.dot(QQ).dot(RR.T))
 
         
-        res = filter_and_smooth(np.asarray(yy), TT, RR, QQ,
+        res = filter_and_smooth(np.asarray(yy), CC, TT, RR, QQ,
                                 np.asarray(DD,dtype=float),
                                 np.asarray(ZZ,dtype=float),
                                 np.asarray(HH,dtype=float),
+                                np.asarray(A0,dtype=float),
                                 np.asarray(P0,dtype=float),t0=t0)
 
         (loglh, filtered_means, filtered_stds, filtered_cov,
@@ -246,7 +251,7 @@ class StateSpaceModel(object):
         yy = kwargs.pop('y', self.yy)
         res = self.kf_everything(para, y=yy, *args, **kwargs)
 
-        TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
+        CC, TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
 
         At = res['smoothed_states'].iloc[-1].values
         ysim  = np.zeros((h, DD.size))
@@ -255,7 +260,7 @@ class StateSpaceModel(object):
         index = []
         for i in range(h):
             e = np.random.multivariate_normal(np.zeros((QQ.shape[0])), QQ)
-            At = TT.dot(At) + shocks*RR.dot(e)
+            At = CC + TT.dot(At) + shocks*RR.dot(e)
             h = np.random.multivariate_normal(np.zeros((HH.shape[0])), HH)
             At = np.asarray(At).squeeze()
             ysim[i, :] = DD.T + ZZ.dot(At) + shocks*np.atleast_2d(h)
@@ -291,6 +296,7 @@ class StateSpaceModel(object):
         -----
 
         """
+        CC = np.atleast_2d(self.CC(para, *args, **kwargs))
         TT = np.atleast_2d(self.TT(para, *args, **kwargs))
         RR = np.atleast_2d(self.RR(para, *args, **kwargs))
         QQ = np.atleast_2d(self.QQ(para, *args, **kwargs))
@@ -299,7 +305,7 @@ class StateSpaceModel(object):
         ZZ = np.atleast_2d(self.ZZ(para, *args, **kwargs))
         HH = np.atleast_1d(self.HH(para, *args, **kwargs))
 
-        return TT, RR, QQ, DD, ZZ, HH
+        return CC, TT, RR, QQ, DD, ZZ, HH
 
 
     def abcd_representation(self, para, *args, **kwargs):
@@ -323,7 +329,7 @@ class StateSpaceModel(object):
 
         """
 
-        TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
+        CC, TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
 
         if not(np.all(HH==0)): fdkjsl
         
@@ -414,13 +420,13 @@ class StateSpaceModel(object):
         return.
         """
 
-        TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
+        CC, TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
         ysim  = np.zeros((nsim*2, DD.size))
         At = np.zeros((TT.shape[0],))
 
         for i in range(nsim*2):
             e = np.random.multivariate_normal(np.zeros((QQ.shape[0])), QQ)
-            At = TT.dot(At) + RR.dot(e)
+            At = CC, TT.dot(At) + RR.dot(e)
 
             h = np.random.multivariate_normal(np.zeros((HH.shape[0])), HH)
             At = np.asarray(At).squeeze()
@@ -434,7 +440,7 @@ class StateSpaceModel(object):
         yy = kwargs.pop('y', self.yy)
         P0 = kwargs.pop('P0', 'unconditional')
 
-        TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
+        CC, TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
 
         if P0=='unconditional':
             P0 = solve_discrete_lyapunov(TT, RR.dot(QQ).dot(RR.T))
@@ -488,7 +494,7 @@ class StateSpaceModel(object):
 
 
 
-            AA = np.dot(TT, AA) + np.dot(Kt, iFtnut).squeeze()
+            AA = CC + np.dot(TT, AA) + np.dot(Kt, iFtnut).squeeze()
             AA = np.asarray(AA).squeeze()
 
             Pt = np.dot(TTPt, TT.T) - np.dot(Kt, sp.linalg.solve(Ft, Kt.T, sym_pos=True)) + RQR
@@ -571,7 +577,8 @@ class LinearDSGEModel(StateSpaceModel):
     def system_matrices(self, para, *args, **kwargs):
 
         TT, RR, RC = self.solve_LRE(para, *args, **kwargs)
-
+        CC = np.zeros(TT.shape[0])
+        
         QQ = np.atleast_2d(self.QQ(para, *args, **kwargs))
         DD = np.atleast_1d(self.DD(para, *args, **kwargs))
         ZZ = np.atleast_2d(self.ZZ(para, *args, **kwargs))
@@ -580,7 +587,7 @@ class LinearDSGEModel(StateSpaceModel):
         if RC!=1:
             TT = np.nan*TT
 
-        return TT, RR, QQ, DD, ZZ, HH
+        return CC, TT, RR, QQ, DD, ZZ, HH
 
     def log_pr(self, para, *args, **kwargs):
         try:

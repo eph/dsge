@@ -4,14 +4,14 @@ from numba import jit
 
 
 @jit(nopython=True)
-def chand_recursion(y, TT, RR, QQ, DD, ZZ, HH, P0,t0=0):
+def chand_recursion(y, CC, TT, RR, QQ, DD, ZZ, HH, A0, P0, t0=0):
     nobs, ny = y.shape
     ns = TT.shape[0]
 
+    At = A0
     Pt = P0
 
     loglh = 0.0
-    At = np.zeros(shape=(ns))
 
 
     Ft = ZZ @ Pt @ ZZ.T + HH
@@ -32,7 +32,7 @@ def chand_recursion(y, TT, RR, QQ, DD, ZZ, HH, P0,t0=0):
         if i >= t0:
             loglh = loglh - 0.5*ny*np.log(2*np.pi) - 0.5*dFt - 0.5*np.dot(nut, iFtnut)
 
-        At = TT@At + Kt @ nut.T
+        At = CC + TT@At + Kt @ nut.T
         
         ZZSt = ZZ@St;
         MSpZp = Mt@(ZZSt.T);
@@ -53,14 +53,15 @@ def chand_recursion(y, TT, RR, QQ, DD, ZZ, HH, P0,t0=0):
 
 
 @jit(nopython=True)
-def kalman_filter(y, TT, RR, QQ, DD, ZZ, HH, P0,t0=0):
+def kalman_filter(y, CC, TT, RR, QQ, DD, ZZ, HH, At, P0, t0=0):
 
     #y = np.asarray(y)
     nobs, ny = y.shape
     ns = TT.shape[0]
 
-    RQR = np.dot(np.dot(RR, QQ), RR.T)
+    At = A0
     Pt = P0
+    RQR = np.dot(np.dot(RR, QQ), RR.T)
 
     loglh = 0.0
     AA = np.zeros(shape=(ns))
@@ -84,7 +85,7 @@ def kalman_filter(y, TT, RR, QQ, DD, ZZ, HH, P0,t0=0):
         TTPt = TT @ Pt
         Kt = TTPt @ ZZ[not_missing,:].T
 
-        AA = TT @ AA + Kt @ iFtnut
+        AA = CC + TT @ AA + Kt @ iFtnut
         Pt = TTPt @ TT.T - Kt @ np.linalg.solve(Ft, Kt.T) + RQR
 
     return loglh
@@ -92,16 +93,14 @@ def kalman_filter(y, TT, RR, QQ, DD, ZZ, HH, P0,t0=0):
 
 
 @jit(nopython=True)
-def filter_and_smooth(y, TT, RR, QQ, DD, ZZ, HH, P0,t0=0):
-    #y = np.atleast_2d(y)
-    #DD = np.atleast_1d(DD)
+def filter_and_smooth(y, CC, TT, RR, QQ, DD, ZZ, HH, A0, P0,t0=0):
 
     nobs, ny = y.shape
     ns = TT.shape[0]
 
-    RQR = np.dot(np.dot(RR, QQ), RR.T)
+    At = A0
     Pt = P0
-    At = np.zeros(shape=(ns))
+    RQR = np.dot(np.dot(RR, QQ), RR.T)
 
     loglh = 0.0
 
@@ -157,7 +156,7 @@ def filter_and_smooth(y, TT, RR, QQ, DD, ZZ, HH, P0,t0=0):
         filtered_cov[i] = 0.5*Pt1 
 
         # forecast 
-        At = TT @ At1
+        At = CC + TT @ At1
         Pt = TT @ Pt1 @ TT.T + RQR
 
 
