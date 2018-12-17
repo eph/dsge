@@ -61,6 +61,7 @@ contains
 
 !    self%p0 = {p0}
     self%neta = {model.neta}
+    self%t0 = {t0}
   end function new_model
 
   subroutine system_matrices(self, para, error)
@@ -112,7 +113,8 @@ contains
 
 end module model_t
 """
-def smc(model):
+def smc(model, t0=0):
+
     import sympy
     from sympy.printing import fcode
     cmodel = model.compile_model()
@@ -154,7 +156,7 @@ def smc(model):
 		   standard=95, contract=False)
 	     for mat, n in zip(system_matrices, to_write)]
     sims_mat = '\n\n'.join(fmats)
-    template = template.format(model=model, yy=cmodel.yy, p0='',sims_mat=sims_mat)
+    template = template.format(model=model, yy=cmodel.yy, p0='',t0=t0, sims_mat=sims_mat)
 
     return template
 
@@ -210,6 +212,22 @@ def write_prior_file(prior, output_dir):
                  for pr in prior.priors]
         prior_file.write('\n'.join(plist))
             
+
+def make_fortran_model(model, **kwargs):
+    t0 = kwargs.pop('t0',0)
+    from fortress import make_smc
+
+    model_file = smc(model, t0=t0)
+    modelc = model.compile_model()
+
+    r = make_smc(model_file, other_files={'data.txt': modelc.yy,
+                                          'prior.txt': 'prior.txt'}, **kwargs)
+
+    output_dir = kwargs.pop('output_directory','_fortress_tmp')
+    write_prior_file(modelc.prior, output_dir)
+    return r
+    
+
 def write_trans_file(prior, output_dir):
 
     def return_trans(dist):
