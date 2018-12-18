@@ -253,10 +253,10 @@ class StateSpaceModel(object):
 
         CC, TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
 
-        At = res['smoothed_states'].iloc[-1].values
+        At = res['smoothed_means'].iloc[-1].values
         ysim  = np.zeros((h, DD.size))
 
-        index0 = res['smoothed_states'].index[-1]+1
+        index0 = res['smoothed_means'].index[-1]+1
         index = []
         for i in range(h):
             e = np.random.multivariate_normal(np.zeros((QQ.shape[0])), QQ)

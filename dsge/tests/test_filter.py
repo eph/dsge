@@ -1,7 +1,7 @@
 from __future__ import division
 
 import numpy as np
-from numpy.testing import assert_equal
+from numpy.testing import assert_equal, assert_allclose
 
 from unittest import TestCase
 
@@ -94,3 +94,22 @@ class TestFilter(TestCase):
         #print(res['filtered_states'])
 
         self.assertAlmostEqual(0, 0)
+
+
+    def test_pred(self):
+        relative_loc = 'examples/ar1/'
+        model_file = pkg_resources.resource_filename('dsge', relative_loc+'ar1.yaml')
+        data_file = pkg_resources.resource_filename('dsge', relative_loc+'arma23_sim200.txt')
+        ar1 = DSGE.DSGE.read(model_file)
+        ar1['__data__']['estimation']['data'] = data_file
+
+        rho, sigma = ar1.p0()
+
+        ar1 = ar1.compile_model()
+
+        res = ar1.kf_everything([rho, sigma], y=ar1.yy)
+
+        pred = ar1.pred([rho, sigma], shocks=False,h=5)
+
+        y1 = ar1.yy.iloc[-1].values
+        assert_allclose(pred, [rho*y1, rho**2*y1, rho**3*y1, rho**4*y1, rho**5*y1])
