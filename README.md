@@ -1,4 +1,3 @@
-====
 dsge
 ====
 A simple Python (3+) package for Dynamic Stochastic General Equilibrium (DSGE) models.

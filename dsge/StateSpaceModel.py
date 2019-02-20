@@ -367,7 +367,7 @@ class StateSpaceModel(object):
         1 standard deviation shocks.  The method does not return IRFs in terms
         of the model observables.
         """
-        TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
+        CC, TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
 
         if self.shock_names==None:
             self.shock_names = ['shock_' + str(i) for i in range(QQ.shape[0])]
