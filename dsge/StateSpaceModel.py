@@ -426,7 +426,7 @@ class StateSpaceModel(object):
 
         for i in range(nsim*2):
             e = np.random.multivariate_normal(np.zeros((QQ.shape[0])), QQ)
-            At = CC, TT.dot(At) + RR.dot(e)
+            At = CC + TT.dot(At) + RR.dot(e)
 
             h = np.random.multivariate_normal(np.zeros((HH.shape[0])), HH)
             At = np.asarray(At).squeeze()
