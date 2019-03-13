@@ -153,7 +153,7 @@ def filter_and_smooth(y, CC, TT, RR, QQ, DD, ZZ, HH, A0, P0,t0=0):
 
         filtered_means[i] = At1
         filtered_stds[i] = np.sqrt(np.diag(Pt1))
-        filtered_cov[i] = 0.5*Pt1 
+        filtered_cov[i] = 0.5*(Pt1 + Pt1.T)
 
         # forecast 
         At = CC + TT @ At1
