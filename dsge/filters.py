@@ -118,6 +118,10 @@ def filter_and_smooth(y, CC, TT, RR, QQ, DD, ZZ, HH, A0, P0,t0=0):
 
     liks = np.zeros(nobs)
 
+    Lmat = np.zeros((nobs,ns,ns))
+    ZtiFtnut = np.zeros((nobs, ns))
+    ZtiFtZ = np.zeros((nobs, ns, ns))
+
     for i in range(nobs):
 
         observed = ~np.isnan(y[i])
@@ -143,6 +147,10 @@ def filter_and_smooth(y, CC, TT, RR, QQ, DD, ZZ, HH, A0, P0,t0=0):
 
             Kt = Pt @ ZZ[observed, :].T
 
+            Lmat[i] = TT - TT @ Pt @ ZZ[observed,:].T @ np.linalg.inv(Ft) @ ZZ[observed,:]
+            ZtiFtnut[i] = ZZ[observed,:].T @ iFtnut
+            ZtiFtZ[i] = ZZ[observed,:].T @ np.linalg.inv(Ft) @ ZZ[observed,:]
+
             At1 = At + Kt @ iFtnut
             Pt1 = Pt - Kt @ np.linalg.solve(Ft, Kt.T)
 
@@ -165,18 +173,16 @@ def filter_and_smooth(y, CC, TT, RR, QQ, DD, ZZ, HH, A0, P0,t0=0):
     smoothed_stds[-1] = filtered_stds[-1]
     smoothed_cov[-1] = filtered_cov[-1]
    
+    r = np.zeros((nobs+1, ns))
+    N = np.zeros((ns,ns))
+
     for i in range(nobs-2,-1,-1):
-        invPt1 = np.linalg.pinv(forecast_cov[i+1])
-        J = filtered_cov[i] @ TT.T @ invPt1
-   
-        smoothed_means[i] = filtered_means[i] + (
-            J @ (smoothed_means[i+1] - forecast_means[i+1]) )
+        r[i-1] = ZtiFtnut[i] + Lmat[i].T @ r[i]
+        smoothed_means[i] = forecast_means[i] + forecast_cov[i] @ r[i-1] 
 
-        PtT = filtered_cov[i] + J @ (smoothed_cov[i+1] - forecast_cov[i+1]) @ J.T
-        PtT = 0.5*(PtT.T + PtT)
-        smoothed_stds[i] = np.sqrt(np.diag(PtT))
-        smoothed_cov[i] = PtT
-
+        N = ZtiFtZ[i] + Lmat[i].T @ N @ Lmat[i]
+        smoothed_cov[i] = forecast_cov[i] - forecast_cov[i] @ N @ forecast_cov[i].T
+        smoothed_stds[i] = np.sqrt(np.diag(smoothed_cov[i]))
 
     return (liks, filtered_means, filtered_stds, filtered_cov,
             forecast_means, forecast_stds, forecast_cov,
