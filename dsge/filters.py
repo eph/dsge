@@ -53,7 +53,7 @@ def chand_recursion(y, CC, TT, RR, QQ, DD, ZZ, HH, A0, P0, t0=0):
 
 
 @jit(nopython=True)
-def kalman_filter(y, CC, TT, RR, QQ, DD, ZZ, HH, At, P0, t0=0):
+def kalman_filter(y, CC, TT, RR, QQ, DD, ZZ, HH, A0, P0, t0=0):
 
     #y = np.asarray(y)
     nobs, ny = y.shape
