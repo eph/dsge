@@ -296,7 +296,7 @@ class StateSpaceModel(object):
         -----
 
         """
-        CC = np.atleast_2d(self.CC(para, *args, **kwargs))
+        CC = np.atleast_1d(self.CC(para, *args, **kwargs))
         TT = np.atleast_2d(self.TT(para, *args, **kwargs))
         RR = np.atleast_2d(self.RR(para, *args, **kwargs))
         QQ = np.atleast_2d(self.QQ(para, *args, **kwargs))
