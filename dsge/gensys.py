@@ -1,4 +1,5 @@
 # pure python implementation of GENSYS by Chris Sims
+import warnings
 import numpy as np 
 from scipy.linalg import ordqz, svd
 
@@ -52,7 +53,10 @@ def gensys(G0, G1, PSI, PI, DIV=1+1e-8, REALSMALL=1e-6, return_everything=False)
     RC = np.array([0,0])
     RC[0] = len(bigev) >= nunstab
 
-    if nunstab == n:
+    if RC[0]==0: 
+        warnings.warn(f"{nunstab} unstable roots, but only {len(bigev)} RE errors! No solution.")
+        
+    if nunstab == n: 
         raise NotImplementedError("case nunstab == n, not implemented")
     else:
         etawt1 = Qstab.dot(PI)
