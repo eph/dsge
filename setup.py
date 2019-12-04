@@ -19,7 +19,7 @@ if __name__ == "__main__":
                                           top_path=None))
     numpy.distutils.core.setup(
         name = 'dsge',
-        version = '0.0.4',
+        version = '0.0.6',
         platforms = 'linux',
         packages = find_packages(),
         test_suite='nose.collector',

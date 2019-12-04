@@ -394,7 +394,7 @@ class StateSpaceModel(object):
 
             irfs[self.shock_names[i]] = p.DataFrame(At.T, columns=self.state_names)
 
-        return p.Panel(irfs)
+        return irfs
 
     def simulate(self, para, nsim=200, *args, **kwargs):
         """
