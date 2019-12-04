@@ -5,13 +5,22 @@ from scipy.special import gammaln
 import scipy.stats as rv
 
 class InvGamma(object):
-    
+    """
+    An inverse gamma random variable as detailed in Zellner (1971). 
+
+    A variable sigma follows an inverse gamma (s, nu) if it has the pdf:
+
+    \begin{align}
+    p(\sigma|s,\nu) = \frac{2}{\Gamma(\nu/2)} \left(\frac{\nu s^2}{2}\right)^{\nu/2} \frac{1}{\sigma^{\nu+1}} e^{-\nu s^2 / (2\sigma^2)}. 
+    \end{align}
+
+    """
     name = 'inv_gamma'
 
-    def __init__(self, a, b):
+    def __init__(self, s, nu):
 
-        self.a = a
-        self.b = b
+        self.a = s
+        self.b = nu
 
     def logpdf(self, x):
         a = self.a
