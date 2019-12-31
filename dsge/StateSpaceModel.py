@@ -18,6 +18,7 @@ from .filters import chand_recursion, kalman_filter, filter_and_smooth
 filt_choices = {'chand_recursion': chand_recursion,
                 'kalman_filter': kalman_filter}
 
+
 class StateSpaceModel(object):
     r"""
     Object for holding state space model
@@ -83,7 +84,6 @@ class StateSpaceModel(object):
         self.ZZ = ZZ
         self.HH = HH
 
-
         self.t0 = t0
 
         self.shock_names = None
@@ -143,13 +143,12 @@ class StateSpaceModel(object):
             P0 = solve_discrete_lyapunov(TT, RR.dot(QQ).dot(RR.T))
 
         lik = filt_func(np.asarray(yy), CC, TT, RR, QQ,
-                        np.asarray(DD,dtype=float),
-                        np.asarray(ZZ,dtype=float),
-                        np.asarray(HH,dtype=float),
-                        np.asarray(A0,dtype=float),
-                        np.asarray(P0,dtype=float),t0=t0)
+                        np.asarray(DD, dtype=float),
+                        np.asarray(ZZ, dtype=float),
+                        np.asarray(HH, dtype=float),
+                        np.asarray(A0, dtype=float),
+                        np.asarray(P0, dtype=float), t0=t0)
         return lik
-
 
     def kf_everything(self, para, *args, **kwargs):
         """
@@ -188,22 +187,19 @@ class StateSpaceModel(object):
         t0 = kwargs.pop('t0', self.t0)
         yy = kwargs.pop('y', self.yy)
         P0 = kwargs.pop('P0', 'unconditional')
-
-
         yy = p.DataFrame(yy)
 
         CC, TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
         A0 = kwargs.pop('A0', np.zeros(CC.shape))
-        if P0=='unconditional':
+        if P0 == 'unconditional':
             P0 = solve_discrete_lyapunov(TT, RR.dot(QQ).dot(RR.T))
 
-        
         res = filter_and_smooth(np.asarray(yy), CC, TT, RR, QQ,
-                                np.asarray(DD,dtype=float),
-                                np.asarray(ZZ,dtype=float),
-                                np.asarray(HH,dtype=float),
-                                np.asarray(A0,dtype=float),
-                                np.asarray(P0,dtype=float),t0=t0)
+                                np.asarray(DD, dtype=float),
+                                np.asarray(ZZ, dtype=float),
+                                np.asarray(HH, dtype=float),
+                                np.asarray(A0, dtype=float),
+                                np.asarray(P0, dtype=float), t0=t0)
 
         (loglh, filtered_means, filtered_stds, filtered_cov,
          forecast_means, forecast_stds, forecast_cov,
@@ -464,7 +460,6 @@ class StateSpaceModel(object):
 
             At[i, :] = AA
 
-
             yhat = np.dot(ZZ, AA) + DD.flatten()
             nut = data[i, :] - yhat
             nut = np.atleast_2d(nut)
@@ -492,27 +487,21 @@ class StateSpaceModel(object):
                 Ft = np.eye(ny)
                 iFtnut = np.eye(ny)
 
-
-
             AA = CC + np.dot(TT, AA) + np.dot(Kt, iFtnut).squeeze()
             AA = np.asarray(AA).squeeze()
 
             Pt = np.dot(TTPt, TT.T) - np.dot(Kt, sp.linalg.solve(Ft, Kt.T, sym_pos=True)) + RQR
 
-
         if isinstance(yy,p.DataFrame):
             loglh = p.DataFrame(loglh,columns=['Log Lik.'])
             loglh.index = yy.index
 
-
         results = {}
-        results['filtered_states']   = p.DataFrame(At, columns=self.state_names,index=yy.index)
+        results['filtered_states'] = p.DataFrame(At, columns=self.state_names,index=yy.index)
         results['one_step_forecast'] = []
         results['log_lik'] = loglh
 
         return results
-
-
 
     def historical_decomposition(self, para, *args, **kwargs):
         pass
