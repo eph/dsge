@@ -12,6 +12,7 @@ from .StateSpaceModel import LinearDSGEModel
 
 import warnings
 
+
 class EquationList(list):
     """A container for holding an set of equations."""
 
@@ -148,9 +149,9 @@ class DSGE(dict):
         if 'make_log' in self.keys():
             self['perturb_eq'] = []
             sub_dict = dict()
-            sub_dict.update({v:Variable(v.name+'ss')*sympy.exp(v) for v in self['make_log']})
-            sub_dict.update({v(-1):Variable(v.name+'ss')*sympy.exp(v(-1)) for v in self['make_log']})
-            sub_dict.update({v(1):Variable(v.name+'ss')*sympy.exp(v(1)) for v in self['make_log']})
+            sub_dict.update({v:Parameter(v.name+'ss')*sympy.exp(v) for v in self['make_log']})
+            sub_dict.update({v(-1):Parameter(v.name+'ss')*sympy.exp(v(-1)) for v in self['make_log']})
+            sub_dict.update({v(1):Parameter(v.name+'ss')*sympy.exp(v(1)) for v in self['make_log']})
 
             for eq in self.equations:
                 peq = eq.subs(sub_dict)
