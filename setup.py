@@ -3,6 +3,7 @@ import numpy.distutils.core
 
 from setuptools import find_packages
 
+
 def build_ext(config):
 
     config_dict = config.todict()
@@ -15,7 +16,7 @@ def build_ext(config):
 if __name__ == "__main__":
 
     from numpy.distutils.misc_util import Configuration
-    config_dict = build_ext(Configuration('dsge',parent_package=None,
+    config_dict = build_ext(Configuration('dsge', parent_package=None,
                                           top_path=None))
     numpy.distutils.core.setup(
         name = 'dsge',

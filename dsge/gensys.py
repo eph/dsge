@@ -3,7 +3,6 @@ import warnings
 import numpy as np
 from scipy.linalg import ordqz, svd
 
-
 def gensys(G0, G1, PSI, PI, DIV=1 + 1e-8,
            REALSMALL=1e-6,
            return_everything=False):

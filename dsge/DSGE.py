@@ -34,8 +34,8 @@ class EquationList(list):
 
 
 def read_data_file(datafile, obs_names):
-    
-    if type(datafile)==dict:
+
+    if type(datafile) == dict:
         startdate = datafile['start']
         datafile = datafile['file']
     else:
@@ -56,15 +56,18 @@ def read_data_file(datafile, obs_names):
         startdate = 0
 
     if len(obs_names) > 1:
-        data = p.DataFrame(data[:, :len(obs_names)], columns=list(map(lambda x: str(x), obs_names)))
+        data = p.DataFrame(data[:, :len(obs_names)], columns=list(
+            map(lambda x: str(x), obs_names)))
     else:
-        data = p.DataFrame(data, columns=list(map(lambda x: str(x), obs_names)))
+        data = p.DataFrame(data, columns=list(
+            map(lambda x: str(x), obs_names)))
 
     if startdate is not 0:
         nobs = data.shape[0]
         data.index = p.period_range(startdate, freq='Q', periods=nobs)
 
     return data
+
 
 def construct_prior(prior_list, parameters):
 
@@ -78,36 +81,35 @@ def construct_prior(prior_list, parameters):
         pstdd = prior_spec[2]
         from scipy.stats import beta, norm, uniform, gamma
         from dsge.OtherPriors import InvGamma
-        if ptype=='beta':
-            a = (1-pmean)*pmean**2/pstdd**2 - pmean
-            b = a*(1/pmean - 1)
+        if ptype == 'beta':
+            a = (1 - pmean) * pmean**2 / pstdd**2 - pmean
+            b = a * (1 / pmean - 1)
             pr = beta(a, b)
             pr.name = 'beta'
             prior.append(pr)
-        if ptype=='gamma':
-            b = pstdd**2/pmean
-            a = pmean/b
+        if ptype == 'gamma':
+            b = pstdd**2 / pmean
+            a = pmean / b
             pr = gamma(a, scale=b)
             pr.name = 'gamma'
             prior.append(pr)
-        if ptype=='normal':
+        if ptype == 'normal':
             a = pmean
             b = pstdd
             pr = norm(loc=a, scale=b)
-            pr.name='norm'
+            pr.name = 'norm'
             prior.append(pr)
-        if ptype=='inv_gamma':
+        if ptype == 'inv_gamma':
             a = pmean
             b = pstdd
             prior.append(InvGamma(a, b))
-        if ptype=='uniform':
+        if ptype == 'uniform':
             a, b = pmean, pstdd
-            pr = uniform(loc=a, scale=(b-a))
+            pr = uniform(loc=a, scale=(b - a))
             pr.name = 'uniform'
             prior.append(pr)
 
     return prior
-
 
 
 class DSGE(dict):
@@ -149,16 +151,19 @@ class DSGE(dict):
         if 'make_log' in self.keys():
             self['perturb_eq'] = []
             sub_dict = dict()
-            sub_dict.update({v:Parameter(v.name+'ss')*sympy.exp(v) for v in self['make_log']})
-            sub_dict.update({v(-1):Parameter(v.name+'ss')*sympy.exp(v(-1)) for v in self['make_log']})
-            sub_dict.update({v(1):Parameter(v.name+'ss')*sympy.exp(v(1)) for v in self['make_log']})
+            sub_dict.update({v: Parameter(v.name + 'ss') * sympy.exp(v)
+                            for v in self['make_log']})
+            sub_dict.update({v(-1): Parameter(v.name + 'ss')
+                            * sympy.exp(v(-1)) for v in self['make_log']})
+            sub_dict.update({v(1): Parameter(v.name + 'ss') *
+                            sympy.exp(v(1)) for v in self['make_log']})
 
             for eq in self.equations:
                 peq = eq.subs(sub_dict)
                 self['perturb_eq'].append(peq)
 
-            self['ss_ordering'] = [Variable(v.name+'ss') for v in self['make_log']]
-
+            self['ss_ordering'] = [Variable(v.name+'ss') for v in
+                                   self['make_log']]
 
         else:
             self['perturb_eq'] = self['equations']
@@ -168,8 +173,7 @@ class DSGE(dict):
         # context['log'] = sympy.log
         # context['exp'] = sympy.exp
         context = {}
-        #self['pertub_eq'] = EquationList(self['perturb_eq'], context)
-
+        # self['pertub_eq'] = EquationList(self['perturb_eq'], context)
 
         return
 
