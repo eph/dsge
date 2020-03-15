@@ -86,9 +86,9 @@ class StateSpaceModel(object):
 
         self.t0 = t0
 
-        self.shock_names = None
-        self.state_names = None
-        self.obs_names = None
+        self.shock_names = shock_names
+        self.state_names = state_names
+        self.obs_names = obs_names
 
     def log_lik(self, para, *args, **kwargs):
         """
