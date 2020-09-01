@@ -15,8 +15,7 @@ from scipy.linalg import solve_discrete_lyapunov
 from .gensys import gensys
 from .filters import chand_recursion, kalman_filter, filter_and_smooth
 
-filt_choices = {'chand_recursion': chand_recursion,
-                'kalman_filter': kalman_filter}
+filt_choices = {"chand_recursion": chand_recursion, "kalman_filter": kalman_filter}
 
 
 class StateSpaceModel(object):
@@ -66,10 +65,23 @@ class StateSpaceModel(object):
         Generates the filtered and smoothed posterior means of the state vector.
     """
 
-    fast_filter = 'chand_recursion'
+    fast_filter = "chand_recursion"
 
-    def __init__(self, yy, CC, TT, RR, QQ, DD, ZZ, HH, t0=0,
-                 shock_names=None, state_names=None, obs_names=None):
+    def __init__(
+        self,
+        yy,
+        CC,
+        TT,
+        RR,
+        QQ,
+        DD,
+        ZZ,
+        HH,
+        t0=0,
+        shock_names=None,
+        state_names=None,
+        obs_names=None,
+    ):
 
         if len(yy.shape) < 2:
             yy = np.swapaxes(np.atleast_2d(yy), 0, 1)
@@ -120,34 +132,40 @@ class StateSpaceModel(object):
 
         """
 
-        t0 = kwargs.pop('t0', self.t0)
-        yy = kwargs.pop('y', self.yy)
-        P0 = kwargs.pop('P0', 'unconditional')
-
+        t0 = kwargs.pop("t0", self.t0)
+        yy = kwargs.pop("y", self.yy)
+        P0 = kwargs.pop("P0", "unconditional")
 
         if np.isnan(yy).any().any():
-            default_filter = 'kalman_filter'
+            default_filter = "kalman_filter"
         else:
-            default_filter = 'chand_recursion'
+            default_filter = "chand_recursion"
 
-        filt = kwargs.pop('filter', default_filter)
+        filt = kwargs.pop("filter", default_filter)
         filt_func = filt_choices[filt]
 
         CC, TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para)
-        A0 = kwargs.pop('A0', np.zeros(CC.shape))
+        A0 = kwargs.pop("A0", np.zeros(CC.shape))
         if (np.isnan(TT)).any():
             lik = -1000000000000.0
             return lik
 
-        if P0=='unconditional':
+        if P0 == "unconditional":
             P0 = solve_discrete_lyapunov(TT, RR.dot(QQ).dot(RR.T))
 
-        lik = filt_func(np.asarray(yy), CC, TT, RR, QQ,
-                        np.asarray(DD, dtype=float),
-                        np.asarray(ZZ, dtype=float),
-                        np.asarray(HH, dtype=float),
-                        np.asarray(A0, dtype=float),
-                        np.asarray(P0, dtype=float), t0=t0)
+        lik = filt_func(
+            np.asarray(yy),
+            CC,
+            TT,
+            RR,
+            QQ,
+            np.asarray(DD, dtype=float),
+            np.asarray(ZZ, dtype=float),
+            np.asarray(HH, dtype=float),
+            np.asarray(A0, dtype=float),
+            np.asarray(P0, dtype=float),
+            t0=t0,
+        )
         return lik
 
     def kf_everything(self, para, *args, **kwargs):
@@ -184,37 +202,54 @@ class StateSpaceModel(object):
         Can be used with missing (NaN) observations.
         """
 
-        t0 = kwargs.pop('t0', self.t0)
-        yy = kwargs.pop('y', self.yy)
-        P0 = kwargs.pop('P0', 'unconditional')
+        t0 = kwargs.pop("t0", self.t0)
+        yy = kwargs.pop("y", self.yy)
+        P0 = kwargs.pop("P0", "unconditional")
         yy = p.DataFrame(yy)
 
         CC, TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
-        A0 = kwargs.pop('A0', np.zeros(CC.shape))
-        if P0 == 'unconditional':
+        A0 = kwargs.pop("A0", np.zeros(CC.shape))
+        if P0 == "unconditional":
             P0 = solve_discrete_lyapunov(TT, RR.dot(QQ).dot(RR.T))
 
-        res = filter_and_smooth(np.asarray(yy), CC, TT, RR, QQ,
-                                np.asarray(DD, dtype=float),
-                                np.asarray(ZZ, dtype=float),
-                                np.asarray(HH, dtype=float),
-                                np.asarray(A0, dtype=float),
-                                np.asarray(P0, dtype=float), t0=t0)
+        res = filter_and_smooth(
+            np.asarray(yy),
+            CC,
+            TT,
+            RR,
+            QQ,
+            np.asarray(DD, dtype=float),
+            np.asarray(ZZ, dtype=float),
+            np.asarray(HH, dtype=float),
+            np.asarray(A0, dtype=float),
+            np.asarray(P0, dtype=float),
+            t0=t0,
+        )
 
-        (loglh, filtered_means, filtered_stds, filtered_cov,
-         forecast_means, forecast_stds, forecast_cov,
-         smoothed_means, smoothed_stds, smoothed_cov) = res
+        (
+            loglh,
+            filtered_means,
+            filtered_stds,
+            filtered_cov,
+            forecast_means,
+            forecast_stds,
+            forecast_cov,
+            smoothed_means,
+            smoothed_stds,
+            smoothed_cov,
+        ) = res
 
         results = {}
-        results['log_lik'] = p.DataFrame(loglh, columns=['log_lik'],
-                                         index=yy.index)
+        results["log_lik"] = p.DataFrame(loglh, columns=["log_lik"], index=yy.index)
 
-        for resname, res in [('filtered_means', filtered_means),
-                             ('filtered_stds',  filtered_stds),
-                             ('forecast_means', forecast_means),
-                             ('forecast_stds',  forecast_stds),
-                             ('smoothed_means', smoothed_means),
-                             ('smoothed_stds',  smoothed_stds)]:
+        for resname, res in [
+            ("filtered_means", filtered_means),
+            ("filtered_stds", filtered_stds),
+            ("forecast_means", forecast_means),
+            ("forecast_stds", forecast_stds),
+            ("smoothed_means", smoothed_means),
+            ("smoothed_stds", smoothed_stds),
+        ]:
 
             resdf = p.DataFrame(res, columns=self.state_names, index=yy.index)
             results[resname] = resdf
@@ -244,23 +279,23 @@ class StateSpaceModel(object):
             A dataframe containing the draw from the predictive distribution.
 
         """
-        yy = kwargs.pop('y', self.yy)
+        yy = kwargs.pop("y", self.yy)
         res = self.kf_everything(para, y=yy, *args, **kwargs)
 
         CC, TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
 
-        At = res['smoothed_means'].iloc[-1].values
-        ysim  = np.zeros((h, DD.size))
+        At = res["smoothed_means"].iloc[-1].values
+        ysim = np.zeros((h, DD.size))
 
-        index0 = res['smoothed_means'].index[-1]+1
+        index0 = res["smoothed_means"].index[-1] + 1
         index = []
         for i in range(h):
             e = np.random.multivariate_normal(np.zeros((QQ.shape[0])), QQ)
-            At = CC + TT.dot(At) + shocks*RR.dot(e)
+            At = CC + TT.dot(At) + shocks * RR.dot(e)
             h = np.random.multivariate_normal(np.zeros((HH.shape[0])), HH)
             At = np.asarray(At).squeeze()
-            ysim[i, :] = DD.T + ZZ.dot(At) + shocks*np.atleast_2d(h)
-            index.append(index0+i)
+            ysim[i, :] = DD.T + ZZ.dot(At) + shocks * np.atleast_2d(h)
+            index.append(index0 + i)
 
         ysim = p.DataFrame(ysim, columns=self.obs_names, index=index)
 
@@ -303,7 +338,6 @@ class StateSpaceModel(object):
 
         return CC, TT, RR, QQ, DD, ZZ, HH
 
-
     def abcd_representation(self, para, *args, **kwargs):
         """
         Returns ABCD representation of state space system.
@@ -327,18 +361,17 @@ class StateSpaceModel(object):
 
         CC, TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
 
-        if not(np.all(HH==0)): fdkjsl
-        
+        if not (np.all(HH == 0)):
+            fdkjsl
+
         A = TT
         B = RR
 
-        C = ZZ.dot(TT) #ZZ @ TT
+        C = ZZ.dot(TT)  # ZZ @ TT
         D = ZZ.dot(RR)
 
         return A, B, C, D
-        
-        
-        
+
     def impulse_response(self, para, h=20, *args, **kwargs):
         """
         Computes impulse response functions of model.
@@ -365,28 +398,27 @@ class StateSpaceModel(object):
         """
         CC, TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
 
-        if self.shock_names==None:
-            self.shock_names = ['shock_' + str(i) for i in range(QQ.shape[0])]
-            self.state_names = ['state_' + str(i) for i in range(TT.shape[0])]
-            self.obs_names = ['obs_' + str(i) for i in range(ZZ.shape[0])]
-
+        if self.shock_names == None:
+            self.shock_names = ["shock_" + str(i) for i in range(QQ.shape[0])]
+            self.state_names = ["state_" + str(i) for i in range(TT.shape[0])]
+            self.obs_names = ["obs_" + str(i) for i in range(ZZ.shape[0])]
 
         neps = QQ.shape[0]
 
         irfs = {}
         for i in range(neps):
 
-            At = np.zeros((TT.shape[0], h+1))
+            At = np.zeros((TT.shape[0], h + 1))
             QQz = np.zeros_like(QQ)
             QQz[i, i] = QQ[i, i]
             cQQz = np.sqrt(QQz)
 
-            #cQQz = np.linalg.cholesky(QQz)
+            # cQQz = np.linalg.cholesky(QQz)
 
             At[:, 0] = (RR.dot(cQQz)[:, i]).squeeze()
 
             for j in range(h):
-                At[:, j+1] = TT.dot(At[:, j])
+                At[:, j + 1] = TT.dot(At[:, j])
 
             irfs[self.shock_names[i]] = p.DataFrame(At.T, columns=self.state_names)
 
@@ -417,10 +449,10 @@ class StateSpaceModel(object):
         """
 
         CC, TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
-        ysim  = np.zeros((nsim*2, DD.size))
+        ysim = np.zeros((nsim * 2, DD.size))
         At = np.zeros((TT.shape[0],))
 
-        for i in range(nsim*2):
+        for i in range(nsim * 2):
             e = np.random.multivariate_normal(np.zeros((QQ.shape[0])), QQ)
             At = CC + TT.dot(At) + RR.dot(e)
 
@@ -430,15 +462,14 @@ class StateSpaceModel(object):
 
         return ysim[nsim:, :]
 
-
     def forecast(self, para, h=20, shocks=True, *args, **kwargs):
-        t0 = kwargs.pop('t0', self.t0)
-        yy = kwargs.pop('y', self.yy)
-        P0 = kwargs.pop('P0', 'unconditional')
+        t0 = kwargs.pop("t0", self.t0)
+        yy = kwargs.pop("y", self.yy)
+        P0 = kwargs.pop("P0", "unconditional")
 
         CC, TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
 
-        if P0=='unconditional':
+        if P0 == "unconditional":
             P0 = solve_discrete_lyapunov(TT, RR.dot(QQ).dot(RR.T))
 
         data = np.asarray(yy)
@@ -463,20 +494,23 @@ class StateSpaceModel(object):
             yhat = np.dot(ZZ, AA) + DD.flatten()
             nut = data[i, :] - yhat
             nut = np.atleast_2d(nut)
-            ind = (np.isnan(data[i, :])==False).nonzero()[0]
+            ind = (np.isnan(data[i, :]) == False).nonzero()[0]
             nyact = ind.size
 
             if nyact > 0:
                 Ft = np.dot(np.dot(ZZ[ind, :], Pt), ZZ[ind, :].T) + HH[ind, :][:, ind]
-                Ft = 0.5*(Ft + Ft.T)
+                Ft = 0.5 * (Ft + Ft.T)
 
                 dFt = np.log(np.linalg.det(Ft))
 
                 iFtnut = sp.linalg.solve(Ft, nut[:, ind].T, sym_pos=True)
 
-                if i+1 > t0:
-                    loglh[i]= - 0.5*nyact*np.log(2*np.pi) - 0.5*dFt \
-                              - 0.5*np.dot(nut[:, ind], iFtnut)
+                if i + 1 > t0:
+                    loglh[i] = (
+                        -0.5 * nyact * np.log(2 * np.pi)
+                        - 0.5 * dFt
+                        - 0.5 * np.dot(nut[:, ind], iFtnut)
+                    )
 
                 TTPt = np.dot(TT, Pt)
                 Kt = np.dot(TTPt, ZZ[ind, :].T)
@@ -490,16 +524,22 @@ class StateSpaceModel(object):
             AA = CC + np.dot(TT, AA) + np.dot(Kt, iFtnut).squeeze()
             AA = np.asarray(AA).squeeze()
 
-            Pt = np.dot(TTPt, TT.T) - np.dot(Kt, sp.linalg.solve(Ft, Kt.T, sym_pos=True)) + RQR
+            Pt = (
+                np.dot(TTPt, TT.T)
+                - np.dot(Kt, sp.linalg.solve(Ft, Kt.T, sym_pos=True))
+                + RQR
+            )
 
-        if isinstance(yy,p.DataFrame):
-            loglh = p.DataFrame(loglh,columns=['Log Lik.'])
+        if isinstance(yy, p.DataFrame):
+            loglh = p.DataFrame(loglh, columns=["Log Lik."])
             loglh.index = yy.index
 
         results = {}
-        results['filtered_states'] = p.DataFrame(At, columns=self.state_names,index=yy.index)
-        results['one_step_forecast'] = []
-        results['log_lik'] = loglh
+        results["filtered_states"] = p.DataFrame(
+            At, columns=self.state_names, index=yy.index
+        )
+        results["one_step_forecast"] = []
+        results["log_lik"] = loglh
 
         return results
 
@@ -508,11 +548,23 @@ class StateSpaceModel(object):
 
 
 class LinearDSGEModel(StateSpaceModel):
-
-    def __init__(self, yy, GAM0, GAM1, PSI, PPI,
-                 QQ, DD, ZZ, HH, t0=0,
-                 shock_names=None, state_names=None, obs_names=None,
-                 prior=None):
+    def __init__(
+        self,
+        yy,
+        GAM0,
+        GAM1,
+        PSI,
+        PPI,
+        QQ,
+        DD,
+        ZZ,
+        HH,
+        t0=0,
+        shock_names=None,
+        state_names=None,
+        obs_names=None,
+        prior=None,
+    ):
 
         if len(yy.shape) < 2:
             yy = np.swapaxes(np.atleast_2d(yy), 0, 1)
@@ -553,9 +605,9 @@ class LinearDSGEModel(StateSpaceModel):
         nf = PPI.shape[1]
 
         if nf > 0:
-            TT, RR, RC = gensys(G0, G1, PSI,PPI, C0)
-            RC = RC[0]*RC[1]
-            #TT, CC, RR, fmat, fwt, ywt, gev, RC, loose = gensysw.gensys.call_gensys(G0, G1, C0, PSI, PPI, 1.00000000001)
+            TT, RR, RC = gensys(G0, G1, PSI, PPI, C0)
+            RC = RC[0] * RC[1]
+            # TT, CC, RR, fmat, fwt, ywt, gev, RC, loose = gensysw.gensys.call_gensys(G0, G1, C0, PSI, PPI, 1.00000000001)
         else:
             TT = np.linalg.inv(G0).dot(G1)
             RR = np.linalg.inv(G0).dot(PSI)
@@ -567,14 +619,14 @@ class LinearDSGEModel(StateSpaceModel):
 
         TT, RR, RC = self.solve_LRE(para, *args, **kwargs)
         CC = np.zeros(TT.shape[0])
-        
+
         QQ = np.atleast_2d(self.QQ(para, *args, **kwargs))
         DD = np.atleast_1d(self.DD(para, *args, **kwargs))
         ZZ = np.atleast_2d(self.ZZ(para, *args, **kwargs))
         HH = np.atleast_1d(self.HH(para, *args, **kwargs))
 
-        if RC!=1:
-            TT = np.nan*TT
+        if RC != 1:
+            TT = np.nan * TT
 
         return CC, TT, RR, QQ, DD, ZZ, HH
 
@@ -583,63 +635,12 @@ class LinearDSGEModel(StateSpaceModel):
             return self.prior.logpdf(para)
         except:
             pass
-            #raise("no prior specified")
+            # raise("no prior specified")
 
     def log_post(self, para, *args, **kwargs):
         x = self.log_lik(para) + self.log_pr(para)
         if np.isnan(x):
-            x = -1000000000.
-        if x < -1000000000.:
-            x = -1000000000.
+            x = -1000000000.0
+        if x < -1000000000.0:
+            x = -1000000000.0
         return x
-
-
-
-if __name__ == '__main__':
-
-    import numpy as np
-    yy = np.random.rand(32)
-
-    TT = lambda rho: rho
-    RR = lambda rho: 1.0
-    QQ = lambda rho: 1.0
-    DD = lambda rho: 0.0
-    ZZ = lambda rho: 1.0
-    HH = lambda rho: 0.1
-
-    test_ss = StateSpaceModel(yy, TT, RR, QQ, DD, ZZ, HH)
-    print( test_ss.system_matrices(0.3))
-    print( test_ss.log_lik(0.3))
-    # if reduce_system:
-    #     f = filter.filter.kalman_filter_missing_with_states
-    #     loglh, filtered_states, smoothed_states = f(yy.T, TT, RR, QQ, DD, ZZ, HH, t0)
-
-    #     from scipy.linalg import schur
-    #     (Z, T, nmin) = schur(TT, sort=lambda x: abs(x**2)>1e-15)
-
-    #     RRhat = Z.T.dot(RR)
-    #     ishock = np.argwhere(abs(RRhat[nmin:, :]).sum(0)>1e-10).flatten()
-    #     neshock = ishock.size
-
-    #     if neshock>0:
-    #         TThat = np.hstack((T[:nmin,:][:, :nmin], T[:nmin, :][:, nmin:].dot(RRhat[nmin:, :][:, ishock])))
-    #         TThat = np.vstack((TThat, np.zeros((neshock, nmin+neshock))))
-
-    #         imat = np.zeros((TT.shape[0], neshock+nmin))
-    #         imat[:nmin, :][:, :nmin] = np.eye(nmin)
-    #         imat[nmin:, :][:, nmin:] = RRhat[nmin:, :][:, ishock]
-
-    #         x = np.zeros((neshock, RR.shape[1]))
-    #         x[:, ishock] = np.eye(neshock)
-
-    #         RRhat = np.vstack((RRhat[:nmin, :], x))
-    #         ZZhat = ZZ.dot(Z).dot(imat)
-
-    #     else:
-    #         jfdsklf
-
-    #     loglh, filtered_states, smoothed_states = f(yy.T, TT, RR, QQ, DD, ZZ, HH, t0)
-
-    #     TT = TThat.copy()
-    #     RR = RRhat.copy()
-    #     ZZ = ZZhat.copy()

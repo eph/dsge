@@ -66,7 +66,6 @@ def kalman_filter(y, CC, TT, RR, QQ, DD, ZZ, HH, A0, P0, t0=0):
     nobs, ny = y.shape
     ns = TT.shape[0]
 
-    At = A0
     Pt = P0
     RQR = np.dot(np.dot(RR, QQ), RR.T)
 
@@ -116,8 +115,6 @@ def filter_and_smooth(y, CC, TT, RR, QQ, DD, ZZ, HH, A0, P0, t0=0):
     Pt = P0
     RQR = np.dot(np.dot(RR, QQ), RR.T)
 
-    loglh = 0.0
-
     forecast_means = np.zeros((nobs, ns))
     forecast_stds = np.zeros((nobs, ns))
     forecast_cov = np.zeros((nobs, ns, ns))
@@ -158,15 +155,15 @@ def filter_and_smooth(y, CC, TT, RR, QQ, DD, ZZ, HH, A0, P0, t0=0):
 
             if i >= t0:
                 liks[i] = (
-                    -0.5 * nact * np.log(2 * np.pi)
+                    - 0.5 * nact * np.log(2 * np.pi)
                     - 0.5 * dFt
                     - 0.5 * np.dot(nut, iFtnut)
                 )
 
             Kt = Pt @ ZZ[observed, :].T
 
-            Lmat[i] = (TT
-                - TT @ Pt @ ZZ[observed, :].T @ np.linalg.inv(Ft) @ ZZ[observed, :])
+            Lmat[i] = TT- TT @ Pt @ ZZ[observed, :].T @ np.linalg.inv(Ft) @ ZZ[observed, :]
+                       
 
             ZtiFtnut[i] = ZZ[observed, :].T @ iFtnut
             ZtiFtZ[i] = ZZ[observed, :].T @ np.linalg.inv(Ft) @ ZZ[observed, :]
