@@ -1,5 +1,47 @@
 import numpy as np
 
+from scipy.stats import beta, norm, uniform, gamma
+from .OtherPriors import InvGamma
+
+def construct_prior(prior_list, parameters):
+
+    prior = []
+    for par in parameters:
+        prior_spec = prior_list[par]
+
+        ptype = prior_spec[0]
+        pmean = prior_spec[1]
+        pstdd = prior_spec[2]
+        if ptype == 'beta':
+            a = (1 - pmean) * pmean**2 / pstdd**2 - pmean
+            b = a * (1 / pmean - 1)
+            pr = beta(a, b)
+            pr.name = 'beta'
+            prior.append(pr)
+        if ptype == 'gamma':
+            b = pstdd**2 / pmean
+            a = pmean / b
+            pr = gamma(a, scale=b)
+            pr.name = 'gamma'
+            prior.append(pr)
+        if ptype == 'normal':
+            a = pmean
+            b = pstdd
+            pr = norm(loc=a, scale=b)
+            pr.name = 'norm'
+            prior.append(pr)
+        if ptype == 'inv_gamma':
+            a = pmean
+            b = pstdd
+            prior.append(InvGamma(a, b))
+        if ptype == 'uniform':
+            a, b = pmean, pstdd
+            pr = uniform(loc=a, scale=(b - a))
+            pr.name = 'uniform'
+            prior.append(pr)
+
+    return prior
+
 
 class Prior(object):
     def __init__(self, individual_prior):
