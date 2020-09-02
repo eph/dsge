@@ -190,7 +190,7 @@ class DSGE(dict):
 
     @property
     def parameters(self):
-        return self['par_ordering']
+        return [str(x) for x in self['par_ordering']]
 
     @property
     def shocks(self):
