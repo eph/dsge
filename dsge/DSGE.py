@@ -71,7 +71,6 @@ def read_data_file(datafile, obs_names):
 
 def construct_prior(prior_list, parameters):
 
-    prior_type = ['beta', 'gamma', 'normal', 'inv_gamma', 'uniform', 'fixed']
     prior = []
     for par in parameters:
         prior_spec = prior_list[par.name]
@@ -383,19 +382,21 @@ class DSGE(dict):
         ZZ = self.ZZ
         HH = self.HH
 
-
         if 'observables' not in self:
             self['observables'] = self['variables'].copy()
-            self['obs_equations'] = dict(self['observables'], self['observables'])
+            self['obs_equations'] = dict(self['observables'],
+                                         self['observables'])
 
         if 'data' in self['__data__']['estimation']:
-            data = read_data_file(self['__data__']['estimation']['data'], self['observables'])
+            data = read_data_file(self['__data__']['estimation']['data'],
+                                  self['observables'])
         else:
             data = np.nan * np.ones((100, len(self['observables'])))
-            
+
         prior = None
         if 'prior' in self['__data__']['estimation']:
-            prior = construct_prior(self['__data__']['estimation']['prior'], self.parameters)
+            prior = construct_prior(self['__data__']['estimation']['prior'],
+                                    self.parameters)
 
         from .Prior import Prior as pri
         dsge = LinearDSGEModel(data, GAM0, GAM1, PSI, PPI,
@@ -617,10 +618,10 @@ class DSGE(dict):
             for key, value in cal['measurement_errors'].items():
                 shocks = key.split(",")
 
-                if len(shocks)==1:
+                if len(shocks) == 1:
                     shocks.append(shocks[0])
 
-                if len(shocks)==2:
+                if len(shocks) == 2:
                     shocki = Shock(shocks[0].strip())
                     shockj = Shock(shocks[1].strip())
 
@@ -630,15 +631,10 @@ class DSGE(dict):
                     HH[indi, indj] = eval(value, context)
                     HH[indj, indi] = HH[indi, indj]
 
-
-
-
         context['sum'] = np.sum
         context['range'] = range
         for obs in obs_equations.items():
             obs_equations[obs[0]] = eval(obs[1], context)
-
-            
 
         calibration = model_yaml['calibration']['parameters']
 
@@ -669,5 +665,4 @@ class DSGE(dict):
 
         model = cls(**model_dict)
         return model
-
 
