@@ -126,7 +126,8 @@ def smc(model, t0=0):
     npara = len(model.parameters)
     para = sympy.IndexedBase('para',shape=(npara+1,))
 
-    fortran_subs = dict(zip([sympy.symbols('garbage') ]+model.parameters, para))
+    from .symbols import Parameter
+    fortran_subs = dict(zip([sympy.symbols('garbage') ]+[Parameter(px) for px in model.parameters], para))
     fortran_subs[0] = 0.0
     fortran_subs[1] = 1.0
     fortran_subs[100] = 100.0
@@ -134,7 +135,6 @@ def smc(model, t0=0):
     fortran_subs[400] = 400.0
     fortran_subs[4] = 4.0
 
-    from .symbols import Parameter
     context_tuple = ([(p, Parameter(p)) for p in model.parameters]
                      + [(p.name, p) for p in model['other_para']])
 
