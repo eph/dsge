@@ -184,7 +184,9 @@ class StateSpaceModel(object):
         P0 : 2d arry-like or string, optional
             [ns x ns] initial covariance matrix of states, or `unconditional` to use the one
             associated with the invariant distribution.  The default is `unconditional.`
-
+        shocks : bool, optional
+            Whether to filter and smooth for the structural shocks as well as states. 
+            The default is True. 
 
         Returns
         -------
@@ -205,9 +207,19 @@ class StateSpaceModel(object):
         t0 = kwargs.pop("t0", self.t0)
         yy = kwargs.pop("y", self.yy)
         P0 = kwargs.pop("P0", "unconditional")
+        get_shocks = kwargs.pop("shocks", True)
         yy = p.DataFrame(yy)
 
         CC, TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
+        if get_shocks:
+            from scipy.linalg import block_diag
+            neps = RR.shape[1]
+            nobs = ZZ.shape[0]
+            TT = block_diag(TT, np.zeros((neps, neps)))
+            RR = np.vstack([RR, np.eye(neps)])
+            CC = np.zeros((TT.shape[0]))
+            ZZ = np.hstack([ZZ, np.zeros((nobs, neps))])
+
         A0 = kwargs.pop("A0", np.zeros(CC.shape))
         if P0 == "unconditional":
             P0 = solve_discrete_lyapunov(TT, RR.dot(QQ).dot(RR.T))
@@ -251,7 +263,11 @@ class StateSpaceModel(object):
             ("smoothed_stds", smoothed_stds),
         ]:
 
-            resdf = p.DataFrame(res, columns=self.state_names, index=yy.index)
+            if get_shocks:
+                names = self.state_names + self.shock_names 
+            else:
+                names = self.state_names
+            resdf = p.DataFrame(res, columns=names, index=yy.index)
             results[resname] = resdf
 
         return results
@@ -280,7 +296,7 @@ class StateSpaceModel(object):
 
         """
         yy = kwargs.pop("y", self.yy)
-        res = self.kf_everything(para, y=yy, *args, **kwargs)
+        res = self.kf_everything(para, y=yy, shocks=False, *args, **kwargs)
 
         CC, TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
 
