@@ -423,6 +423,15 @@ class DSGE(dict):
 
         return TT, RR, RC
 
+    def fix_parameters(self, **kwargs):
+
+        for para, value in kwargs.items():
+            para = Parameter(para)
+            self.parameters.remove(para)
+            self['other_para'].append(para)
+            self['para_func'][str(para)] = value
+        return self
+
 
     @classmethod
     def read(cls, mfile):
