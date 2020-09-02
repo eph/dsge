@@ -1,7 +1,8 @@
 import numpy as np
-import pandas as p 
+import pandas as p
 
 import warnings
+
 
 def read_data_file(datafile, obs_names):
 
@@ -32,7 +33,7 @@ def read_data_file(datafile, obs_names):
         data = p.DataFrame(data, columns=list(
             map(lambda x: str(x), obs_names)))
 
-    if startdate is not 0:
+    if startdate != 0:
         nobs = data.shape[0]
         data.index = p.period_range(startdate, freq='Q', periods=nobs)
 

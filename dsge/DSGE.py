@@ -36,8 +36,8 @@ class EquationList(list):
 
 class DSGE(dict):
 
-    max_lead = 1;
-    max_lag  = 1;
+    max_lead = 1
+    max_lag  = 1
 
     def __init__(self, *kargs, **kwargs):
         super(DSGE, self).__init__(self, *kargs, **kwargs)
@@ -382,9 +382,8 @@ class DSGE(dict):
         par_ordering = [Parameter(v) for v in dec['parameters']]
         shk_ordering = [Shock(v) for v in dec['shocks']]
 
-
         if 'para_func' in dec:
-            other_para   = [Parameter(v) for v in dec['para_func']]
+            other_para = [Parameter(v) for v in dec['para_func']]
         else:
             other_para = []
 
@@ -429,7 +428,6 @@ class DSGE(dict):
         else:
             raw_equations = model_yaml['equations']
 
-
         for eq in raw_equations:
             if '=' in eq:
                 lhs, rhs = str.split(eq, '=')
@@ -445,11 +443,9 @@ class DSGE(dict):
 
             equations.append(Equation(lhs, rhs))
 
-
-
-        #------------------------------------------------------------
+        # ------------------------------------------------------------
         # Figure out max leads and lags
-        #------------------------------------------------------------
+        # ------------------------------------------------------------
         it = itertools.chain.from_iterable
 
         max_lead_exo = dict.fromkeys(shk_ordering)
@@ -460,7 +456,6 @@ class DSGE(dict):
         for s in shk_ordering:
             max_lead_exo[s] = max([i.date for i in it(all_shocks) if i.name == s.name])
             max_lag_exo[s] = min([i.date for i in it(all_shocks) if i.name == s.name])
-
 
         # arbitrary lags of exogenous shocks
         for s in shk_ordering:
@@ -474,7 +469,6 @@ class DSGE(dict):
                 subs_dict = dict(zip(subs1, subs2))
                 equations = [eq.subs(subs_dict) for eq in equations]
 
-
         all_vars = [list(eq.atoms(Variable)) for eq in equations]
         max_lead_endo = dict.fromkeys(var_ordering)
         max_lag_endo = dict.fromkeys(var_ordering)
@@ -485,6 +479,7 @@ class DSGE(dict):
 
         #------------------------------------------------------------
         # arbitrary lags/leads of exogenous shocks
+
         subs_dict = dict()
         old_var = var_ordering[:]
         for v in old_var:
