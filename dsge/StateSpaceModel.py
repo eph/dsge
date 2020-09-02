@@ -331,6 +331,7 @@ class StateSpaceModel(object):
 
         Returns
         -------
+        CC : np.array (ns)
         TT : np.array (ns x ns)
         RR : np.array (ns x neps)
         QQ : np.array (neps x neps)
