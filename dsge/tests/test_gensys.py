@@ -1,5 +1,3 @@
-from __future__ import division
-
 import numpy as np
 from numpy.testing import assert_equal, assert_array_almost_equal
 
@@ -8,6 +6,7 @@ from unittest import TestCase
 from dsge.DSGE import DSGE
 
 import pkg_resources
+
 
 class TestGensys(TestCase):
 
@@ -37,7 +36,9 @@ class TestGensys(TestCase):
 
     def test_nkmp(self):
 
-        dsge1 = DSGE.read('/home/eherbst/Dropbox/DSGE Book (1)/dsge-book/code/models/dsge1/dsge1.yaml')
+        relative_loc = 'examples/nkmp/dsge1.yaml'
+        model_file = pkg_resources.resource_filename('dsge', relative_loc)
+        dsge1 = DSGE.read(model_file)
         nkmp = dsge1.compile_model()
 
         p0 = np.array([ 1.62398783,  0.47671893,  1.51729311,  0.4416236 ,  0.43724069,

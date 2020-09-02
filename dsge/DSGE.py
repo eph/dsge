@@ -73,7 +73,7 @@ def construct_prior(prior_list, parameters):
 
     prior = []
     for par in parameters:
-        prior_spec = prior_list[par.name]
+        prior_spec = prior_list[par]
 
         ptype = prior_spec[0]
         pmean = prior_spec[1]
@@ -311,7 +311,7 @@ class DSGE(dict):
         #print ""
         from collections import OrderedDict
         subs_dict = []
-        context = dict([(p.name, p) for p in self.parameters])
+        context = dict([(p, Parameter(p)) for p in self.parameters])
         context['exp'] = sympy.exp
         context['log'] = sympy.log
         context_f = {}
@@ -448,7 +448,7 @@ class DSGE(dict):
         txt = txt.replace('^', '**')
         txt = txt.replace(';', '')
         txt = re.sub(r"@ ?\n", " ", txt)
-        model_yaml = yaml.load(txt)
+        model_yaml = yaml.safe_load(txt)
 
         dec = model_yaml['declarations']
         cal = model_yaml['calibration']

@@ -1,11 +1,10 @@
 import numpy as np
 
-import os 
-from dsge.symbols import Parameter
+import os
 
 template_path = os.path.join(os.path.dirname(__file__), 'templates')
 
-fortran_files = {'smc_driver': 'smc_driver_mpi.f90', 
+fortran_files = {'smc_driver': 'smc_driver_mpi.f90',
                  'rwmh_driver': 'rwmh_driver.f90', 
                  'blockmh_driver': 'blockmcmc.f90', 
                  'Makefile': 'Makefile_dsge'}
@@ -113,6 +112,8 @@ contains
 
 end module model_t
 """
+
+
 def smc(model, t0=0):
 
     import sympy
@@ -133,13 +134,17 @@ def smc(model, t0=0):
     fortran_subs[400] = 400.0
     fortran_subs[4] = 4.0
 
-    context = dict([(p.name, p) for p in model.parameters+model['other_para']])
+    from .symbols import Parameter
+    context_tuple = ([(p, Parameter(p)) for p in model.parameters]
+                     + [(p.name, p) for p in model['other_para']])
+
+    context = dict(context_tuple)
     context['exp'] = sympy.exp
     context['log'] = sympy.log
 
     to_replace = {}
     for p in model['other_para']:
-            to_replace[p] = eval(str(model['para_func'][p.name]), context)
+        to_replace[p] = eval(str(model['para_func'][p.name]), context)
 
 
     to_replace = list(to_replace.items())
@@ -152,8 +157,7 @@ def smc(model, t0=0):
     para_func = topological_sort([to_replace, edges], default_sort_key)
 
     to_write = ['GAM0','GAM1','PSI','PPI','self%QQ','DD2','self%ZZ','self%HH']
-    fmats = [fcode((mat.subs(para_func)).subs(fortran_subs), assign_to=n, source_format='free',
-		   standard=95, contract=False)
+    fmats = [fcode((mat.subs(para_func)).subs(fortran_subs), assign_to=n, source_format='free', standard=95, contract=False)
 	     for mat, n in zip(system_matrices, to_write)]
     sims_mat = '\n\n'.join(fmats)
     template = template.format(model=model, yy=cmodel.yy, p0='',t0=t0, sims_mat=sims_mat)
