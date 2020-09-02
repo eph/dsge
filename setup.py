@@ -17,7 +17,7 @@ if __name__ == "__main__":
     config_dict = build_ext(Configuration("dsge", parent_package=None, top_path=None))
     numpy.distutils.core.setup(
         name="dsge",
-        version="0.1.0",
+        version="0.1.2",
         platforms="linux",
         packages=find_packages(),
         test_suite="nose.collector",
@@ -33,5 +33,5 @@ if __name__ == "__main__":
                 "examples/sw/*",
             ]
         },
-        install_requires=["pandas", "scipy" "sympy", "pyyaml", "numba" "matplotlib"],
+        install_requires=["pandas", "scipy", "sympy", "pyyaml", "numba"],
     )
