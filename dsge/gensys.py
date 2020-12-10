@@ -3,6 +3,7 @@ import warnings
 import numpy as np
 from scipy.linalg import ordqz, svd
 
+
 def gensys(G0, G1, PSI, PI, DIV=1 + 1e-8,
            REALSMALL=1e-6,
            return_everything=False):
@@ -24,7 +25,7 @@ def gensys(G0, G1, PSI, PI, DIV=1 + 1e-8,
     The solution method is detailed in ...
 
     """
-    n, pin = G0.shape[0], PI.shape[1]
+    n = G0.shape[0]
 
     with np.errstate(invalid='ignore', divide='ignore'):
         AA, BB, alpha, beta, Q, Z = ordqz(G0, G1, sort='ouc', output='complex')

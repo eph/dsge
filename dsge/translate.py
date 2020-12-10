@@ -2,18 +2,16 @@ import numpy as np
 
 import os
 
-template_path = os.path.join(os.path.dirname(__file__), 'templates')
+template_path = os.path.join(os.path.dirname(__file__), "templates")
 
-fortran_files = {'smc_driver': 'smc_driver_mpi.f90',
-                 'rwmh_driver': 'rwmh_driver.f90', 
-                 'blockmh_driver': 'blockmcmc.f90', 
-                 'Makefile': 'Makefile_dsge'}
+fortran_files = {
+    "smc_driver": "smc_driver_mpi.f90",
+    "rwmh_driver": "rwmh_driver.f90",
+    "blockmh_driver": "blockmcmc.f90",
+    "Makefile": "Makefile_dsge",
+}
 
-pdict = {'gamma': 1, 
-         'beta': 2, 
-         'norm': 3, 
-         'inv_gamma': 4, 
-         'uniform': 5}
+pdict = {"gamma": 1, "beta": 2, "norm": 3, "inv_gamma": 4, "uniform": 5}
 
 fortran_model = """
 module model_t
@@ -118,16 +116,23 @@ def smc(model, t0=0):
 
     import sympy
     from sympy.printing import fcode
-    cmodel = model.compile_model()
-    template = fortran_model #open('fortran_model.f90').read()
-    write_prior_file(cmodel.prior,'.')
 
-    system_matrices = model.python_sims_matrices(matrix_format='symbolic')
+    cmodel = model.compile_model()
+    template = fortran_model  # open('fortran_model.f90').read()
+    write_prior_file(cmodel.prior, ".")
+
+    system_matrices = model.python_sims_matrices(matrix_format="symbolic")
     npara = len(model.parameters)
-    para = sympy.IndexedBase('para',shape=(npara+1,))
+    para = sympy.IndexedBase("para", shape=(npara + 1,))
 
     from .symbols import Parameter
-    fortran_subs = dict(zip([sympy.symbols('garbage') ]+[Parameter(px) for px in model.parameters], para))
+
+    fortran_subs = dict(
+        zip(
+            [sympy.symbols("garbage")] + [Parameter(px) for px in model.parameters],
+            para,
+        )
+    )
     fortran_subs[0] = 0.0
     fortran_subs[1] = 1.0
     fortran_subs[100] = 100.0
@@ -135,37 +140,52 @@ def smc(model, t0=0):
     fortran_subs[400] = 400.0
     fortran_subs[4] = 4.0
 
-    context_tuple = ([(p, Parameter(p)) for p in model.parameters]
-                     + [(p.name, p) for p in model['other_para']])
+    context_tuple = [(p, Parameter(p)) for p in model.parameters] + [
+        (p.name, p) for p in model["other_para"]
+    ]
 
     context = dict(context_tuple)
-    context['exp'] = sympy.exp
-    context['log'] = sympy.log
+    context["exp"] = sympy.exp
+    context["log"] = sympy.log
 
     to_replace = {}
-    for p in model['other_para']:
-        to_replace[p] = eval(str(model['para_func'][p.name]), context)
-
+    for p in model["other_para"]:
+        to_replace[p] = eval(str(model["para_func"][p.name]), context)
 
     to_replace = list(to_replace.items())
     print(to_replace)
     from itertools import combinations, permutations
 
-    edges = [(i,j) for i,j in permutations(to_replace,2) if type(i[1]) not in [float,int] and i[1].has(j[0])]
+    edges = [
+        (i, j)
+        for i, j in permutations(to_replace, 2)
+        if type(i[1]) not in [float, int] and i[1].has(j[0])
+    ]
 
     from sympy import default_sort_key, topological_sort
+
     para_func = topological_sort([to_replace, edges], default_sort_key)
 
-    to_write = ['GAM0','GAM1','PSI','PPI','self%QQ','DD2','self%ZZ','self%HH']
-    fmats = [fcode((mat.subs(para_func)).subs(fortran_subs), assign_to=n, source_format='free', standard=95, contract=False)
-	     for mat, n in zip(system_matrices, to_write)]
-    sims_mat = '\n\n'.join(fmats)
-    template = template.format(model=model, yy=cmodel.yy, p0='',t0=t0, sims_mat=sims_mat)
+    to_write = ["GAM0", "GAM1", "PSI", "PPI", "self%QQ", "DD2", "self%ZZ", "self%HH"]
+    fmats = [
+        fcode(
+            (mat.subs(para_func)).subs(fortran_subs),
+            assign_to=n,
+            source_format="free",
+            standard=95,
+            contract=False,
+        )
+        for mat, n in zip(system_matrices, to_write)
+    ]
+    sims_mat = "\n\n".join(fmats)
+    template = template.format(
+        model=model, yy=cmodel.yy, p0="", t0=t0, sims_mat=sims_mat
+    )
 
     return template
 
 
-def translate(model, output_dir='.', language='fortran'):
+def translate(model, output_dir=".", language="fortran"):
     """
 
     Inputs
@@ -178,78 +198,82 @@ def translate(model, output_dir='.', language='fortran'):
     -------
     None 
     """
-    if not os.path.isabs(output_dir): 
+    if not os.path.isabs(output_dir):
         output_dir = os.path.join(os.getcwd(), output_dir)
 
-    try: 
+    try:
         os.mkdir(output_dir)
         print("Created directory: ")
         print("\t", output_dir)
     except:
         print("Directory already exists.")
 
-    
-    if language=='fortran':
+    if language == "fortran":
         translate_fortran(model, output_dir)
-    elif language=='matlab':
+    elif language == "matlab":
         translate_matlab(model, output_dir)
-    elif language=='dynare':
-        raise NotImplementedError('Dynare not yet implemented.')
-    elif language=='julia':
-        raise NotImplementedError('Julia not yet implemented.')
+    elif language == "dynare":
+        raise NotImplementedError("Dynare not yet implemented.")
+    elif language == "julia":
+        raise NotImplementedError("Julia not yet implemented.")
     else:
-        raise ValueError('Unsupported language.')
+        raise ValueError("Unsupported language.")
 
-        
+
 def write_prior_file(prior, output_dir):
-
     def return_stats(dist):
-        if dist.name=='uniform':
-            return pdict[dist.name], dist.kwds['loc'], dist.kwds['loc']+dist.kwds['scale'], 0, 0
-        elif dist.name=='inv_gamma':
+        if dist.name == "uniform":
+            return (
+                pdict[dist.name],
+                dist.kwds["loc"],
+                dist.kwds["loc"] + dist.kwds["scale"],
+                0,
+                0,
+            )
+        elif dist.name == "inv_gamma":
             return pdict[dist.name], dist.a, dist.b, 0, 0
         else:
             return pdict[dist.name], dist.stats()[0], np.sqrt(dist.stats()[1]), 0, 0
 
-    with open(os.path.join(output_dir, 'prior.txt'), mode='w') as prior_file:
-        plist = [', '.join(map(str, return_stats(pr))) 
-                 for pr in prior.priors]
-        prior_file.write('\n'.join(plist))
-            
+    with open(os.path.join(output_dir, "prior.txt"), mode="w") as prior_file:
+        plist = [", ".join(map(str, return_stats(pr))) for pr in prior.priors]
+        prior_file.write("\n".join(plist))
+
 
 def make_fortran_model(model, **kwargs):
-    t0 = kwargs.pop('t0',0)
+    t0 = kwargs.pop("t0", 0)
     from fortress import make_smc
 
     model_file = smc(model, t0=t0)
     modelc = model.compile_model()
 
-    r = make_smc(model_file, other_files={'data.txt': modelc.yy,
-                                          'prior.txt': 'prior.txt'}, **kwargs)
+    r = make_smc(
+        model_file,
+        other_files={"data.txt": modelc.yy, "prior.txt": "prior.txt"},
+        **kwargs
+    )
 
-    output_dir = kwargs.pop('output_directory','_fortress_tmp')
+    output_dir = kwargs.pop("output_directory", "_fortress_tmp")
     write_prior_file(modelc.prior, output_dir)
     return r
-    
+
 
 def write_trans_file(prior, output_dir):
-
     def return_trans(dist):
-        if dist.name=='uniform':
-            return 1, dist.kwds['loc'], dist.kwds['loc']+dist.kwds['scale'], 1
-        elif dist.name=='gamma' or dist.name=='inv_gamma':
+        if dist.name == "uniform":
+            return 1, dist.kwds["loc"], dist.kwds["loc"] + dist.kwds["scale"], 1
+        elif dist.name == "gamma" or dist.name == "inv_gamma":
             return 2, 0, 999, 1
-        elif dist.name=='norm':
+        elif dist.name == "norm":
             return 0, -999, 999, 1
-        elif dist.name=='beta':
+        elif dist.name == "beta":
             return 1, 0, 0.9999, 1
         else:
             raise ValueError("Unable to determine parameter value.")
 
-    with open(os.path.join(output_dir, 'trans.txt'), mode='w') as trans_file:
-        plist = [', '.join(map(str, return_trans(pr))) 
-                 for pr in prior.priors]
-        trans_file.write('\n'.join(plist))
+    with open(os.path.join(output_dir, "trans.txt"), mode="w") as trans_file:
+        plist = [", ".join(map(str, return_trans(pr))) for pr in prior.priors]
+        trans_file.write("\n".join(plist))
 
 
 fortran_template = """
@@ -347,58 +371,81 @@ end module {name}
 """
 
 
-def write_model_file(model, output_dir, language='fortran', nobs=None):
-    
-    system_matrices = model.python_sims_matrices(matrix_format='symbolic')
+def write_model_file(model, output_dir, language="fortran", nobs=None):
+
+    system_matrices = model.python_sims_matrices(matrix_format="symbolic")
     GAM0, GAM1, PSI, PPI, QQ, DD, ZZ, HH = system_matrices
 
     from FCodePrinter import fcode_double as wf
     from FCodePrinter import fcode
     from sympy import MatrixSymbol as MS
-    sims_mat = '\n\n'.join([wf(eval(mat), MS(mat, *eval(mat).shape), source_format='free', standard=95)
-                            for mat in ['GAM0', 'GAM1', 'PSI', 'PPI']])
 
-    ss_mat = '\n\n'.join([wf(eval(mat), MS(mat, *eval(mat).shape), source_format='free', standard=95)
-                          for mat in ['QQ', 'DD', 'ZZ', 'HH']])
+    sims_mat = "\n\n".join(
+        [
+            wf(eval(mat), MS(mat, *eval(mat).shape), source_format="free", standard=95)
+            for mat in ["GAM0", "GAM1", "PSI", "PPI"]
+        ]
+    )
 
-    para = '\n'.join(['{:} = para({:})'.format(pa, i+1) 
-                      for i, pa in enumerate(model.parameters)])
+    ss_mat = "\n\n".join(
+        [
+            wf(eval(mat), MS(mat, *eval(mat).shape), source_format="free", standard=95)
+            for mat in ["QQ", "DD", "ZZ", "HH"]
+        ]
+    )
 
-    helper = '\n'.join([wf(model['para_func'][v.name], v.name) for v in model['other_para']])
+    para = "\n".join(
+        ["{:} = para({:})".format(pa, i + 1) for i, pa in enumerate(model.parameters)]
+    )
 
-    
+    helper = "\n".join(
+        [wf(model["para_func"][v.name], v.name) for v in model["other_para"]]
+    )
 
     import re
-    cal_list = [str(model['calibration'][str(x)]) for x in model.parameters]
-    cal_list = [re.sub(r'([^a-zA-Z][0-9\.]+)', r'\1d0',str_p) for str_p in cal_list]
-    pmsv = 'function pmsv result(para)\n  real(wp) :: para(npara)\n\n'
+
+    cal_list = [str(model["calibration"][str(x)]) for x in model.parameters]
+    cal_list = [re.sub(r"([^a-zA-Z][0-9\.]+)", r"\1d0", str_p) for str_p in cal_list]
+    pmsv = "function pmsv result(para)\n  real(wp) :: para(npara)\n\n"
     pmsv += "para = (/" + ",".join(cal_list) + "/)\n\n end function pmsv"
 
-
-    out = fortran_template.format(odir=output_dir, sims_mat=sims_mat, ss_mat=ss_mat, 
-                                  para_list=','.join(map(str, model.parameters)), 
-                                  helper_list=','.join(map(str, model['other_para'])), 
-                                  para=para+helper, neq=model.neq_fort, neps=model.neps, 
-                                  neta=model.neta, nobs=nobs, ny=len(model['observables']), 
-                                  npara=len(model.parameters), t0=0, extra_includes='', 
-                                  deff='', pmsv=pmsv, **model)
+    out = fortran_template.format(
+        odir=output_dir,
+        sims_mat=sims_mat,
+        ss_mat=ss_mat,
+        para_list=",".join(map(str, model.parameters)),
+        helper_list=",".join(map(str, model["other_para"])),
+        para=para + helper,
+        neq=model.neq_fort,
+        neps=model.neps,
+        neta=model.neta,
+        nobs=nobs,
+        ny=len(model["observables"]),
+        npara=len(model.parameters),
+        t0=0,
+        extra_includes="",
+        deff="",
+        pmsv=pmsv,
+        **model
+    )
 
     print(out)
-    
+
+
 def translate_fortran(model, output_dir):
 
     for driver, driver_file in fortran_files.iteritems():
         with open(os.path.join(template_path, driver_file)) as template:
-            if 'Makefile' in driver_file:
-                output_path = os.path.join(output_dir, 'Makefile')
+            if "Makefile" in driver_file:
+                output_path = os.path.join(output_dir, "Makefile")
             else:
                 output_path = os.path.join(output_dir, os.path.basename(driver_file))
-            output_file = open(output_path, mode='w')
-            output_file.write(template.read().format(model=model['name']))
+            output_file = open(output_path, mode="w")
+            output_file.write(template.read().format(model=model["name"]))
             output_file.close()
 
     compiled_model = model.compile_model()
-    output_dir = os.path.join(output_dir, 'model')
+    output_dir = os.path.join(output_dir, "model")
     try:
         os.mkdir(output_dir)
     except:
@@ -406,7 +453,8 @@ def translate_fortran(model, output_dir):
 
     write_prior_file(compiled_model.prior, output_dir)
     write_trans_file(compiled_model.prior, output_dir)
-    write_model_file(model, output_dir, language='fortran', nobs=compiled_model.yy.shape[0])
+    write_model_file(
+        model, output_dir, language="fortran", nobs=compiled_model.yy.shape[0]
+    )
 
-    np.savetxt(os.path.join(output_dir, 'yy.txt'), compiled_model.yy)
-    
+    np.savetxt(os.path.join(output_dir, "yy.txt"), compiled_model.yy)

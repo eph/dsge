@@ -1,5 +1,4 @@
 import sympy
-import copy
 from sympy.printing.str import StrPrinter
 
 from sympy.core.cache import clear_cache
@@ -119,7 +118,8 @@ class Variable(TSymbol):
         if self.exp_date == 0:
             result = super(Variable, self).__str__()
         else:
-            result = "E[" + str(self.exp_date) + "]" + super(Variable, self).__str__()
+            result = ("E[" + str(self.exp_date) + "]"
+                      + super(Variable, self).__str__())
 
         return result
 
@@ -156,7 +156,6 @@ class Shock(TSymbol):
 
 
 class Equation(sympy.Equality):
-
     def __new__(cls, lhs, rhs, name=None):
         return super(sympy.Equality, cls).__new__(cls, lhs, rhs)
 

@@ -15,7 +15,8 @@ from scipy.linalg import solve_discrete_lyapunov
 from .gensys import gensys
 from .filters import chand_recursion, kalman_filter, filter_and_smooth
 
-filt_choices = {"chand_recursion": chand_recursion, "kalman_filter": kalman_filter}
+filt_choices = {"chand_recursion": chand_recursion,
+                "kalman_filter": kalman_filter}
 
 
 class StateSpaceModel(object):
@@ -213,6 +214,7 @@ class StateSpaceModel(object):
         CC, TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
         if get_shocks:
             from scipy.linalg import block_diag
+
             neps = RR.shape[1]
             nobs = ZZ.shape[0]
             TT = block_diag(TT, np.zeros((neps, neps)))
@@ -264,7 +266,7 @@ class StateSpaceModel(object):
         ]:
 
             if get_shocks:
-                names = self.state_names + self.shock_names 
+                names = self.state_names + self.shock_names
             else:
                 names = self.state_names
             resdf = p.DataFrame(res, columns=names, index=yy.index)
