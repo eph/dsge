@@ -1,6 +1,6 @@
 package:
   name: dsge
-  version: "0.0.6"
+  version: "0.1.3"
 
 source:
   path: ..
@@ -8,18 +8,19 @@ source:
 requirements:
 
   build:
-    - python {{ python }} 
-    - setuptools
-    - numpy
+    - python>=3.6
+    - numpy=1.19
     - pandas
     - scipy
     - sympy
-    - numba 
+    - numba
+    - setuptools
 
   run:
-    - python
+    - python>=3.6
     - pandas
     - sympy
+    - numpy
     - pyyaml
     - scipy
     - numba
@@ -28,7 +29,6 @@ test:
   # Python imports
   imports:
     - dsge
-
     # - dsge.extension
     # - dsge.fortran
     #- dsge.tests

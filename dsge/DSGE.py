@@ -4,6 +4,7 @@ from .symbols import Variable, Equation, Shock, Parameter, TSymbol
 from .Prior import construct_prior
 from .data import read_data_file
 
+from sympy.matrices import zeros
 
 import re
 import numpy as np
@@ -45,7 +46,6 @@ class DSGE(dict):
 
         # get forward looking variables
         for eq in self["equations"]:
-
             variable_too_far = [
                 v for v in eq.atoms() if isinstance(v, Variable) and v.date > 1
             ]
@@ -68,9 +68,10 @@ class DSGE(dict):
 
         self["re_errors_eq"] = []
         i = 0
+        from sympy import sympify
         for fv, lag_fv in zip(fvars, self["fvars_lagged"]):
             self["re_errors_eq"].append(
-                Equation(fv(-1) - lag_fv - self["re_errors"][i], 0)
+                Equation(fv(-1) - lag_fv - self["re_errors"][i], sympify(0))
             )
             i += 1
 
@@ -488,7 +489,8 @@ class DSGE(dict):
                 print("While parsing %s, got this error: %s" % (eq, repr(e)))
                 return
 
-            equations.append(Equation(lhs, rhs))
+            from sympy import sympify
+            equations.append(Equation(sympify(lhs), sympify(rhs)))
 
         # ------------------------------------------------------------
         # Figure out max leads and lags
