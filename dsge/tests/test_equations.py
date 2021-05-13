@@ -14,7 +14,7 @@ class TestEquations(TestCase):
 
         y = Variable('y')
         eq = Equation(y, 0.6*y(-1))
-        print(y.date)
+
         var_list = [y]
         subs_dict = {}
 
@@ -30,3 +30,10 @@ class TestEquations(TestCase):
 
         diff = eq.set_eq_zero.diff(y).subs(subs_dict)
         self.assertAlmostEqual(diff, 1.0)
+
+    def test_sympify(self):
+
+        from sympy import sympify
+        y = Variable('y')
+        eq = 'y - y(-1)'
+        print(eval(eq, {'y': y}).atoms())

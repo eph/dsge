@@ -3,6 +3,11 @@ from sympy.printing.str import StrPrinter
 
 from sympy.core.cache import clear_cache
 
+reserved_names = {'log': sympy.log,
+                  'exp': sympy.exp}
+                  
+
+
 clear_cache()
 
 
@@ -14,9 +19,6 @@ class Parameter(sympy.Symbol):
         super(Parameter, self).__init__()
         self.name = name
 
-    # def __new__(self, name, exp_date=0):
-    #     super(Parameter,self).__new__( name)
-
     def __repr__(self):
         return self.name
 
@@ -25,8 +27,6 @@ class Parameter(sympy.Symbol):
 
 
 class TSymbol(sympy.Symbol):
-
-    # __xnew_cached_ = staticmethod(sympy.Symbol.__new_stage2__)
 
     def __init__(self, name, **args):
         super(TSymbol, self).__init__()

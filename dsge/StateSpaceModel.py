@@ -344,7 +344,7 @@ class StateSpaceModel(object):
 
         Notes
         -----
-
+        
         """
         CC = np.atleast_1d(self.CC(para, *args, **kwargs))
         TT = np.atleast_2d(self.TT(para, *args, **kwargs))
@@ -379,9 +379,6 @@ class StateSpaceModel(object):
         """
 
         CC, TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
-
-        if not (np.all(HH == 0)):
-            fdkjsl
 
         A = TT
         B = RR
@@ -481,8 +478,47 @@ class StateSpaceModel(object):
 
         return ysim[nsim:, :]
 
-    def historical_decomposition(self, para, *args, **kwargs):
-        pass
+    def historical_decomposition(self, p0, init=1):
+        shock_decomposition = []
+     
+        CC, TT, RR, QQ, DD, ZZ, HH = self.system_matrices(p0)
+        states = self.kf_everything(p0, shocks=True)
+         
+        shocks = states['smoothed_means'][self.shock_names]
+        nshocks = len(self.shock_names)
+        shocks = shocks.values
+        dfs = []
+         
+        from scipy.linalg import block_diag
+        TT = block_diag(TT,np.zeros((nshocks, nshocks)))
+        RR = np.r_[RR, np.eye(nshocks)]
+        for i, shock in enumerate(self.shock_names):
+            T, ns = states['smoothed_means'].shape
+         
+            decomp = np.zeros_like(states['smoothed_means'].values)
+            for j in range(init,T):
+                decomp[j] = TT @ decomp[j-1] + RR[:,i] * shocks[j,i]
+         
+         
+            dfs.append(p.DataFrame(decomp, 
+                       index=self.yy.index, 
+                       columns=self.state_names+self.shock_names))
+         
+         
+         
+        decomp = np.zeros_like(states['smoothed_means'].values)
+        decomp[init-1] = states['smoothed_means'].values[init-1]
+        for j in range(init,T):
+            decomp[j] = TT @ decomp[j-1] 
+         
+        dfs.append(p.DataFrame(decomp, 
+                   index=self.yy.index, 
+                   columns=self.state_names+self.shock_names))
+         
+        shock_decomposition = p.concat(dfs, keys=self.shock_names+['Initial Condition'])
+         
+         
+        return shock_decomposition
 
 
 class LinearDSGEModel(StateSpaceModel):
@@ -502,6 +538,7 @@ class LinearDSGEModel(StateSpaceModel):
         state_names=None,
         obs_names=None,
         prior=None,
+        parameter_names=None
     ):
 
         if len(yy.shape) < 2:
@@ -523,6 +560,7 @@ class LinearDSGEModel(StateSpaceModel):
         self.shock_names = shock_names
         self.state_names = state_names
         self.obs_names = obs_names
+        self.parameter_names = parameter_names
 
         self.prior = prior
 

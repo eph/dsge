@@ -14,7 +14,7 @@ if __name__ == "__main__":
     #config_dict = build_ext(Configuration("dsge", parent_package=None, top_path=None))
     numpy.distutils.core.setup(
         name="dsge",
-        version="0.1.3",
+        version="0.1.4",
         platforms="linux",
         packages=["dsge"],
         test_suite="nose.collector",

@@ -1,10 +1,11 @@
 import sympy
 import yaml
-from .symbols import Variable, Equation, Shock, Parameter, TSymbol
+from .symbols import (Variable, Equation, Shock, Parameter, TSymbol, reserved_names)
 from .Prior import construct_prior
 from .data import read_data_file
 
 from sympy.matrices import zeros
+from sympy import sympify
 
 import re
 import numpy as np
@@ -166,9 +167,6 @@ class DSGE(dict):
     def p0(self):
         return list(map(lambda x: self["calibration"][str(x)], self.parameters))
 
-    def calibrate(**kwargs):
-        pass
-
     def python_sims_matrices(self, matrix_format="numeric"):
 
         from sympy.utilities.lambdify import lambdify
@@ -195,19 +193,27 @@ class DSGE(dict):
         PSI = zeros(svar, evar)
         PPI = zeros(svar, rvar)
 
-        eq_i = 0
-        for eq in eq_cond:
-            curr_var = filter(lambda x: x.date >= 0, eq.atoms(Variable))
 
+        for eq_i, eq in enumerate(eq_cond):
+            curr_var = filter(lambda x: x.date >= 0, eq.atoms(Variable))
+            #print('---------------------------------------')
+            #print(f'Equation: {eq}')
+            #print(f'current variables {list(curr_var)}')
             for v in curr_var:
+                #print(f'\tdifferentiating wrt to {v}')
                 v_j = vlist.index(v)
                 GAM0[eq_i, v_j] = -(eq).set_eq_zero.diff(v).subs(subs_dict)
 
             past_var = filter(lambda x: x in llist, eq.atoms())
-
+            #print(f'past variables: {list(past_var)}.')
             for v in past_var:
+                deq_dv = eq.set_eq_zero.diff(v).subs(subs_dict)
                 v_j = llist.index(v)
-                GAM1[eq_i, v_j] = eq.set_eq_zero.diff(v).subs(subs_dict)
+                GAM1[eq_i, v_j] = deq_dv
+
+                #print(f'\tdifferentiating wrt to {v}')
+
+            #print(f'GAM1: {GAM1[eq_i,:]}')
 
             shocks = filter(lambda x: x, eq.atoms(Shock))
 
@@ -219,7 +225,7 @@ class DSGE(dict):
                     s_j = self["re_errors"].index(s)
                     PPI[eq_i, s_j] = eq.set_eq_zero.diff(s).subs(subs_dict)
 
-            eq_i += 1
+
             # print "\r Differentiating equation {0} of {1}.".format(eq_i, len(eq_cond)),
         DD = zeros(ovar, 1)
         ZZ = zeros(ovar, svar)
@@ -241,13 +247,11 @@ class DSGE(dict):
             QQ = self["covariance"]
             HH = self["measurement_errors"]
             return GAM0, GAM1, PSI, PPI, QQ, DD, ZZ, HH
-        # print ""
-        from collections import OrderedDict
 
         subs_dict = []
         context = dict([(p, Parameter(p)) for p in self.parameters])
-        context["exp"] = sympy.exp
-        context["log"] = sympy.log
+        context.update(reserved_names)
+
         context_f = {}
         context_f["exp"] = np.exp
         if "helper_func" in self["__data__"]["declarations"]:
@@ -258,17 +262,15 @@ class DSGE(dict):
             for n in self["__data__"]["declarations"]["helper_func"]["names"]:
                 context[n] = sympy.Function(n)  # getattr(module, n)
                 context_f[n] = getattr(module, n)
-        # import sys
-        # sys.stdout.flush()
+
+
         ss = {}
 
         for p in self["other_para"]:
             ss[str(p)] = eval(str(self["para_func"][p.name]), context)
             context[str(p)] = ss[str(p)]
-            # print("\r Constructing substitution dictionary [{0:20s}]".format(p.name),)
-        # sys.stdout.flush()
-        # print ""
-        # context_f['numpy'] = 'numpy'
+
+
         GAM0 = lambdify(
             [self.parameters + self["other_para"]], GAM0
         )  # , modules={'ImmutableDenseMatrix': np.array})#'numpy')
@@ -289,7 +291,6 @@ class DSGE(dict):
         def add_para_func(f):
             def wrapped_f(px):
                 return f([*px, *psi(px)])
-
             return wrapped_f
 
         self.GAM0 = add_para_func(GAM0)
@@ -364,6 +365,7 @@ class DSGE(dict):
             state_names=list(map(str, self.variables + self["fvars"])),
             obs_names=list(map(str, self["observables"])),
             prior=pri(prior),
+            parameter_names=self.parameters
         )
 
         return dsge
@@ -386,33 +388,64 @@ class DSGE(dict):
 
         return TT, RR, RC
 
-    def fix_parameters(self, **kwargs):
+    def create_fortran_model(self, model_dir='__fortress_tmp', **kwargs):
+        from fortress import make_smc
+        from .translate import smc, write_prior_file
 
+        smc_file = smc(self)
+        model_linear = self.compile_model()
+
+        other_files = {'data.txt': model_linear.yy,          
+                       'prior.txt': 'prior.txt'}
+        make_smc(smc_file, model_dir, other_files=other_files, **kwargs)                      
+        write_prior_file(model_linear.prior, model_dir)           
+
+
+    def fix_parameters(self, **kwargs):
+        """Takes an estimated parameter from a DSGESelf
+        and converts it to a calibrated one."""
         for para, value in kwargs.items():
             para = Parameter(para)
-            self.parameters.remove(str(para))
-            self["other_para"].append(para)
-            self["para_func"][str(para)] = value
+            self['par_ordering'].remove(para)
+            self['other_para'].append(para)
+            self['para_func'][str(para)] = value
+
+            context_tuple = ([(p, Parameter(p)) for p in self.parameters]
+                 + [(p.name, p) for p in self['other_para']])
+
+        context = dict(context_tuple)
+        context['exp'] = sympy.exp
+        context['log'] = sympy.log
+
+        to_replace = {}
+        for p in self['other_para']:
+            to_replace[p] = eval(str(self['para_func'][p.name]), context)
+
+
+        to_replace = list(to_replace.items())
+
+        from itertools import combinations, permutations
+
+        edges = [(i,j) for i,j in permutations(to_replace,2) if type(i[1]) not in [float,int] and i[1].has(j[0])]
+
+        from sympy import default_sort_key, topological_sort
+        edges = [(v[0],dep) for v in to_replace for dep in sympy.sympify(v[1]).atoms(Parameter) if dep in self['other_para']]
+
+        para_func = topological_sort([self['other_para'], edges], default_sort_key)[::-1]
+        self['other_para'] = para_func
         return self
 
     @classmethod
     def read(cls, mfile):
-        """
 
-        """
+        with open(mfile) as f:
+            txt = f.read()
 
-        f = open(mfile)
-        txt = f.read()
-        f.close()
-
-        txt = txt.replace("^", "**")
-        txt = txt.replace(";", "")
+        txt = txt.replace("^", "**").replace(";", "")
         txt = re.sub(r"@ ?\n", " ", txt)
         model_yaml = yaml.safe_load(txt)
 
-        dec = model_yaml["declarations"]
-        cal = model_yaml["calibration"]
-
+        dec, cal = model_yaml["declarations"], model_yaml["calibration"]
         name = dec["name"]
 
         var_ordering = [Variable(v) for v in dec["variables"]]
@@ -489,7 +522,6 @@ class DSGE(dict):
                 print("While parsing %s, got this error: %s" % (eq, repr(e)))
                 return
 
-            from sympy import sympify
             equations.append(Equation(sympify(lhs), sympify(rhs)))
 
         # ------------------------------------------------------------
@@ -527,8 +559,8 @@ class DSGE(dict):
             max_lag_endo[v] = min([i.date for i in it(all_vars) if i.name == v.name])
 
         # ------------------------------------------------------------
-        # arbitrary lags/leads of exogenous shocks
-
+        # arbitrary lags/leads of endogenous variables
+        # ------------------------------------------------------------
         subs_dict = dict()
         old_var = var_ordering[:]
         for v in old_var:
