@@ -57,8 +57,11 @@ class DSGE(dict):
             eq_fvars = [v for v in eq.atoms() if isinstance(v, TSymbol) and v.date > 0]
             eq_lvars = [v for v in eq.atoms() if isinstance(v, TSymbol) and v.date < 0]
 
-            fvars = list(set(fvars).union(eq_fvars))
-            lvars = list(set(lvars).union(set(eq_lvars)))
+            for f in eq_fvars:
+                if f not in fvars: fvars.append(f)
+
+            for l in eq_lvars:
+                if l not in lvars: lvars.append(l)
 
         self["info"]["nstate"] = len(self.variables) + len(fvars)
 
