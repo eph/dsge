@@ -272,9 +272,12 @@ class StateSpaceModel(object):
             resdf = p.DataFrame(res, columns=names, index=yy.index)
             results[resname] = resdf
 
+        results['forecast_cov'] = forecast_cov
+        results['filtered_cov'] = filtered_cov
+        results['smoothed_cov'] = smoothed_cov
         return results
 
-    def pred(self, para, h=20, shocks=True, append=False, *args, **kwargs):
+    def pred(self, para, h=20, shocks=True, append=False, return_states=False, filt_para=None, *args, **kwargs):
         """
         Draws from the predictive distribution $p(Y_{t+1:t+h}|Y_{1:T}, \theta)$.
 
@@ -297,14 +300,18 @@ class StateSpaceModel(object):
             A dataframe containing the draw from the predictive distribution.
 
         """
+        if filt_para is None:
+            filt_para = para
+
         yy = kwargs.pop("y", self.yy)
-        res = self.kf_everything(para, y=yy, shocks=False, *args, **kwargs)
+        res = self.kf_everything(filt_para, y=yy, shocks=False, *args, **kwargs)
 
         CC, TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
 
         At = res["smoothed_means"].iloc[-1].values
         ysim = np.zeros((h, DD.size))
 
+        asim = np.zeros((h, At.size))
         index0 = res["smoothed_means"].index[-1] + 1
         index = []
         for i in range(h):
@@ -313,13 +320,21 @@ class StateSpaceModel(object):
             h = np.random.multivariate_normal(np.zeros((HH.shape[0])), HH)
             At = np.asarray(At).squeeze()
             ysim[i, :] = DD.T + ZZ.dot(At) + shocks * np.atleast_2d(h)
+            asim[i, :] = At.copy()
             index.append(index0 + i)
 
         ysim = p.DataFrame(ysim, columns=self.obs_names, index=index)
-
+        asim = p.DataFrame(asim, columns=self.state_names, index=index)
         if append:
-            ysim = self.yy.append(ysim)
-        return ysim
+            yhat = yy.copy()
+            ysim = yhat.append(ysim)
+            r = res['smoothed_means'].copy()
+            asim = r.append(asim)
+
+        if return_states:
+            return ysim, asim
+        else:
+            return ysim
 
     def system_matrices(self, para, *args, **kwargs):
         """

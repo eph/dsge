@@ -39,6 +39,8 @@ class DSGE(dict):
     max_lead = 1
     max_lag = 1
 
+    numeric_context = {}
+
     def __init__(self, *kargs, **kwargs):
         super(DSGE, self).__init__(self, *kargs, **kwargs)
 
@@ -257,6 +259,7 @@ class DSGE(dict):
 
         context_f = {}
         context_f["exp"] = np.exp
+
         if "helper_func" in self["__data__"]["declarations"]:
             from imp import load_source
 
@@ -288,8 +291,8 @@ class DSGE(dict):
         )  # , modules={'ImmutableDenseMatrix': np.array})#'numpy')
 
         psi = lambdify(
-            [self.parameters], [ss[str(px)] for px in self["other_para"]]
-        )  # , modules=context_f)
+            [self.parameters], [ss[str(px)] for px in self["other_para"]], modules=context_f)
+       
 
         def add_para_func(f):
             def wrapped_f(px):
@@ -419,6 +422,7 @@ class DSGE(dict):
         context = dict(context_tuple)
         context['exp'] = sympy.exp
         context['log'] = sympy.log
+        context['betacdf'] = sympy.Function('betacdf')
 
         to_replace = {}
         for p in self['other_para']:

@@ -147,7 +147,7 @@ def smc(model, t0=0):
     context = dict(context_tuple)
     context["exp"] = sympy.exp
     context["log"] = sympy.log
-
+    context["betacdf"] = sympy.Function('betacdf')
     to_replace = {}
     for p in model["other_para"]:
         to_replace[p] = eval(str(model["para_func"][p.name]), context)
