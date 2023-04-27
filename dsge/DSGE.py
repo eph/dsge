@@ -49,15 +49,11 @@ class DSGE(dict):
 
         # get forward looking variables
         for eq in self["equations"]:
-            variable_too_far = [
-                v for v in eq.atoms() if isinstance(v, Variable) and v.date > 1
-            ]
-            variable_too_early = [
-                v for v in eq.atoms() if isinstance(v, Variable) and v.date < -1
-            ]
+            variable_too_far = [v for v in eq.atoms(Variable) if v.date > 1]
+            variable_too_early = [v for v in eq.atoms(Variable) if v.date < -1]
 
-            eq_fvars = [v for v in eq.atoms() if isinstance(v, TSymbol) and v.date > 0]
-            eq_lvars = [v for v in eq.atoms() if isinstance(v, TSymbol) and v.date < 0]
+            eq_fvars = [v for v in eq.atoms(TSymbol) if v.date > 0]
+            eq_lvars = [v for v in eq.atoms(TSymbol) if v.date < 0]
 
             for f in eq_fvars:
                 if f not in fvars: fvars.append(f)
@@ -74,7 +70,6 @@ class DSGE(dict):
 
         self["re_errors_eq"] = []
         i = 0
-        from sympy import sympify
         for fv, lag_fv in zip(fvars, self["fvars_lagged"]):
             self["re_errors_eq"].append(
                 Equation(fv(-1) - lag_fv - self["re_errors"][i], sympify(0))
@@ -119,7 +114,23 @@ class DSGE(dict):
         return
 
     def __repr__(self):
-        return "A DSGE Model."
+        indent = "\n    "
+        repr = f"""
+Model name: {self.name}
+
+Parameters: {self.parameters}
+
+Variables: {self.variables}
+
+Shocks: {self.shocks}
+
+Equations:
+        {indent.join([eq.__repr__() for eq in self.equations])}       
+        """
+
+        return repr
+
+    
 
     @property
     def equations(self):
@@ -424,16 +435,13 @@ class DSGE(dict):
         context['log'] = sympy.log
         context['betacdf'] = sympy.Function('betacdf')
 
-        to_replace = {}
-        for p in self['other_para']:
-            to_replace[p] = eval(str(self['para_func'][p.name]), context)
+        to_replace = [(p, eval(str(self["para_func"][p.name]), context))
+            for p in self['other_para']]
 
+        from itertools import permutations
 
-        to_replace = list(to_replace.items())
-
-        from itertools import combinations, permutations
-
-        edges = [(i,j) for i,j in permutations(to_replace,2) if type(i[1]) not in [float,int] and i[1].has(j[0])]
+        edges = [(i,j) for i,j in permutations(to_replace,2) 
+                 if type(i[1]) not in [float,int] and i[1].has(j[0])]
 
         from sympy import default_sort_key, topological_sort
         edges = [(v[0],dep) for v in to_replace for dep in sympy.sympify(v[1]).atoms(Parameter) if dep in self['other_para']]
@@ -614,10 +622,10 @@ class DSGE(dict):
                 QQ[indj, indi] = QQ[indi, indj]
 
             else:
-                "fdfadsf"
+                raise ValueError("Covariance matrix must be square")
 
         nobs = len(obs_equations)
-        HH = sympy.zeros(nobs, nobs)
+        HH = sympy.zeros((nobs, nobs))
 
         if measurement_errors is not None:
             for key, value in cal["measurement_errors"].items():

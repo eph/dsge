@@ -51,7 +51,7 @@ class StateSpaceModel(object):
 
     Methods
     -------
-    TT(para), RR(para), QQ(para)
+    CC(para), TT(para), RR(para), QQ(para)
         Define the state transition matrices as function of a parameter vector.
     DD(para), ZZ(para), HH(para)
         Define the observable transition matrices as function of a parameter vector.
