@@ -625,7 +625,7 @@ Equations:
                 raise ValueError("Covariance matrix must be square")
 
         nobs = len(obs_equations)
-        HH = sympy.zeros((nobs, nobs))
+        HH = sympy.matrices.zeros(nobs, nobs)
 
         if measurement_errors is not None:
             for key, value in cal["measurement_errors"].items():
