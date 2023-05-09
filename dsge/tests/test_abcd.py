@@ -12,7 +12,7 @@ import pkg_resources
 class TestABCD(TestCase):
 
     def test_abcd(self):
-        model = DSGE.DSGE.read('/home/eherbst/Dropbox/code/dsge/dsge/examples/pi/pi.yaml')
+        model = DSGE.read('/home/eherbst/Dropbox/code/dsge/dsge/examples/pi/pi.yaml')
 
         m = model.compile_model()
 

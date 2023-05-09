@@ -155,14 +155,27 @@ class Shock(TSymbol):
             return "e_E" + self.name
 
 
+from typing import List
+
 class Equation(sympy.Equality):
-    def __new__(cls, lhs, rhs, name=None):
+    """
+    A class to represent an equation, which inherits from `sympy.Equality`.
+
+    Attributes:
+        lhs: The left-hand side of the equation
+        rhs: The right-hand side of the equation
+        name: The name of the equation (optional)
+    """
+
+    def __new__(cls, lhs: sympy.Expr, rhs: sympy.Expr, name: str = None) -> "Equation":
         return super(sympy.Equality, cls).__new__(cls, lhs, rhs)
 
     @property
-    def set_eq_zero(self):
+    def set_eq_zero(self) -> sympy.Expr:
+        """Returns the difference between the left-hand side and the right-hand side of the equation."""
         return self.lhs - self.rhs
 
     @property
-    def variables(self):
+    def variables(self) -> List[Variable]:
+        """Returns a list of unique variables within the equation."""
         return [v for v in self.atoms() if isinstance(v, Variable)]

@@ -3,7 +3,7 @@ from numpy.testing import assert_equal
 
 from unittest import TestCase
 
-from dsge.DSGE import DSGE
+from dsge import DSGE
 from dsge.translate import translate
 
 import pkg_resources

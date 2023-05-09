@@ -1,28 +1,37 @@
+import re
+import numpy as np
+import itertools
 import sympy
 import yaml
-from .symbols import (Variable, Equation, Shock, Parameter, TSymbol, reserved_names)
-from .Prior import construct_prior
-from .data import read_data_file
 
 from sympy.matrices import zeros
 from sympy import sympify
 
-import re
-import numpy as np
-import itertools
-
+from .symbols import (Variable, Equation, Shock, Parameter, TSymbol, reserved_names)
+from .Prior import construct_prior
+from .data import read_data_file
 from .StateSpaceModel import LinearDSGEModel
 
+from typing import List, Dict, Union
 
 class EquationList(list):
-    """A container for holding an set of equations."""
+    """A container for holding a set of equations.
 
-    def __init__(self, args, context={}):
+    Inherits the list class and includes additional argument fields for context.
+    """
+
+    def __init__(self, args: List[Equation], context: Dict[str, Union[int, float, TSymbol]] = {}):
+        """
+        Initialize an instance of the EquationList class.
+
+        Args:
+            args (list): A list of Equation objects.
+            context (dict, optional): A dictionary containing the context for the equations. Defaults to {}.
+        """
         self.context = context
         return super(EquationList, self).__init__(args)
 
-    def __setitem__(self, key, value):
-
+    def __setitem__(self, key: int, value: Union[str, Equation]):
         if isinstance(value, str):
             lhs, rhs = value.split("=")
 
@@ -131,6 +140,7 @@ Equations:
         return repr
 
     
+
 
     @property
     def equations(self):
@@ -386,6 +396,14 @@ Equations:
         )
 
         return dsge
+
+    def update_data_file(self, file_path, start_date=None):
+        if start_date is None:
+            self['__data__']['estimation']['data'] = file_path
+        else:
+            self['__data__']['estimation']['data'] = {'file': file_path, 'start': start_date}
+
+        return None
 
     def solve_model(self, p0):
 

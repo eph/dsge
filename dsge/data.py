@@ -5,7 +5,28 @@ import warnings
 
 
 def read_data_file(datafile, obs_names):
+    '''
+    Read data from a given file, and convert it to a pandas DataFrame.
 
+    Parameters:
+    datafile (str or dict): The path to the file containing the data, or a dictionary containing the path and start date.
+        If the input is a dictionary, it must contain the following keys:
+            "file": (str) The path to the file containing the data.
+            "start": (str) The start date of the data in pandas Period format
+    obs_names (list of str): A list of column names for the DataFrame.
+
+    Returns:
+    pd.DataFrame: A pandas DataFrame containing the data from the input file.
+
+    Raises:
+    pandas.errors.ParserError: If the data in the input file cannot be parsed successfully.
+    FileNotFoundError: If the input file does not exist in the file system.
+
+    Example:
+    >>> datafile = "/path/to/data.csv"
+    >>> obs_names = ["A", "B", "C"]
+    >>> data = read_data_file(datafile, obs_names)
+    '''
     if type(datafile) == dict:
         startdate = datafile["start"]
         datafile = datafile["file"]
@@ -35,6 +56,8 @@ def read_data_file(datafile, obs_names):
 
     if startdate != 0:
         nobs = data.shape[0]
-        data.index = p.period_range(startdate, freq="Q", periods=nobs)
+        # get either 'M or 'Q' from the startdate
+        freq = 'Q' if 'Q' in startdate else 'M'
+        data.index = p.period_range(startdate, freq=freq, periods=nobs)
 
     return data
