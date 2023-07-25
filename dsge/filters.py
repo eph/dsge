@@ -38,7 +38,7 @@ def chand_recursion(y, CC, TT, RR, QQ, DD, ZZ, HH, A0, P0, t0=0):
         At = CC + TT @ At + Kt @ nut.T
 
         ZZSt = ZZ @ St
-        MSpZp = Mt @ (ZZSt.T)
+        MSpZp = Mt @ ZZSt.T
         TTSt = TT @ St
 
         Ft1 = Ft + ZZSt @ MSpZp
