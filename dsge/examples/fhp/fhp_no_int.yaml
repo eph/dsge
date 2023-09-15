@@ -1,0 +1,85 @@
+declarations:
+  finite_horizon: true
+  variables: [kp, c, pi, q, i, y, mc]
+  shocks: [re, mu, chi, g, mp]
+  innovations: [e_re, e_mu, e_chi, e_g, e_mp]
+  values: [vh, vf, vk]
+  value_updates: [vhe, vfe, vke]
+  parameters: [sigma, sg, phi_k, delta,
+               alpha, phi_pi, phi_y, kappa,
+               r_A, rho_mu, gamma, rho_re, rho_chi, rho_g]
+  para_func: [beta, sc, r_k]
+  k: 0
+model:
+  static:
+    - q = -mu + phi_k*(i - kp(-1))
+    - i = -mu + 1/delta *(kp - (1-delta)*kp(-1))
+    - y = sc*c + (1-sc-sg)*i + sg*g
+    - mc = 1/sigma*c + chi + alpha/(1-alpha)*(y - kp(-1))
+
+  cycle:
+    terminal:
+      - q = -(phi_pi*pi + phi_y*y + mp - re)
+      - c = -sigma*(phi_pi*pi + phi_y*y + mp - re)
+      - pi = kappa*mc
+
+    plan:
+      - q = -(phi_pi*pi + phi_y*y + mp - pi(+1) - re) + beta*q(+1) + beta*r_k*(mc(+1) + y(+1) - kp) + beta*delta*rho_mu*mu
+      - c = c(+1) - sigma*(phi_pi*pi + phi_y*y + mp - pi(+1) - re)
+      - pi = beta*pi(+1) + kappa*mc
+
+  shocks:
+    - re = rho_re*re(-1) + e_re
+    - mu = rho_mu*mu(-1) + e_mu
+    - chi = rho_chi*chi(-1) + e_chi
+    - g = rho_g*g(-1) + e_g
+    - mp = e_mp
+
+  trend:
+    terminal:
+      - q = -(phi_pi*pi + phi_y*y + mp) + 1/sigma*vh + vk
+      - c = -sigma*(phi_pi*pi + phi_y*y + mp) + vh
+      - pi = kappa*mc + beta*vf
+    plan:
+      - q = -(phi_pi*pi + phi_y*y + mp - pi(+1)) + beta*q(+1) + beta*r_k*(mc(+1) + y(+1) - kp)
+      - c = c(+1) - sigma*(phi_pi*pi + phi_y*y + mp - pi(+1))
+      - pi = beta*pi(+1) + kappa*mc
+
+  value:
+    function:
+      - vk = (1-gamma)*vk(-1) + gamma*vke(-1)
+      - vf = (1-gamma)*vf(-1) + gamma*vfe(-1)
+      - vh = (1-gamma)*vh(-1) + gamma*vhe(-1)
+    update:
+      - vke = beta*q + beta*delta*mu + beta/alpha*r_k*(mc - (1-alpha)*chi) - (1 + beta*r_k*(1-alpha)/alpha)/sigma*c
+      - vhe = c + sigma*pi
+      - vfe = pi
+calibration:
+
+  para_func:
+    beta: 1/(1+r_A/400)
+    sc : 1 - alpha*1/(1+r_A/400)*delta/(1-1/(1+r_A/400)*(1-delta)) - sg
+    r_k: 1/(1/(1+r_A/400))- (1 - delta)
+
+  parameters:
+    sigma: 1
+    sg: 0.15
+    phi_k: 1.0
+    delta: 0.025
+    alpha: 0.30
+    phi_pi: 1.5
+    phi_y: 0.125
+    kappa: 0.01
+    rho_mu: 0.7
+    gamma: 0.1
+    rho_re: 0.95
+    rho_chi: 0.70
+    rho_g: 0.95
+    r_A : 2
+
+  covariance:
+    e_re: 0.01
+    e_mu: 0.01
+    e_chi: 0.01
+    e_g: 0.01
+    e_mp: 0.01

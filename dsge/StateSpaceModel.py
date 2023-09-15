@@ -155,16 +155,16 @@ class StateSpaceModel(object):
             P0 = solve_discrete_lyapunov(TT, RR.dot(QQ).dot(RR.T))
 
         lik = filt_func(
-            np.asarray(yy),
-            CC,
-            TT,
-            RR,
-            QQ,
-            np.asarray(DD, dtype=float),
-            np.asarray(ZZ, dtype=float),
-            np.asarray(HH, dtype=float),
-            np.asarray(A0, dtype=float),
-            np.asarray(P0, dtype=float),
+            np.ascontiguousarray(yy),
+            np.ascontiguousarray(CC),
+            np.ascontiguousarray(TT),
+            np.ascontiguousarray(RR),
+            np.ascontiguousarray(QQ),
+            np.ascontiguousarray(DD, dtype=float),
+            np.ascontiguousarray(ZZ, dtype=float),
+            np.ascontiguousarray(HH, dtype=float),
+            np.ascontiguousarray(A0, dtype=float),
+            np.ascontiguousarray(P0, dtype=float),
             t0=t0,
         )
         return lik
@@ -228,15 +228,15 @@ class StateSpaceModel(object):
 
         res = filter_and_smooth(
             np.asarray(yy),
-            CC,
-            TT,
-            RR,
-            QQ,
-            np.asarray(DD, dtype=float),
-            np.asarray(ZZ, dtype=float),
-            np.asarray(HH, dtype=float),
-            np.asarray(A0, dtype=float),
-            np.asarray(P0, dtype=float),
+            np.ascontiguousarray(CC),
+            np.ascontiguousarray(TT),
+            np.ascontiguousarray(RR),
+            np.ascontiguousarray(QQ),
+            np.ascontiguousarray(DD, dtype=float),
+            np.ascontiguousarray(ZZ, dtype=float),
+            np.ascontiguousarray(HH, dtype=float),
+            np.ascontiguousarray(A0, dtype=float),
+            np.ascontiguousarray(P0, dtype=float),
             t0=t0,
         )
 
@@ -619,7 +619,7 @@ class LinearDSGEModel(StateSpaceModel):
         if RC != 1:
             TT = np.nan * TT
 
-        return CC, TT, RR, QQ, DD, ZZ, HH
+        return (np.ascontiguousarray(mat) for mat in (CC, TT, RR, QQ, DD, ZZ, HH))
 
     def log_pr(self, para, *args, **kwargs):
         try:
@@ -635,3 +635,52 @@ class LinearDSGEModel(StateSpaceModel):
         if x < -1000000000.0:
             x = -1000000000.0
         return x
+
+class LinearDSGEModelwithSV(LinearDSGEModel):
+    def __init__(
+            self,
+            yy,
+            GAM0,
+            GAM1,
+            PSI,
+            PPI,
+            QQ,
+            DD,
+            ZZ,
+            HH,
+            Lambda,
+            Omega,
+            Omega0,
+        t0=0,
+        shock_names=None,
+        state_names=None,
+        obs_names=None,
+        prior=None,
+        parameter_names=None
+    ):
+
+        if len(yy.shape) < 2:
+            yy = np.swapaxes(np.atleast_2d(yy), 0, 1)
+
+        self.yy = yy
+
+        self.GAM0 = GAM0
+        self.GAM1 = GAM1
+        self.PSI = PSI
+        self.PPI = PPI
+        self.QQ = QQ
+        self.DD = DD
+        self.ZZ = ZZ
+        self.HH = HH
+        self.Lambda = Lambda
+        self.Omega = Omega
+        self.Omega0 = Omega0
+
+        self.t0 = t0
+
+        self.shock_names = shock_names
+        self.state_names = state_names
+        self.obs_names = obs_names
+        self.parameter_names = parameter_names
+
+        self.prior = prior

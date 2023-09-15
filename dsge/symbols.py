@@ -10,6 +10,21 @@ reserved_names = {'log': sympy.log,
 
 clear_cache()
 
+symbolic_context = {'__builtins__': None,
+                    'log': sympy.log,
+                    'exp': sympy.exp,
+                    'sin': sympy.sin,
+                    'cos': sympy.cos,
+                    'tan': sympy.tan,
+                    'asin': sympy.asin,
+                    'acos': sympy.acos,
+                    'atan': sympy.atan,
+                    'sinh': sympy.sinh,
+                    'cosh': sympy.cosh,
+                    'tanh': sympy.tanh,
+                    'sign': sympy.sign,
+                    'sqrt': sympy.sqrt,
+                    'normcdf': lambda x: 0.5 * (1 + erf(x / sqrt(2)))}
 
 StrPrinter._print_TSymbol = lambda self, x: x.__str__()
 
@@ -28,26 +43,13 @@ class Parameter(sympy.Symbol):
 
 class TSymbol(sympy.Symbol):
 
-    def __init__(self, name, **args):
-        super(TSymbol, self).__init__()
-
-        if "date" not in args:
-            self._assumptions["date"] = 0
-            self.assumptions0["date"] = 0
-        else:
-            self._assumptions["date"] = args["date"]
-            self.assumptions0["date"] = args["date"]
-        if "exp_date" not in args:
-            self._assumptions["exp_date"] = 0
-            self.assumptions0["exp_date"] = 0
-        else:
-            self._assumptions["exp_date"] = args["exp_date"]
-            self.assumptions0["exp_date"] = args["exp_date"]
-
-        self._mhash = None
-        self.__hash__()
-
-        return None
+    def __new__(cls, name, **args):
+        obj = sympy.Symbol.__new__(cls, name)
+        obj.date = args.get("date", 0)
+        obj.exp_date = args.get("exp_date", 0)
+        obj._mhash = None
+        obj.__hash__()
+        return obj
 
     def __call__(self, lead):
         newdate = int(self.date) + int(lead)
@@ -56,13 +58,13 @@ class TSymbol(sympy.Symbol):
         clear_cache()
         return self.__class__(newname, date=newdate)
 
-    @property
-    def date(self):
-        return self.assumptions0["date"]
+    # @property
+    # def date(self):
+    #     return self.assumptions0["date"]
 
-    @property
-    def exp_date(self):
-        return self.assumptions0["exp_date"]
+    # @property
+    # def exp_date(self):
+    #     return self.assumptions0["exp_date"]
 
     def _hashable_content(self):
         return (self.name, str(self.date), str(self.exp_date))

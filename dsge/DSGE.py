@@ -1,18 +1,26 @@
-import re
 import numpy as np
-import itertools
 import sympy
-import yaml
+
 
 from sympy.matrices import zeros
 from sympy import sympify
+from sympy.utilities.lambdify import lambdify
 
-from .symbols import (Variable, Equation, Shock, Parameter, TSymbol, reserved_names)
+from .symbols import (Variable,
+                      Equation,
+                      Shock,
+                      Parameter,
+                      TSymbol,
+                      reserved_names,
+                      symbolic_context)
+
 from .Prior import construct_prior
 from .data import read_data_file
-from .StateSpaceModel import LinearDSGEModel
+from .StateSpaceModel import LinearDSGEModel, LinearDSGEModelwithSV
 
 from typing import List, Dict, Union
+
+from .parse_yaml import from_dict_to_mat, construct_equation_list, find_max_lead_lag, read_yaml
 
 class EquationList(list):
     """A container for holding a set of equations.
@@ -195,7 +203,7 @@ Equations:
 
     def python_sims_matrices(self, matrix_format="numeric"):
 
-        from sympy.utilities.lambdify import lambdify
+
 
         vlist = self["var_ordering"] + self["fvars"]
         llist = [var(-1) for var in self["var_ordering"]] + self["fvars_lagged"]
@@ -277,7 +285,7 @@ Equations:
         subs_dict = []
         context = dict([(p, Parameter(p)) for p in self.parameters])
         context.update(reserved_names)
-
+        context['normcdf'] = lambda x: 0.5 * (1 + sympy.erf(x / sympy.sqrt(2)))
         context_f = {}
         context_f["exp"] = np.exp
 
@@ -298,23 +306,16 @@ Equations:
             context[str(p)] = ss[str(p)]
 
 
-        GAM0 = lambdify(
-            [self.parameters + self["other_para"]], GAM0
-        )  # , modules={'ImmutableDenseMatrix': np.array})#'numpy')
-        GAM1 = lambdify(
-            [self.parameters + self["other_para"]], GAM1
-        )  # , modules={'ImmutableDenseMatrix': np.array})#'numpy')
-        PSI = lambdify(
-            [self.parameters + self["other_para"]], PSI
-        )  # , modules={'ImmutableDenseMatrix': np.array})#'numpy')
-        PPI = lambdify(
-            [self.parameters + self["other_para"]], PPI
-        )  # , modules={'ImmutableDenseMatrix': np.array})#'numpy')
-
+        all_para =[self.parameters + self["other_para"]]
+        GAM0 = lambdify(all_para,GAM0)
+        GAM1 = lambdify(all_para,GAM1)
+        PSI = lambdify(all_para,PSI)
+        PPI = lambdify(all_para,PPI)
+        context_f['ImmutableDenseMatrix'] =  np.array
         psi = lambdify(
             [self.parameters], [ss[str(px)] for px in self["other_para"]], modules=context_f)
        
-
+        self.psi = psi
         def add_para_func(f):
             def wrapped_f(px):
                 return f([*px, *psi(px)])
@@ -331,17 +332,30 @@ Equations:
         DD = DD.subs(subs_dict)
         ZZ = ZZ.subs(subs_dict)
 
-        QQ = lambdify([self.parameters + self["other_para"]], self["covariance"])
-        HH = lambdify(
-            [self.parameters + self["other_para"]], self["measurement_errors"]
-        )
-        DD = lambdify([self.parameters + self["other_para"]], DD)
-        ZZ = lambdify([self.parameters + self["other_para"]], ZZ)
+        QQ = lambdify(all_para, self["covariance"])
+        HH = lambdify(all_para, self["measurement_errors"])
+        DD = lambdify(all_para, DD)
+        ZZ = lambdify(all_para, ZZ)
 
         self.QQ = add_para_func(QQ)
         self.DD = add_para_func(DD)
         self.ZZ = add_para_func(ZZ)
         self.HH = add_para_func(HH)
+
+        # if self['__data__']['declarations']['type'] == 'sv':
+        #     sv = self['__data__']['equations']['sv']
+        #     p0 = self.p0()
+        #     QQ_obs = self.QQ(p0)
+        #     nshocks = len(self.shocks)
+        #     assert (QQ_obs == np.eye(nshocks)).all()
+        #
+        #     Lambda = from_dict_to_mat(sv['transition'], self['shk_ordering'], context)
+        #     Omega = from_dict_to_mat(sv['covariance'], self['shk_ordering'], context)
+        #     Omega0 = from_dict_to_mat(sv['initial_covariance'], self['shk_ordering'], context)
+        #
+        #     self.Lambda = add_para_func(lambdify(all_para, Lambda))
+        #     self.Omega = add_para_func(lambdify(all_para, Omega))
+        #     self.Omega0 = add_para_func(lambdify(all_para, Omega0))
 
         return GAM0, GAM1, PSI, PPI
 
@@ -377,25 +391,50 @@ Equations:
 
         from .Prior import Prior as pri
 
-        dsge = LinearDSGEModel(
-            data,
-            GAM0,
-            GAM1,
-            PSI,
-            PPI,
-            QQ,
-            DD,
-            ZZ,
-            HH,
-            t0=0,
-            shock_names=list(map(str, self.shocks)),
-            state_names=list(map(str, self.variables + self["fvars"])),
-            obs_names=list(map(str, self["observables"])),
-            prior=pri(prior),
-            parameter_names=self.parameters
-        )
+        if 1==0:#self['__data__']['declarations']['type'] == 'sv':
 
-        return dsge
+            dsge = LinearDSGEModelwithSV(
+                  data,
+                  GAM0,
+                  GAM1,
+                  PSI,
+                  PPI,
+                  QQ,
+                  DD,
+                  ZZ,
+                  HH,
+                self.Lambda,
+                self.Omega,
+                self.Omega0,
+                  t0=0,
+                  shock_names=list(map(str, self.shocks)),
+                  state_names=list(map(str, self.variables + self["fvars"])),
+                  obs_names=list(map(str, self["observables"])),
+                  prior=pri(prior),
+                  parameter_names=self.parameters
+              )
+        else:
+            dsge = LinearDSGEModel(
+                  data,
+                  GAM0,
+                  GAM1,
+                  PSI,
+                  PPI,
+                  QQ,
+                  DD,
+                  ZZ,
+                  HH,
+                  t0=0,
+                  shock_names=list(map(str, self.shocks)),
+                  state_names=list(map(str, self.variables + self["fvars"])),
+                  obs_names=list(map(str, self["observables"])),
+                  prior=pri(prior),
+                  parameter_names=self.parameters
+              )
+
+            dsge.psi = self.psi
+
+            return dsge
 
     def update_data_file(self, file_path, start_date=None):
         if start_date is None:
@@ -469,14 +508,9 @@ Equations:
         return self
 
     @classmethod
-    def read(cls, mfile):
+    def read(cls, model_file):
 
-        with open(mfile) as f:
-            txt = f.read()
-
-        txt = txt.replace("^", "**").replace(";", "")
-        txt = re.sub(r"@ ?\n", " ", txt)
-        model_yaml = yaml.safe_load(txt)
+        model_yaml = read_yaml(model_file)
 
         dec, cal = model_yaml["declarations"], model_yaml["calibration"]
         name = dec["name"]
@@ -494,8 +528,8 @@ Equations:
             observables = [Variable(v) for v in dec["observables"]]
             obs_equations = model_yaml["equations"]["observables"]
         else:
-            observables = []
-            obs_equations = dict()
+            observables = [Variable(v) for v in dec["variables"]]
+            obs_equations = {v: v for v in dec['variables']}
 
         if "measurement_errors" in dec:
             measurement_errors = [Shock(v) for v in dec["measurement_errors"]]
@@ -510,30 +544,9 @@ Equations:
         steady_state = [0]
         init_values = [0]
 
-        context = [
-            (s.name, s) for s in var_ordering + par_ordering + shk_ordering + other_para
-        ]
-        context = dict(context)
-
-        for f in [
-            sympy.log,
-            sympy.exp,
-            sympy.sin,
-            sympy.cos,
-            sympy.tan,
-            sympy.asin,
-            sympy.acos,
-            sympy.atan,
-            sympy.sinh,
-            sympy.cosh,
-            sympy.tanh,
-            sympy.pi,
-            sympy.sign,
-        ]:
-            context[str(f)] = f
-
-        context["sqrt"] = sympy.sqrt
-        context["__builtins__"] = None
+        context = {s.name: s
+                   for s in var_ordering + par_ordering + shk_ordering + other_para}
+        context.update(symbolic_context)
 
         equations = []
 
@@ -541,35 +554,13 @@ Equations:
             raw_equations = model_yaml["equations"]["model"]
         else:
             raw_equations = model_yaml["equations"]
-
-        for eq in raw_equations:
-            if "=" in eq:
-                lhs, rhs = str.split(eq, "=")
-            else:
-                lhs, rhs = eq, "0"
-
-            try:
-                lhs = eval(lhs, context)
-                rhs = eval(rhs, context)
-            except TypeError as e:
-                print("While parsing %s, got this error: %s" % (eq, repr(e)))
-                return
-
-            equations.append(Equation(sympify(lhs), sympify(rhs)))
+        equations = construct_equation_list(raw_equations, context)
 
         # ------------------------------------------------------------
         # Figure out max leads and lags
         # ------------------------------------------------------------
-        it = itertools.chain.from_iterable
-
-        max_lead_exo = dict.fromkeys(shk_ordering)
-        max_lag_exo = dict.fromkeys(shk_ordering)
-
-        all_shocks = [list(eq.atoms(Shock)) for eq in equations]
-
-        for s in shk_ordering:
-            max_lead_exo[s] = max([i.date for i in it(all_shocks) if i.name == s.name])
-            max_lag_exo[s] = min([i.date for i in it(all_shocks) if i.name == s.name])
+        (max_lead_exo,
+         max_lag_exo) = find_max_lead_lag(equations, shk_ordering)
 
         # arbitrary lags of exogenous shocks
         for s in shk_ordering:
@@ -583,13 +574,9 @@ Equations:
                 subs_dict = dict(zip(subs1, subs2))
                 equations = [eq.subs(subs_dict) for eq in equations]
 
-        all_vars = [list(eq.atoms(Variable)) for eq in equations]
-        max_lead_endo = dict.fromkeys(var_ordering)
-        max_lag_endo = dict.fromkeys(var_ordering)
-
-        for v in var_ordering:
-            max_lead_endo[v] = max([i.date for i in it(all_vars) if i.name == v.name])
-            max_lag_endo[v] = min([i.date for i in it(all_vars) if i.name == v.name])
+        (max_lead_endo,
+         max_lag_endo) = find_max_lead_lag(equations, var_ordering)
+        print(max_lag_endo)
 
         # ------------------------------------------------------------
         # arbitrary lags/leads of endogenous variables
@@ -597,7 +584,6 @@ Equations:
         subs_dict = dict()
         old_var = var_ordering[:]
         for v in old_var:
-
             # lags
             for i in np.arange(2, abs(max_lag_endo[v]) + 1):
                 # for lag l need to add l-1 variable
@@ -622,50 +608,26 @@ Equations:
         npara = len(par_ordering)
 
         info = {"nshock": nshock, "npara": npara}
-        QQ = sympy.zeros(nshock, nshock)
-        for key, value in cov.items():
-            shocks = key.split(",")
+        QQ = from_dict_to_mat(cov, shk_ordering, context)
 
-            if len(shocks) == 1:
-                shocks.append(shocks[0])
 
-            if len(shocks) == 2:
-                shocki = Shock(shocks[0].strip())
-                shockj = Shock(shocks[1].strip())
-
-                indi = shk_ordering.index(shocki)
-                indj = shk_ordering.index(shockj)
-
-                QQ[indi, indj] = eval(str(value), context)
-                QQ[indj, indi] = QQ[indi, indj]
-
-            else:
-                raise ValueError("Covariance matrix must be square")
-
-        nobs = len(obs_equations)
-        HH = sympy.matrices.zeros(nobs, nobs)
-
-        if measurement_errors is not None:
-            for key, value in cal["measurement_errors"].items():
-                shocks = key.split(",")
-
-                if len(shocks) == 1:
-                    shocks.append(shocks[0])
-
-                if len(shocks) == 2:
-                    shocki = Shock(shocks[0].strip())
-                    shockj = Shock(shocks[1].strip())
-
-                    indi = measurement_errors.index(shocki)
-                    indj = measurement_errors.index(shockj)
-
-                    HH[indi, indj] = eval(value, context)
-                    HH[indj, indi] = HH[indi, indj]
-
+        #------------------------------------------------------------------
+        # observation equation
+        #------------------------------------------------------------------
         context["sum"] = np.sum
         context["range"] = range
         for obs in obs_equations.items():
             obs_equations[obs[0]] = eval(obs[1], context)
+
+        me_dict = {}
+        if 'measurement_errors' in model_yaml['calibration']:
+            me_dict = model_yaml['calibration']['measurement_errors']
+
+        if measurement_errors is not None:
+            HH = from_dict_to_mat(me_dict, measurement_errors, context)
+        else:
+            HH = from_dict_to_mat(me_dict, observables, context)
+
 
         calibration = model_yaml["calibration"]["parameters"]
 

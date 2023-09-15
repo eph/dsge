@@ -1,0 +1,82 @@
+declarations:
+  name: 're_cap'
+  variables: [qq,kp,cc,yy,inv,dp,mc,nr,re,mu,chi,gg,emon]
+  shocks: [epr,epmu,epchi,epg,epm]
+  parameters: [ra,dpstar,yg,kk,sigma,alpha,delta,shareg,kappa,phik,phidp,phiy,phidpbar,phiybar,gammah,gammadp,gammak,rhor,rhomu,rhochi,rhog,rhom,stdre,stdmu,stdchi,stdg,stdm]
+
+  para_func: [beta,rkss,sharei,sharec]
+equations:
+  model:
+
+    - qq = (1/sigma)*(cc - cc(+1)) + beta*qq(+1) + beta*rkss*(mc(+1)+yy(+1)-kp) + beta*delta*mu(+1)
+
+    - kp = kp(-1) + (delta/phik)*qq + (delta*(1+phik)/phik)*mu
+
+    - cc = cc(+1) - sigma*(nr - dp(+1) - re)
+
+    - yy = sharec*cc + (1-sharec-shareg)*inv + shareg*gg
+
+    - inv = -mu + (1/delta)*(kp - (1-delta)*kp(-1))
+
+    - dp = beta*dp(+1) + kappa*mc
+
+    - mc = (1/sigma)*cc + chi + (alpha/(1-alpha))*(yy-kp(-1))
+
+    - nr = phidp*dp + phiy*yy + emon
+
+    - re = rhor*re(-1) + epr
+
+    - mu = rhomu*mu(-1) + epmu
+
+    - chi = rhochi*chi(-1) + epchi
+
+    - gg = rhog*gg(-1) + epg
+
+    - emon = rhom*emon(-1) + epm
+
+calibration:
+
+  parameters:
+    ra: 2.0
+    dpstar: 2.0
+    yg: 0.45
+    kk: 1
+    sigma: 1.0
+    alpha: 0.3
+    delta: 0.025
+    shareg: 0.15
+    kappa: 0.01
+    phik: 1.0
+    phidp: 1.5
+    phiy: 0.125
+    phidpbar: 1.5
+    phiybar: 0.125
+    gammah: 0.1
+    gammadp: 0.1
+    gammak: 0.1
+    rhor: 0.95
+    rhomu: 0.7
+    rhochi: 0.7
+    rhog: 0.95
+    rhom: 0.95
+    stdre: 0.01
+    stdmu: 0.01
+    stdchi: 0.01
+    stdg: 0.01
+    stdm: 0.01
+
+  parafunc:
+    beta: 1/(1+ra/400)
+    rkss: (1/beta)-(1-delta)
+    sharei: delta*alpha*beta/(1-beta*(1-delta))
+    sharec: 1-sharei-shareg
+
+  covariances:
+    epr: stdre**2
+    epmu: stdmu**2
+    epchi: stdchi**2
+    epg: stdg**2
+    epm: stdm**2
+
+estimation:
+  nothing:
