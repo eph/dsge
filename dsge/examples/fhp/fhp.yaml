@@ -7,7 +7,7 @@ declarations:
   value_updates: [vhe, vfe, vke]
   parameters: [sigma, sg, phi_k, delta,
                alpha, phi_pi, phi_y, kappa,
-               r_A, rho_mu, gamma, rho_re, rho_chi, rho_g]
+               r_A, rho_mu, gamma, rho_re, rho_chi, rho_g, rho_mp]
   para_func: [beta, sc, r_k]
   k: 1
 model:
@@ -34,7 +34,7 @@ model:
     - mu = rho_mu*mu(-1) + e_mu
     - chi = rho_chi*chi(-1) + e_chi
     - g = rho_g*g(-1) + e_g
-    - mp = e_mp
+    - mp = rho_mp*mp(-1) + e_mp
 
   trend:
     terminal:
@@ -72,11 +72,12 @@ calibration:
     phi_y: 0.125
     kappa: 0.01
     beta: 0.99
-    rho_mu: 0.5
+    rho_mu: 0.7
     gamma: 0.1
-    rho_re: 0.5
-    rho_chi: 0.97
+    rho_re: 0.95
+    rho_chi: 0.7
     rho_g: 0.95
+    rho_mp: 0.95
     r_A : 2
 
   covariance:

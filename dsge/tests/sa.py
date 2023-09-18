@@ -9,7 +9,7 @@ def get_sol_matrices(p0,nx,nv,ns):
 
     beta =  1/(1+p0[0]/400)
     dpstar = 1+p0[1]/400
-    k = np.int(p0[3])
+    k = int(p0[3])
     sigma = p0[4]
     alpha = p0[5]
     delta = p0[6]
@@ -75,7 +75,7 @@ def get_sol_matrices(p0,nx,nv,ns):
 
     alpha_B = alpha_1.copy()
     beta_s = beta_0.copy()
-    beta_s[0,1] = beta*rhomu
+    beta_s[0,1] = beta*rhomu*delta
 
     alphabar_0 = alpha_0.copy()
     alphabar_0[7,2] = -phipibar; alphabar_0[7,5] = -phiybar
@@ -102,7 +102,7 @@ def get_sol_matrices(p0,nx,nv,ns):
     Cx[0,1] = 1; Cx[0,2] = sigma
     Cx[1,2] = 1
     Cx[2,1] = -(1+beta*rkss*(1-alpha)/alpha)/sigma; Cx[2,3] = beta; Cx[2,6] = beta*rkss/alpha
-    Cs[2,1] = beta*(1-delta); Cs[2,1] = -beta*rkss*(1-alpha)/alpha
+    Cs[2,1] = beta*delta; Cs[2,2] = -beta*rkss*(1-alpha)/alpha
 
     Gamma = np.zeros([nv,nv])
     Gamma[0,0] = gammah; Gamma[1,1] = gammapi; Gamma[2,2] = gammak
@@ -151,8 +151,6 @@ def fhp_companion(p0,nx,nv,ns,paramlist):
     TT = np.zeros([3*nx+nv+ns,3*nx+nv+ns])
     RR = np.zeros([3*nx+nv+ns,ns])
 
-    print('---------')
-    print((Gamma).round(3))
     #X and Y
     eyev = np.eye(nv)
     TT[:nx,:nx] = Bbark @ Gamma @ Cx; TT[:nx,nx:2*nx] = Ak; TT[:nx,2*nx:3*nx] = Abark
@@ -166,6 +164,7 @@ def fhp_companion(p0,nx,nv,ns,paramlist):
     RR[:nx,:] = Bk; RR[nx:2*nx,:] = Bk; RR[3*nx+nv:,:] = np.eye(ns)
 
     return(TT,RR,params0)
+
 
 def compute_irfs(fhpmod,p0,capt,irfpos):
     import pandas as pd

@@ -136,8 +136,6 @@ class LinearDSGEforFHPRepAgent(LinearDSGEModel):
            np.c_[zeroS.T                         , zeroS.T, zeroS.T, zeroS.T@zeroV         , P                                             ]
        ]
 
-       print((value_gamma ).round(2))
-
        RR = np.r_[B_cycle @ R,
                   B_cycle @ R,
                   zeroS,

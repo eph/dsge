@@ -576,7 +576,7 @@ Equations:
 
         (max_lead_endo,
          max_lag_endo) = find_max_lead_lag(equations, var_ordering)
-        print(max_lag_endo)
+
 
         # ------------------------------------------------------------
         # arbitrary lags/leads of endogenous variables
