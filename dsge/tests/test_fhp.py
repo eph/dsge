@@ -27,8 +27,8 @@ def e2c_para(e_para, k):
 
     # Mapping ED parameters to Chris parameters based on variable names
     c_para[0] = e_para[8]    # ra <- r_A
-    c_para[1] = 2.0          # dpstar (no clear mapping given, using provided constant)
-    c_para[2] = 0.45          # yg (no clear mapping given, using provided constant)
+    c_para[1] = e_para[16]   # dpstar (no clear mapping given, using provided constant)
+    c_para[2] = e_para[15]          # yg (no clear mapping given, using provided constant)
     c_para[3] = k            # kk <- k
     c_para[4] = e_para[0]    # sigma <- sigma
     c_para[5] = e_para[4]    # alpha <- alpha
@@ -52,7 +52,11 @@ def e2c_para(e_para, k):
     c_para[19] = e_para[12]  # rhochi <- rho_chi
     c_para[20] = e_para[13]  # rhog <- rho_g
     c_para[21] = e_para[14]  # rhom <- rho_mp
-    c_para[22:] = 0.01
+    c_para[22] = e_para[21]
+    c_para[23] = e_para[17]
+    c_para[24] = e_para[18]
+    c_para[25] = e_para[19]
+    c_para[26] = e_para[20]
 
     return c_para
 
@@ -151,3 +155,106 @@ class TestFHP(TestCase):
             #print(ed_irf[e_shock][e_vars].values-chris_irf[c_shock][c_vars].values)
             assert_array_almost_equal(ed_irf[e_shock][e_vars],
                                       chris_irf[c_shock][c_vars], decimal=6)
+
+    def test_lik(self):
+        p0 = self.model.p0()
+        print(p0)
+        compiled_model = self.model.compile_model(k=4)
+        print(compiled_model.log_lik(p0))
+
+    def test_compile(self):
+        from dsge.FHPRepAgent import make_fortran_model
+        make_fortran_model(self.model)
+    def test_fortran(self):
+
+        p0 = self.model.p0()
+        compiled_model = self.model.compile_model(k=4)
+
+        alpha0_cycle = np.loadtxt('/home/eherbst/Dropbox/code/dsge/dsge/tests/fhp_fortran_matrices/alpha0_cycle.txt')
+        alpha0_cycle_py = compiled_model.alpha0_cycle(p0)
+        assert_array_almost_equal(alpha0_cycle, alpha0_cycle_py)
+
+        # do same for alpha1_cycle, beta0_cycle, alphaC_cycle, alphaF_cycle, betaS_cycle
+        alpha1_cycle = np.loadtxt('/home/eherbst/Dropbox/code/dsge/dsge/tests/fhp_fortran_matrices/alpha1_cycle.txt')
+        alpha1_cycle_py = compiled_model.alpha1_cycle(p0)
+        assert_array_almost_equal(alpha1_cycle, alpha1_cycle_py)
+
+        beta0_cycle = np.loadtxt('/home/eherbst/Dropbox/code/dsge/dsge/tests/fhp_fortran_matrices/beta0_cycle.txt')
+        beta0_cycle_py = compiled_model.beta0_cycle(p0)
+        assert_array_almost_equal(beta0_cycle, beta0_cycle_py)
+
+        alphaC_cycle = np.loadtxt('/home/eherbst/Dropbox/code/dsge/dsge/tests/fhp_fortran_matrices/alphaC_cycle.txt')
+        alphaC_cycle_py = compiled_model.alphaC_cycle(p0)
+        assert_array_almost_equal(alphaC_cycle, alphaC_cycle_py)
+
+        alphaF_cycle = np.loadtxt('/home/eherbst/Dropbox/code/dsge/dsge/tests/fhp_fortran_matrices/alphaF_cycle.txt')
+        alphaF_cycle_py = compiled_model.alphaF_cycle(p0)
+        assert_array_almost_equal(alphaF_cycle, alphaF_cycle_py)
+
+        betaS_cycle = np.loadtxt('/home/eherbst/Dropbox/code/dsge/dsge/tests/fhp_fortran_matrices/betaS_cycle.txt')
+        betaS_cycle_py = compiled_model.betaS_cycle(p0)
+        assert_array_almost_equal(betaS_cycle, betaS_cycle_py)
+
+        alpha0_trend = np.loadtxt('/home/eherbst/Dropbox/code/dsge/dsge/tests/fhp_fortran_matrices/alpha0_trend.txt')
+        alpha0_trend_py = compiled_model.alpha0_trend(p0)
+        assert_array_almost_equal(alpha0_trend, alpha0_trend_py)
+
+        alpha1_trend = np.loadtxt('/home/eherbst/Dropbox/code/dsge/dsge/tests/fhp_fortran_matrices/alpha1_trend.txt')
+        alpha1_trend_py = compiled_model.alpha1_trend(p0)
+        assert_array_almost_equal(alpha1_trend, alpha1_trend_py)
+
+        betaV_trend = np.loadtxt('/home/eherbst/Dropbox/code/dsge/dsge/tests/fhp_fortran_matrices/betaV_trend.txt')
+        betaV_trend_py = compiled_model.betaV_trend(p0)
+        assert_array_almost_equal(betaV_trend, betaV_trend_py)
+
+        alphaC_trend = np.loadtxt('/home/eherbst/Dropbox/code/dsge/dsge/tests/fhp_fortran_matrices/alphaC_trend.txt')
+        alphaC_trend_py = compiled_model.alphaC_trend(p0)
+        assert_array_almost_equal(alphaC_trend, alphaC_trend_py)
+
+        alphaF_trend = np.loadtxt('/home/eherbst/Dropbox/code/dsge/dsge/tests/fhp_fortran_matrices/alphaF_trend.txt')
+        alphaF_trend_py = compiled_model.alphaF_trend(p0)
+        assert_array_almost_equal(alphaF_trend, alphaF_trend_py)
+
+        alphaB_trend = np.loadtxt('/home/eherbst/Dropbox/code/dsge/dsge/tests/fhp_fortran_matrices/alphaB_trend.txt')
+        alphaB_trend_py = compiled_model.alphaB_trend(p0)
+        assert_array_almost_equal(alphaB_trend, alphaB_trend_py)
+
+        value_gammaC = np.loadtxt('/home/eherbst/Dropbox/code/dsge/dsge/tests/fhp_fortran_matrices/value_gammaC.txt')
+        value_gammaC_py = compiled_model.value_gammaC(p0)
+        assert_array_almost_equal(value_gammaC, value_gammaC_py)
+
+        value_gamma = np.loadtxt('/home/eherbst/Dropbox/code/dsge/dsge/tests/fhp_fortran_matrices/value_gamma.txt')
+        value_gamma_py = compiled_model.value_gamma(p0)
+        assert_array_almost_equal(value_gamma, value_gamma_py)
+
+        value_Cx = np.loadtxt('/home/eherbst/Dropbox/code/dsge/dsge/tests/fhp_fortran_matrices/value_Cx.txt')
+        value_Cx_py = compiled_model.value_Cx(p0)
+        assert_array_almost_equal(value_Cx, value_Cx_py)
+
+        value_Cs = np.loadtxt('/home/eherbst/Dropbox/code/dsge/dsge/tests/fhp_fortran_matrices/value_Cs.txt')
+        value_Cs_py = compiled_model.value_Cs(p0)
+        assert_array_almost_equal(value_Cs, value_Cs_py, 6)
+
+        compiled_model.log_lik(p0)
+        A_cycle = np.loadtxt('/home/eherbst/Dropbox/code/dsge/dsge/tests/fhp_fortran_matrices/A_cycle.txt')
+        A_cycle_py = compiled_model.A_cycle
+        assert_array_almost_equal(A_cycle, A_cycle_py, 6)
+
+        B_cycle = np.loadtxt('/home/eherbst/Dropbox/code/dsge/dsge/tests/fhp_fortran_matrices/B_cycle.txt')
+        B_cycle_py = compiled_model.B_cycle
+        assert_array_almost_equal(B_cycle, B_cycle_py, 6)
+
+        A_trend = np.loadtxt('/home/eherbst/Dropbox/code/dsge/dsge/tests/fhp_fortran_matrices/A_trend.txt')
+        A_trend_py = compiled_model.A_trend
+        assert_array_almost_equal(A_trend, A_trend_py, 6)
+
+        B_trend = np.loadtxt('/home/eherbst/Dropbox/code/dsge/dsge/tests/fhp_fortran_matrices/B_trend.txt')
+        B_trend_py = compiled_model.B_trend
+        assert_array_almost_equal(B_trend, B_trend_py, 6)
+
+        CC_py, TT_py, RR_py, QQ_py, DD_py, ZZ_py, HH_py = compiled_model.system_matrices(p0)
+        TT = np.loadtxt('/home/eherbst/Dropbox/code/dsge/dsge/tests/fhp_fortran_matrices/TT.txt')
+        assert_array_almost_equal(TT, TT_py, 6)
+
+        RR = np.loadtxt('/home/eherbst/Dropbox/code/dsge/dsge/tests/fhp_fortran_matrices/RR.txt')
+        assert_array_almost_equal(RR, RR_py, 6)

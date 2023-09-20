@@ -34,13 +34,23 @@ def read_data_file(datafile, obs_names):
         startdate = 0
 
     try:
+        # find out if there are commas in the file after the first line
+        with open(datafile, "r") as f:
+            first_line = f.readline()
+            second_line = f.readline()
+            if "," in second_line:
+                delim_whitespace=False
+            else:
+                delim_whitespace=True
+
         # First, we'll try to load it with a header
-        data = pd.read_csv(datafile, names=obs_names)
+        data = pd.read_csv(datafile, delim_whitespace=delim_whitespace, names=obs_names)
         # If the first row isn't numeric (excluding nan), we know it's the header.
         # If not, we load again without a header
-        if data.iloc[0].apply(lambda x: pd.to_numeric(x, errors='coerce')).isna().any():
-            data = pd.read_csv(datafile)
+        if data.iloc[0].fillna(0.).apply(lambda x: pd.to_numeric(x, errors='coerce')).isna().any():
+            data = pd.read_csv(datafile, delim_whitespace=delim_whitespace)
     except Exception as e:
+
         warnings.warn(f"{datafile} could not be opened. Error: {e}")
         data = pd.DataFrame(np.nan * np.ones((100, len(obs_names))), columns=obs_names)
         startdate = 0

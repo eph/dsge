@@ -242,8 +242,8 @@ def write_prior_file(prior, output_dir):
 
 def make_fortran_model(model, **kwargs):
     t0 = kwargs.pop("t0", 0)
-    from fortress import make_smc
 
+    from fortress import make_smc
     model_file = smc(model, t0=t0)
     modelc = model.compile_model()
 
