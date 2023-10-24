@@ -72,6 +72,9 @@ class TestFHP(TestCase):
         model_file = pkg_resources.resource_filename('dsge', 'examples/fhp/fhp.yaml')
         self.model = FHPRepAgent.read(model_file)
 
+        pe_model_file = pkg_resources.resource_filename('dsge', 'examples/fhp/partial_equilibrium.yaml')
+        self.pe_model = FHPRepAgent.read(pe_model_file)
+
     def test_load(self):
         pass
 
@@ -108,6 +111,38 @@ class TestFHP(TestCase):
             # check if equal
             assert_array_almost_equal(ed_irf[e_shock][e_vars],
                                       chris_irf[c_shock][c_vars], decimal=6)
+
+    def test_expectations(self):
+        compiled_model = self.model.compile_model(k=1000,expectations=1)
+        p0 = self.model.p0()
+        irfs = compiled_model.impulse_response(p0, 10)
+
+        assert_array_almost_equal(irfs['e_mu']['pi(1)'].shift(1).dropna(),
+                                  irfs['e_mu']['pi'].iloc[1:])
+
+        compiled_model = self.model.compile_model(k=1000,expectations=3)
+        p0 = self.model.p0()
+        irfs = compiled_model.impulse_response(p0, 10)
+
+        assert_array_almost_equal(irfs['e_mu']['pi(3)'].shift(3).dropna(),
+                                  irfs['e_mu']['pi'].iloc[3:])
+
+    def test_expectations_2(self):
+        compiled_model = self.pe_model.compile_model(k=1, expectations=1)
+        p0 = self.pe_model.p0()
+        irf = compiled_model.impulse_response(p0,10)['e_y']
+        cal = dict(zip(compiled_model.parameter_names, p0))
+        assert_array_almost_equal(cal['rho']*cal['kappa']*irf.y + cal['beta']*irf.vp,
+                                  irf['pi(1)'])
+
+        k = 4
+        compiled_model = self.pe_model.compile_model(k=k, expectations=1)
+        p0 = self.pe_model.p0()
+        irf = compiled_model.impulse_response(p0,10)['e_y']
+        cal = dict(zip(compiled_model.parameter_names, p0))
+        Ak = sum([(cal['beta']*cal['rho'])**ki for ki in range(k)])
+        assert_array_almost_equal(cal['kappa']*cal['rho']*Ak*irf.y + cal['beta']**k*irf.vp,
+                                  irf['pi(1)'])
 
     def test_irf_fhp(self):
         k, TT = 0, 10

@@ -136,7 +136,7 @@ contains
     call dgemm('N', 'N', self%nvar, self%nval, self%nvar, 1.0d0, alpha0_trend, self%nvar, betaV_trend, self%nvar, 0.0d0, B_trend, self%nvar)
 
     ! ! Main loop for k
-    do k = 1, 4
+    do k = 1, {k}
     !     ! Calculations for A_cycle_new
          temp1 = 0.0d0
          call dgemm('N', 'N', self%nvar, self%nvar, self%nvar, -1.0d0, alphaF_cycle, self%nvar, A_cycle, self%nvar, 1.0d0, temp1, self%nvar)
@@ -349,6 +349,7 @@ class LinearDSGEforFHPRepAgent(LinearDSGEModel):
         HH,
         k,
         t0=0,
+        expectations=0,
         shock_names=None,
         state_names=None,
         obs_names=None,
@@ -386,6 +387,7 @@ class LinearDSGEforFHPRepAgent(LinearDSGEModel):
         self.ZZ = ZZ
         self.HH = HH
 
+        self.expectations = expectations
         self.t0 = t0
 
         self.shock_names = shock_names
@@ -423,6 +425,18 @@ class LinearDSGEforFHPRepAgent(LinearDSGEModel):
        A_trend = np.linalg.inv(alpha0_trend) @ alpha1_trend
        B_trend = np.linalg.inv(alpha0_trend) @ betaV_trend
 
+       A_cycle_history = {}
+       B_cycle_history = {}
+       A_trend_history = {}
+       B_trend_history = {}
+
+       if self.expectations > 0:
+           A_cycle_history[0] = A_cycle.copy()
+           B_cycle_history[0] = B_cycle.copy()
+
+           A_trend_history[0] = A_trend.copy()
+           B_trend_history[0] = B_trend.copy()
+
        for k in range(1, self.k+1):
            A_cycle_new = np.linalg.inv(alphaC_cycle - alphaF_cycle @ A_cycle) @ alphaB_cycle
            B_cycle_new = np.linalg.inv(alphaC_cycle - alphaF_cycle @ A_cycle) @ (alphaF_cycle @ B_cycle @ P + betaS_cycle)
@@ -435,16 +449,26 @@ class LinearDSGEforFHPRepAgent(LinearDSGEModel):
 
            A_trend = A_trend_new
            B_trend = B_trend_new
-       self.A_cycle = A_cycle
-       self.B_cycle = B_cycle
-       self.A_trend = A_trend
-       self.B_trend = B_trend
+
+           if self.expectations > 0:
+               A_cycle_history[k] = A_cycle.copy()
+               B_cycle_history[k] = B_cycle.copy()
+
+               A_trend_history[k] = A_trend.copy()
+               B_trend_history[k] = B_trend.copy()
+
+           self.A_cycle = A_cycle
+           self.B_cycle = B_cycle
+           self.A_trend = A_trend
+           self.B_trend = B_trend
+
+
        nx = A_cycle.shape[0]
        zero = np.zeros((nx, nx))
        zeroV = np.zeros_like(B_trend)
        nx,ns = B_cycle.shape
        zeroS = np.zeros((nx, ns))
-
+       nv = B_trend.shape[1]
 
        TT = np.r_[
            np.c_[B_trend @ value_gamma @ value_Cx, A_cycle, A_trend, B_trend @ value_gammaC, B_cycle @ P + B_trend @ value_gamma @ value_Cs],
@@ -459,6 +483,63 @@ class LinearDSGEforFHPRepAgent(LinearDSGEModel):
                   zeroS,
                   zeroV.T @ zeroS,
                   R]
+
+       # compute expectations
+       # all of the A_matrices are already at k
+
+       C_cycle, D_cycle = A_cycle, B_cycle
+       C_trend, D_trend = A_trend, B_trend
+       nexptot = nx*3*self.expectations
+       TT_expectations = np.zeros((nexptot, TT.shape[0]))
+       RR_expectations = np.zeros((nexptot, ns))
+
+
+       value, shock = slice(3*nx,3*nx+nv), slice(3*nx+nv, TT.shape[0])
+
+       total, tilde, bar = slice(0,nx),  slice(nx,2*nx), slice(2*nx,3*nx)
+       itotal, itilde, ibar = slice(0,nx),  slice(nx,2*nx), slice(2*nx,3*nx)
+       start=0
+       for h in range(1, self.expectations+1):
+           if h <= self.k:
+               C_cycle = A_cycle_history[self.k - h] @ C_cycle
+               D_cycle = A_cycle_history[self.k - h] @ D_cycle + B_cycle_history[self.k-h] @ np.linalg.matrix_power(P, h)
+
+               C_trend = A_trend_history[self.k - h] @ C_trend
+               D_trend = A_trend_history[self.k - h] @ D_trend + B_trend_history[self.k-h]
+           else:
+               C_cycle = A_cycle_history[0] @ C_cycle
+               D_cycle = A_cycle_history[0] @ D_cycle + B_cycle_history[0] @ np.linalg.matrix_power(P, h)
+
+               C_trend = A_trend_history[0] @ C_trend
+               D_trend = A_trend_history[0] @ D_trend + B_trend_history[0]
+
+
+           TT_expectations[itilde, tilde] = C_cycle
+           TT_expectations[itilde, shock] = D_cycle @ P
+           RR_expectations[itilde, :] = D_cycle
+
+           TT_expectations[ibar, bar] = C_trend
+           TT_expectations[ibar, value] = D_trend @ value_gammaC
+           TT_expectations[ibar, total] = D_trend @ value_gamma @ value_Cx
+           TT_expectations[ibar, shock] = D_trend @ value_gamma @ value_Cs
+
+           TT_expectations[itotal, tilde] = C_cycle
+           TT_expectations[itotal, shock] = D_cycle @ P + D_trend @ value_gamma @ value_Cs
+           RR_expectations[itotal, :] = D_cycle
+
+           TT_expectations[itotal, bar] = C_trend
+           TT_expectations[itotal, value] = D_trend @ value_gammaC
+           TT_expectations[itotal, total] = D_trend @ value_gamma @ value_Cx
+
+
+           start += 3*nx
+           itotal, itilde, ibar = slice(start,start+nx),  slice(start+nx,start+2*nx), slice(start+2*nx,start+3*nx)
+
+
+       TT = np.r_[np.c_[TT, np.zeros((TT.shape[0], nexptot))],
+                  np.c_[TT_expectations, np.zeros((nexptot, nexptot))]]
+       RR = np.r_[RR,
+                  RR_expectations]
 
        CC = np.zeros((TT.shape[0]))
        QQ = self.QQ(p0)
@@ -490,6 +571,7 @@ class FHPRepAgent(dict):
         shocks = [Variable(v) for v in dec['shocks']]
         innovations = [Shock(v) for v in dec['innovations']]
         parameters = [Parameter(v) for v in dec['parameters']]
+        expectations = dec['expectations'] if 'expectations' in dec else 0
 
         if "para_func" in dec:
             other_para = [Parameter(v) for v in dec["para_func"]]
@@ -508,9 +590,9 @@ class FHPRepAgent(dict):
 
         context = {s.name: s
                    for s in (variables +
-                          values + value_updates +
-                          shocks + innovations +
-                          parameters + list(other_para.keys()))}
+                             values + value_updates +
+                             shocks + innovations +
+                             parameters + list(other_para.keys()))}
 
         if "observables" in dec:
             observables = [Variable(v)  for v in dec["observables"]]
@@ -563,6 +645,7 @@ class FHPRepAgent(dict):
                       'values': values,
                       'value_updates': value_updates,
                       'shocks': shocks,
+                      'expectations': expectations,
                       'innovations': innovations,
                       'parameters': parameters,
                       'other_para': other_para,
@@ -579,9 +662,10 @@ class FHPRepAgent(dict):
 
         return cls(**model_dict)
 
-    def compile_model(self, k=None):
+    def compile_model(self, k=None,expectations=None):
 
         k = self['k'] if k is None else k
+        expectations = self['expectations'] if expectations is None else expectations
 
         nv = len(self['variables'])
         ns = len(self['shocks'])
@@ -623,11 +707,11 @@ class FHPRepAgent(dict):
         self.R = lhs.inv() * sympy.Matrix(ns, ns, lambda i, j: -exo_equation[i].set_eq_zero.diff(self['innovations'][j]))
 
         system_matrices = [self.alpha0_cycle, self.alpha1_cycle, self.beta0_cycle,
-                                self.alphaC_cycle, self.alphaF_cycle, self.alphaB_cycle, self.betaS_cycle,
-                                self.alpha0_trend, self.alpha1_trend, self.betaV_trend,
-                                self.alphaC_trend, self.alphaF_trend, self.alphaB_trend,
-                                self.value_gammaC, self.value_gamma, self.value_Cx, self.value_Cs,
-                                self.P, self.R]
+                           self.alphaC_cycle, self.alphaF_cycle, self.alphaB_cycle, self.betaS_cycle,
+                           self.alpha0_trend, self.alpha1_trend, self.betaV_trend,
+                           self.alphaC_trend, self.alphaF_trend, self.alphaB_trend,
+                           self.value_gammaC, self.value_gamma, self.value_Cx, self.value_Cs,
+                           self.P, self.R]
 
 
         all_para = self['parameters'] + list(self['other_para'].keys())
@@ -682,10 +766,17 @@ class FHPRepAgent(dict):
         system_matrices.append(DD)
         DD = expand_intermediate_parameters(lambdify(all_para, DD))
 
+        expectations_variables = []
+        for j in range(1, expectations+1):
+            expectations_variables += ([Variable(str(v)+f'({j})') for v in self['variables']]
+                                       +[Variable(str(v)+f'_cycle({j})') for v in self['variables']]
+                                       +[Variable(str(v)+f'_trend({j})') for v in self['variables']])
+
+
         ZZ_variables = (self['variables']
                         + [Variable(str(v)+'_cycle') for v in self['variables']]
                         + [Variable(str(v)+'_trend') for v in self['variables']]
-                        + self['values'] + self['shocks'])
+                        + self['values'] + self['shocks'] + expectations_variables)
         ZZ = sympy.Matrix(nobs, len(ZZ_variables), lambda i, j: self['obs_equations'][self['observables'][i]].diff(ZZ_variables[j]))
         system_matrices.append(ZZ)
         ZZ = expand_intermediate_parameters(lambdify(all_para, ZZ))
@@ -706,10 +797,11 @@ class FHPRepAgent(dict):
         shock_names = [str(x) for x in self['innovations']]
         obs_names = [str(x) for x in self['observables']]
         state_names = ([str(x) for x in self['variables']]
-                     + [str(x)+'_cycle' for x in self['variables']]
+                       + [str(x)+'_cycle' for x in self['variables']]
                      + [str(x)+'_trend' for x in self['variables']]
                      + [str(x) for x in self['values']]
-                     + [str(x) for x in self['shocks']])
+                     + [str(x) for x in self['shocks']]
+                     + [str(x) for x in expectations_variables]  )
 
         parameter_names = [str(x) for x in self['parameters']]
 
@@ -717,7 +809,7 @@ class FHPRepAgent(dict):
                                           beta0_cycle, alphaC_cycle, alphaF_cycle, alphaB_cycle, betaS_cycle,
                                           alpha0_trend, alpha1_trend, betaV_trend, alphaC_trend, alphaF_trend,
                                           alphaB_trend, value_gammaC, value_gamma, value_Cx, value_Cs, P, R, QQ, DD, ZZ,
-                                          HH, k, t0=0,
+                                          HH, k, t0=0, expectations=expectations,
                                           shock_names=shock_names,
                                           state_names=state_names,
                                           obs_names=obs_names,

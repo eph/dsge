@@ -5,6 +5,7 @@ declarations:
   innovations: [e_re, e_mu, e_chi, e_g, e_mp]
   values: [vh, vf, vk]
   value_updates: [vhe, vfe, vke]
+  expectations: 0
   parameters: [sigma, sg, phi_k, delta,
                alpha, phi_pi, phi_y, kappa,
                r_A, rho_mu, gamma, rho_re, rho_chi, rho_g, rho_mp, y_Q, pi_A,

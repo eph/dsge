@@ -1,0 +1,42 @@
+declarations:
+  finite_horizon: true
+  variables: [pi]
+  shocks: [y]
+  innovations: [e_y]
+  values: [vp]
+  value_updates: [vpe]
+  expectations: 0
+  parameters: [beta, kappa, gamma_p, rho]
+  k: 1
+
+model:
+  cycle:
+    terminal:
+      - pi = kappa*y
+
+    plan:
+      - pi = beta*pi(+1) + kappa*y
+
+  shocks:
+      - y = rho*y(-1) + e_y
+  trend:
+    terminal:
+      - pi = kappa*y + beta*vp
+    plan:
+      - pi = beta*pi(+1) + kappa*y
+
+  value:
+    function:
+      - vp = (1-gamma_p)*vp(-1) + gamma_p*vpe(-1)
+
+    update:
+      - vpe = pi
+
+calibration:
+  parameters:
+    beta: 0.99
+    kappa: 0.05
+    gamma_p: 0.5
+    rho: 0.85
+  covariance:
+    e_y: 1
