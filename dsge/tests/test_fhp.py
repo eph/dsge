@@ -6,7 +6,7 @@ from numpy.testing import assert_equal, assert_array_almost_equal
 
 from unittest import TestCase
 
-from dsge.FHPRepAgent import FHPRepAgent
+from dsge import read_yaml
 
 import pkg_resources
 
@@ -70,10 +70,10 @@ class TestFHP(TestCase):
     def setUp(self):
 
         model_file = pkg_resources.resource_filename('dsge', 'examples/fhp/fhp.yaml')
-        self.model = FHPRepAgent.read(model_file)
+        self.model = read_yaml(model_file)
 
         pe_model_file = pkg_resources.resource_filename('dsge', 'examples/fhp/partial_equilibrium.yaml')
-        self.pe_model = FHPRepAgent.read(pe_model_file)
+        self.pe_model = read_yaml(pe_model_file)
 
     def test_load(self):
         pass

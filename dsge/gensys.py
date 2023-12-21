@@ -108,6 +108,8 @@ def gensys(G0, G1, PSI, PI, DIV=1 + 1e-8,
     G1 = np.real(Z.dot(G1).dot(Z.conjugate().T))
     impact = np.real(Z.dot(impact))
 
+
+
     if return_everything:
         GZ = -np.linalg.inv(BB22).dot(Qunstab).dot(PSI)
         GY = Z.dot(G0i[:, -nunstab:])
@@ -116,3 +118,4 @@ def gensys(G0, G1, PSI, PI, DIV=1 + 1e-8,
 
     else:
         return G1, impact, RC
+    # GZ is

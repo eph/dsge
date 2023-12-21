@@ -1,15 +1,110 @@
 #!/usr/bin/env python3
-import sympy as sp
-from typing import Dict, List, Any
-from .symbols import Equation
-import itertools
+import yaml, re, os, warnings
+from typing import List, Dict, Union
 
-import yaml
-import re
+from .DSGE import DSGE
+from .FHPRepAgent import FHPRepAgent
 
-def read_yaml(yaml_file, sub_list=[('^', '**'), (';','')]):
+warnings.formatwarning = lambda message, category, filename, lineno, line=None: f'{category.__name__}: {message}\n'
+
+class ValidationError(Exception):
+    """Custom exception for validation errors."""
+    pass
+
+def validate_data(data, validator):
+    if not validator.validate(data):
+        # Join the error messages into a single string
+        error_messages = '\n'.join([f'{field}: {error}' for field, error in validator.errors.items()])
+        raise ValidationError(f"Validation failed: \n{error_messages}")
+    
+
+def update_deprecated_keys(data):
+    # Define the keys you want to replace and their new preferred names
+    deprecated_keys = {
+        'para_func': 'auxiliary_parameters',
+        'parafunc': 'auxiliary_parameters',
+        'covariances': 'covariance'
+    }
+
+    # Recursively process the data to find and replace deprecated keys
+    def process_node(current_node):
+        if isinstance(current_node, dict):
+            for old_key, new_key in deprecated_keys.items():
+                if old_key in current_node:
+                    # Warn the user about the deprecated key
+                    warnings.warn(f"'{old_key}' is deprecated and has been replaced with '{new_key}'. Please update your YAML files.", DeprecationWarning)
+
+                    # Replace the old key with the new key
+                    current_node[new_key] = current_node.pop(old_key)
+
+            # Recursively process the next level of the dictionary
+            for key, value in current_node.items():
+                process_node(value)
+        elif isinstance(current_node, list):
+            # Recursively process each item in the list
+            for item in current_node:
+                process_node(item)
+
+    # Start processing from the root of the data
+    process_node(data)
+    return data
+
+
+def navigate_path(data, path):
+    """Navigate through a nested dictionary using a path."""
+    for key in path:
+        if isinstance(data, dict) and key in data:
+            data = data[key]
+        else:
+            return None  # Or raise an error if a key is missing
+    return data
+
+def include_constructor(loader, node):
+    # Get the path to the original YAML file
+    original_file = loader.name
+
+    # Extract the directory path
+    directory = os.path.dirname(original_file)
+
+    value = loader.construct_scalar(node)
+    parts = value.split('#')
+    file_name = parts[0]
+    fragment_path = parts[1:] if len(parts) > 1 else None
+
+    # Construct the full path to the included file
+    included_file_path = os.path.join(directory, file_name)
+
+    with open(included_file_path, 'r') as f:
+        data = yaml.safe_load(f)
+
+    # Navigate the fragment path if specified
+    if fragment_path:
+        return navigate_path(data, fragment_path)
+
+    return data
+
+yaml.SafeLoader.add_constructor('!include', include_constructor)
+
+from cerberus import Validator
+import importlib.resources as pkg_resources
+
+def load_schema(schema_name):
+    # Use the package name and the relative path to the schema file
+    resource_path = f'{schema_name}.yaml'
+
+    # Open the resource within the package context
+    with pkg_resources.open_text('dsge.schema', resource_path) as f:
+        schema = yaml.safe_load(f)
+    return schema
+
+# Example usage
+validators = {model: Validator(load_schema(model)) for model in ['fhp','lre']}
+validators['dsge'] = validators['lre']
+
+def read_yaml(yaml_file: str,
+               sub_list : List[tuple]=[('^', '**'), (';','')]):
     """
-    This function reads a
+    This function reads a yaml file and returns a dictionary.
     """
     with open(yaml_file) as f:
         txt = f.read()
@@ -19,86 +114,24 @@ def read_yaml(yaml_file, sub_list=[('^', '**'), (';','')]):
 
     txt = re.sub(r"@ ?\n", " ", txt)
 
-    return yaml.safe_load(txt)
+    yaml_dict = yaml.safe_load(txt)
 
+    yaml_dict = update_deprecated_keys(yaml_dict)
 
-def from_dict_to_mat(dictionary: Dict[str, str], element_array: List[str], context: Dict[str, Any]) -> sp.Matrix:
-    """
-    This function takes a dictionary, an array of elements, and a context.
-    It then transforms the dictionary into a SymPy matrix based on the element_array and evaluates
-    dictionary values using the context provided.
+    kind =  yaml_dict['declarations'].get('type','dsge')
+    
+    try:
+        validate_data(yaml_dict, validators[kind])
+    except ValidationError as e:
+        print(e)
 
-    Parameters
-    ----------
-    dictionary: Dict[str, str]
-        A dictionary where the keys are expected to be strings that represent either single shocks (e.g., 'var')
-        or pairs of shocks (e.g., 'var1,var2'), and the values are string expressions that can be evaluated
-        in the provided context.
-    element_array: List[str]
-        List of elements that correspond to the keys in the dictionary.
-    context: Dict[str, Any]
-        A dictionary that maps variable names to values.
-        This context will be used to evaluate the string expressions from the input dictionary.
+    if kind=='fhp':
+        return FHPRepAgent.read(yaml_dict)
+    elif kind=='si':
+        raise NotImplementedError('SI model not implemented yet')
+    elif kind=='dsge-sv':
+        raise NotImplementedError('DSGE-SV model not implemented yet')
+    else:
+        return DSGE.read(yaml_dict)
 
-    Returns
-    -------
-    sp.Matrix
-        A SymPy matrix that has been populated with the evaluated expressions from the dictionary.
-        The matrix uses element_array for positioning the evaluated values. Values with single shock
-        keys go in the diagonal, while pairs of shock keys go in the i, j and j, i positions respectively.
-
-    Raises
-    ------
-    ValueError
-        If a key in the dictionary has other than one or two variables (shocks).
-    """
-    ns = len(element_array)
-    matrix = sp.zeros(ns, ns)
-
-    type_of_array = type(element_array[0])
-    for key, value in dictionary.items():
-        shocks = key.split(',')
-
-        if len(shocks) == 1:
-            i = element_array.index(type_of_array(shocks[0].strip()))
-            matrix[i, i] = eval(str(value), context)
-        elif len(shocks) == 2:
-            i = element_array.index(type_of_array(shocks[0].strip()))
-            j = element_array.index(type_of_array(shocks[1].strip()))
-            matrix[i, j] = eval(str(value), context)
-        else:
-            raise ValueError('The key {} is not valid'.format(key))
-    return matrix
-
-def construct_equation_list(raw_equations, context):
-    equations = []
-    for eq in raw_equations:
-        if "=" in eq:
-            lhs, rhs = str.split(eq, "=")
-        else:
-            lhs, rhs = eq, "0"
-
-        try:
-            lhs = eval(lhs, context)
-            rhs = eval(rhs, context)
-        except TypeError as e:
-            print("While parsing %s, got this error: %s" % (eq, repr(e)))
-            return
-
-        equations.append(Equation(sp.sympify(lhs), sp.sympify(rhs)))
-    return equations
-
-def find_max_lead_lag(equations, shocks_or_variables):
-    it = itertools.chain.from_iterable
-
-    max_lead_exo = dict.fromkeys(shocks_or_variables)
-    max_lag_exo = dict.fromkeys(shocks_or_variables)
-
-    type_of_array = type(shocks_or_variables[0])
-    all_shocks = [list(eq.atoms(type_of_array)) for eq in equations]
-
-    for s in shocks_or_variables:
-        max_lead_exo[s] = max([i.date for i in it(all_shocks) if i.name == s.name])
-        max_lag_exo[s] = min([i.date for i in it(all_shocks) if i.name == s.name])
-
-    return max_lead_exo, max_lag_exo
+    

@@ -28,6 +28,7 @@ if __name__ == "__main__":
                  "examples/schorf_phillips_curve/*",
                  "examples/simple-model/*",
                  "examples/sw/*",
+                 'schema/*',
              ]
          },
         requires=["pandas", "scipy", "sympy", "pyyaml", "numba"],

@@ -1,0 +1,79 @@
+declarations:
+  type: dict
+  required: true
+  schema:
+    name:
+      type: string
+      required: true
+    type:
+      type: string
+      required: true
+      allowed: ['sticky-information']
+    index:
+      type: string
+    variables:
+      type: list
+      required: true
+      schema:
+        type: string
+    parameters:
+      type: list
+      required: true
+      schema:
+        type: string
+    shocks:
+      type: list
+      required: true
+      schema:
+        type: string
+    observables:
+      type: list
+      required: true
+      schema:
+        type: string
+    para_func:
+      type: list
+      schema:
+        type: string
+
+equations:
+  type: dict
+  required: true
+  schema:
+    model:
+      type: list
+      required: true
+      schema:
+        type: string
+    observables:
+      type: dict
+      required: true
+      valuesrules:
+        type: string
+
+calibration:
+  type: dict
+  required: true
+  schema:
+    parameters:
+      type: dict
+      required: true
+    para_func:
+      type: dict
+    covariances:
+      type: dict
+      required: true
+
+estimation:
+  type: dict
+  schema:
+    data:
+      type: dict
+      required: true
+      schema:
+        file: {type: string}
+        start: {type: string}
+    prior:
+      type: dict
+      required: true
+

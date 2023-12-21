@@ -5,7 +5,7 @@ from numpy.testing import assert_equal, assert_allclose
 
 from unittest import TestCase
 
-from dsge import DSGE
+from dsge import read_yaml
 
 import pkg_resources
 
@@ -25,7 +25,7 @@ class TestFilter(TestCase):
         relative_loc = 'examples/ar1/'
         model_file = pkg_resources.resource_filename('dsge', relative_loc+'ar1.yaml')
         data_file = pkg_resources.resource_filename('dsge', relative_loc+'arma23_sim200.txt')
-        ar1 = DSGE.read(model_file)
+        ar1 = read_yaml(model_file)
         ar1['__data__']['estimation']['data'] = data_file
 
         ar1 = ar1.compile_model()
@@ -53,7 +53,7 @@ class TestFilter(TestCase):
         relative_loc = 'examples/ar1/'
         model_file = pkg_resources.resource_filename('dsge', relative_loc+'ar1.yaml')
         data_file = pkg_resources.resource_filename('dsge', relative_loc+'arma23_sim200.txt')
-        ar1 = DSGE.read(model_file)
+        ar1 = read_yaml(model_file)
         ar1['__data__']['estimation']['data'] = data_file
 
         rho, sigma = ar1.p0()
@@ -100,7 +100,7 @@ class TestFilter(TestCase):
         relative_loc = 'examples/ar1/'
         model_file = pkg_resources.resource_filename('dsge', relative_loc+'ar1.yaml')
         data_file = pkg_resources.resource_filename('dsge', relative_loc+'arma23_sim200.txt')
-        ar1 = DSGE.read(model_file)
+        ar1 = read_yaml(model_file)
         ar1['__data__']['estimation']['data'] = data_file
 
         rho, sigma = ar1.p0()

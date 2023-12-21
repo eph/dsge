@@ -1,7 +1,6 @@
 import numpy as np
 import sympy
 
-
 from sympy.matrices import zeros
 from sympy import sympify
 from sympy.utilities.lambdify import lambdify
@@ -20,7 +19,10 @@ from .StateSpaceModel import LinearDSGEModel, LinearDSGEModelwithSV
 
 from typing import List, Dict, Union
 
-from .parse_yaml import from_dict_to_mat, construct_equation_list, find_max_lead_lag, read_yaml
+from .parsing_tools import (from_dict_to_mat,
+                            construct_equation_list,
+                            find_max_lead_lag)
+
 
 class EquationList(list):
     """A container for holding a set of equations.
@@ -121,7 +123,7 @@ class DSGE(dict):
         else:
             self["perturb_eq"] = self["equations"]
 
-        # context = [(s.name, s) for s in self['par_ordering']+self['var_ordering']+self['shk_ordering']+self['para_func']]
+        # context = [(s.name, s) for s in self['par_ordering']+self['var_ordering']+self['shk_ordering']+self['auxiliary_parameters']]
         # context = dict(context)
         # context['log'] = sympy.log
         # context['exp'] = sympy.exp
@@ -165,10 +167,6 @@ Equations:
     @property
     def shocks(self):
         return self["shk_ordering"]
-
-    @property
-    def name(self):
-        return self["name"]
 
     @property
     def neq(self):
@@ -302,7 +300,7 @@ Equations:
         ss = {}
 
         for p in self["other_para"]:
-            ss[str(p)] = eval(str(self["para_func"][p.name]), context)
+            ss[str(p)] = eval(str(self["auxiliary_parameters"][p.name]), context)
             context[str(p)] = ss[str(p)]
 
 
@@ -316,15 +314,15 @@ Equations:
             [self.parameters], [ss[str(px)] for px in self["other_para"]], modules=context_f)
        
         self.psi = psi
-        def add_para_func(f):
+        def add_auxiliary_parameters(f):
             def wrapped_f(px):
                 return f([*px, *psi(px)])
             return wrapped_f
 
-        self.GAM0 = add_para_func(GAM0)
-        self.GAM1 = add_para_func(GAM1)
-        self.PSI = add_para_func(PSI)
-        self.PPI = add_para_func(PPI)
+        self.GAM0 = add_auxiliary_parameters(GAM0)
+        self.GAM1 = add_auxiliary_parameters(GAM1)
+        self.PSI = add_auxiliary_parameters(PSI)
+        self.PPI = add_auxiliary_parameters(PPI)
 
         QQ = self["covariance"].subs(subs_dict)
         HH = self["measurement_errors"].subs(subs_dict)
@@ -337,10 +335,10 @@ Equations:
         DD = lambdify(all_para, DD)
         ZZ = lambdify(all_para, ZZ)
 
-        self.QQ = add_para_func(QQ)
-        self.DD = add_para_func(DD)
-        self.ZZ = add_para_func(ZZ)
-        self.HH = add_para_func(HH)
+        self.QQ = add_auxiliary_parameters(QQ)
+        self.DD = add_auxiliary_parameters(DD)
+        self.ZZ = add_auxiliary_parameters(ZZ)
+        self.HH = add_auxiliary_parameters(HH)
 
         # if self['__data__']['declarations']['type'] == 'sv':
         #     sv = self['__data__']['equations']['sv']
@@ -353,9 +351,9 @@ Equations:
         #     Omega = from_dict_to_mat(sv['covariance'], self['shk_ordering'], context)
         #     Omega0 = from_dict_to_mat(sv['initial_covariance'], self['shk_ordering'], context)
         #
-        #     self.Lambda = add_para_func(lambdify(all_para, Lambda))
-        #     self.Omega = add_para_func(lambdify(all_para, Omega))
-        #     self.Omega0 = add_para_func(lambdify(all_para, Omega0))
+        #     self.Lambda = add_auxiliary_parameters(lambdify(all_para, Lambda))
+        #     self.Omega = add_auxiliary_parameters(lambdify(all_para, Omega))
+        #     self.Omega0 = add_auxiliary_parameters(lambdify(all_para, Omega0))
 
         return GAM0, GAM1, PSI, PPI
 
@@ -462,55 +460,8 @@ Equations:
 
         return TT, RR, RC
 
-    def create_fortran_model(self, model_dir='__fortress_tmp', **kwargs):
-        from fortress import make_smc
-        from .translate import smc, write_prior_file
-
-        smc_file = smc(self)
-        model_linear = self.compile_model()
-
-        other_files = {'data.txt': model_linear.yy,          
-                       'prior.txt': 'prior.txt'}
-        make_smc(smc_file, model_dir, other_files=other_files, **kwargs)                      
-        write_prior_file(model_linear.prior, model_dir)           
-
-
-    def fix_parameters(self, **kwargs):
-        """Takes an estimated parameter from a DSGESelf
-        and converts it to a calibrated one."""
-        for para, value in kwargs.items():
-            para = Parameter(para)
-            self['par_ordering'].remove(para)
-            self['other_para'].append(para)
-            self['para_func'][str(para)] = value
-
-            context_tuple = ([(p, Parameter(p)) for p in self.parameters]
-                 + [(p.name, p) for p in self['other_para']])
-
-        context = dict(context_tuple)
-        context['exp'] = sympy.exp
-        context['log'] = sympy.log
-        context['betacdf'] = sympy.Function('betacdf')
-
-        to_replace = [(p, eval(str(self["para_func"][p.name]), context))
-            for p in self['other_para']]
-
-        from itertools import permutations
-
-        edges = [(i,j) for i,j in permutations(to_replace,2) 
-                 if type(i[1]) not in [float,int] and i[1].has(j[0])]
-
-        from sympy import default_sort_key, topological_sort
-        edges = [(v[0],dep) for v in to_replace for dep in sympy.sympify(v[1]).atoms(Parameter) if dep in self['other_para']]
-
-        para_func = topological_sort([self['other_para'], edges], default_sort_key)[::-1]
-        self['other_para'] = para_func
-        return self
-
     @classmethod
-    def read(cls, model_file):
-
-        model_yaml = read_yaml(model_file)
+    def read(cls, model_yaml):
 
         dec, cal = model_yaml["declarations"], model_yaml["calibration"]
         name = dec["name"]
@@ -519,8 +470,8 @@ Equations:
         par_ordering = [Parameter(v) for v in dec["parameters"]]
         shk_ordering = [Shock(v) for v in dec["shocks"]]
 
-        if "para_func" in dec:
-            other_para = [Parameter(v) for v in dec["para_func"]]
+        if "auxiliary_parameters" in dec:
+            other_para = [Parameter(v) for v in dec["auxiliary_parameters"]]
         else:
             other_para = []
 
@@ -602,7 +553,7 @@ Equations:
 
         equations = [eq.subs(subs_dict) for eq in equations]
 
-        cov = cal["covariances"]
+        cov = cal["covariance"]
 
         nshock = len(shk_ordering)
         npara = len(par_ordering)
@@ -631,8 +582,8 @@ Equations:
 
         calibration = model_yaml["calibration"]["parameters"]
 
-        if "parafunc" not in cal:
-            cal["parafunc"] = {}
+        if "auxiliary_parameters" not in cal:
+            cal["auxiliary_parameters"] = {}
 
         model_dict = {
             "var_ordering": var_ordering,
@@ -640,7 +591,7 @@ Equations:
             "shk_ordering": shk_ordering,
             "other_parameters": other_para,
             "other_para": other_para,
-            "para_func": cal["parafunc"],
+            "auxiliary_parameters": cal["auxiliary_parameters"],
             "calibration": calibration,
             "steady_state": steady_state,
             "init_values": init_values,

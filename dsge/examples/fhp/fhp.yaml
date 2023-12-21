@@ -1,5 +1,5 @@
 declarations:
-  finite_horizon: true
+  type: fhp
   variables: [kp, c, pi, q, i, y, mc, r, y_lag]
   shocks: [re, mu, chi, g, mp]
   innovations: [e_re, e_mu, e_chi, e_g, e_mp]
@@ -10,7 +10,7 @@ declarations:
                alpha, phi_pi, phi_y, kappa,
                r_A, rho_mu, gamma, rho_re, rho_chi, rho_g, rho_mp, y_Q, pi_A,
                sigma_mu, sigma_chi, sigma_g, sigma_mp, sigma_re]
-  para_func: [beta, sc, r_k]
+  auxiliary_parameters: [beta, sc, r_k]
   k: 1
   observables: [ygr, pinf, nomr]
 model:
@@ -67,7 +67,7 @@ model:
 
 calibration:
 
-  para_func:
+  auxiliary_parameters:
     beta: 1/(1+r_A/400)
     sc : 1 - alpha*1/(1+r_A/400)*delta/(1-1/(1+r_A/400)*(1-delta)) - sg
     r_k: 1/(1/(1+r_A/400))- (1 - delta)

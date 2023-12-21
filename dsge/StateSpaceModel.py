@@ -455,6 +455,21 @@ class StateSpaceModel(object):
 
         return irfs
 
+    def anticipated_impulse_response(self, para, h=20, *args, **kwargs):
+        """
+        Computes anticipated impulse response functions of model.
+
+        Parameters
+        ----------
+        para : array-like
+            An npara length vector of parameter values that defines the system matrices.
+
+        h : int, optional
+           The maximum horizon length for the impulse responses.
+        """
+
+
+
     def simulate(self, para, nsim=200, *args, **kwargs):
         """
         Simulates the observables of the model.

@@ -1,0 +1,51 @@
+declarations:
+  type: dict
+  required: true
+  schema:
+    name:
+      type: string
+      required: true
+    variables:
+      type: list
+      required: true
+      schema:
+        type: string
+    parameters:
+      type: list
+      required: true
+      schema:
+        type: string
+    shocks:
+      type: list
+      required: true
+      schema:
+        type: string
+    observables:
+      type: list
+      required: true
+      schema:
+        type: string
+    auxiliary_parameters:
+      type: list
+      schema:
+        type: string
+
+equations:
+  oneof:
+  - type: dict
+    schema:
+      model:
+        type: list
+        required: true
+        schema:
+          type: string
+      observables:
+        type: dict
+        required: true
+        valuesrules:
+          type: string
+  - type: list
+    
+calibration: !include common.yaml#calibration
+
+estimation: !include common.yaml#estimation

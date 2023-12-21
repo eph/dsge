@@ -13,7 +13,8 @@ import pandas as pd
 from dsge.tests import sa
 import sys
 import importlib
-from dsge.DSGE import DSGE
+
+from dsge import read_yaml
 
 ########################################################################################################################
 
@@ -22,7 +23,7 @@ from dsge.DSGE import DSGE
 ########################################################################################################################
 
 mod_file = 'dsge/examples/fhp/re_cap.yaml'
-mod = DSGE.read(mod_file)
+mod = read_yaml(mod_file)
 p0re = mod.p0()
 re = mod.compile_model()
 [AAre,BBre,unique] = re.solve_LRE(p0re)

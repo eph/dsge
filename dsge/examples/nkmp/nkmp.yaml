@@ -11,7 +11,7 @@ declarations:
   parameters: [tau, kap, psi1, psi2, rhor, rhogg, rhozz, rhogz, rhozg, rA, piA, gamQ, sigr, sigg, sigz, corrgz]
   shocks: [epsg, epsz, epsr]
   observables: [ygr, infl, int]
-  para_func: [nu, bet, gam, piss, phi, gss]
+  auxiliary_parameters: [nu, bet, gam, piss, phi, gss]
 
 equations:
   model:
@@ -65,7 +65,7 @@ calibration:
     sigz: 0.1
     sigg: 0.1
 
-  parafunc:
+  auxiliary_parameters:
     nu: 2                       # This isn't used in the linear version
     phi: 1                      # This isn't used in the linear version
     gss: 0.2                    # This isn't used in the linear version
@@ -73,7 +73,7 @@ calibration:
     bet: 1/(1 + rA/400)
     piss: 1 + piA/400
 
-  covariances:
+  covariance:
     epsg: sigg^2
     epsr: sigr^2
     epsz: sigz^2

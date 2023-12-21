@@ -3,7 +3,7 @@ from numpy.testing import assert_equal, assert_array_almost_equal
 
 from unittest import TestCase
 
-from dsge.DSGE import DSGE
+from dsge import read_yaml
 
 import pkg_resources
 
@@ -17,7 +17,7 @@ class TestGensys(TestCase):
         model_file = pkg_resources.resource_filename('dsge', relative_loc)
 
 
-        pc = DSGE.read(model_file)
+        pc = read_yaml(model_file)
         p0 = pc.p0()
         model = pc.compile_model()
 
@@ -38,7 +38,7 @@ class TestGensys(TestCase):
 
         relative_loc = 'examples/nkmp/dsge1.yaml'
         model_file = pkg_resources.resource_filename('dsge', relative_loc)
-        dsge1 = DSGE.read(model_file)
+        dsge1 = read_yaml(model_file)
         nkmp = dsge1.compile_model()
 
         p0 = np.array([ 1.62398783,  0.47671893,  1.51729311,  0.4416236 ,  0.43724069,

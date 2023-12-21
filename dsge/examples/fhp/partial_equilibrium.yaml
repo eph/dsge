@@ -1,5 +1,5 @@
 declarations:
-  finite_horizon: true
+  type: fhp
   variables: [pi]
   shocks: [y]
   innovations: [e_y]

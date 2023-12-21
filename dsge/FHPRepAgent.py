@@ -2,8 +2,6 @@
 import numpy as np
 import sympy
 
-
-
 from sympy import sympify
 from sympy.utilities.lambdify import lambdify
 
@@ -15,7 +13,7 @@ from .symbols import (Variable,
 from .Prior import construct_prior
 from .data import read_data_file
 from .StateSpaceModel import LinearDSGEModel
-from .parse_yaml import from_dict_to_mat, construct_equation_list, read_yaml
+from .parsing_tools import from_dict_to_mat, construct_equation_list
 
 from sympy.printing import fcode
 from sympy.printing.fortran import FCodePrinter
@@ -305,7 +303,7 @@ def smc(model, k=None, t0=0):
 
     from sympy import default_sort_key, topological_sort
 
-    para_func = topological_sort([to_replace, edges], default_sort_key)
+    auxiliary_parameters = topological_sort([to_replace, edges], default_sort_key)
 
     system_matrices = model.system_matrices
     to_write = ['alpha0_cycle', 'alpha1_cycle', 'beta0_cycle',
@@ -317,7 +315,7 @@ def smc(model, k=None, t0=0):
     print(len(system_matrices), len(to_write))
     fmats = [
         fcode(
-            (mat.subs(para_func)).subs(fortran_subs),
+            (mat.subs(auxiliary_parameters)).subs(fortran_subs),
             assign_to=n,
             source_format="free",
             standard=95,
@@ -561,9 +559,7 @@ class FHPRepAgent(dict):
 
 
     @classmethod
-    def read(cls, model_file, k=None):
-        model_yaml = read_yaml(model_file)
-
+    def read(cls, model_yaml, k=None):
         dec = model_yaml['declarations']
         variables = [Variable(v) for v in dec['variables']]
         values = [Variable(v) for v in dec['values']]
@@ -573,10 +569,10 @@ class FHPRepAgent(dict):
         parameters = [Parameter(v) for v in dec['parameters']]
         expectations = dec['expectations'] if 'expectations' in dec else 0
 
-        if "para_func" in dec:
-            other_para = [Parameter(v) for v in dec["para_func"]]
+        if "auxiliary_parameters" in dec:
+            other_para = [Parameter(v) for v in dec["auxiliary_parameters"]]
 
-            other_para = {op: sympify(model_yaml['calibration']["para_func"][op.name],
+            other_para = {op: sympify(model_yaml['calibration']["auxiliary_parameters"][op.name],
                                       {str(x): x for x in parameters+other_para})
                           for op in other_para}
 

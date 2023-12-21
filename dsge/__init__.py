@@ -1,3 +1,4 @@
 from .DSGE import DSGE
+from .FHPRepAgent import FHPRepAgent
+from .parse_yaml import read_yaml 
 
-read_yaml = DSGE.read

@@ -4,7 +4,7 @@ declarations:
   shocks: [e]
   parameters: [rho, sigma]
   observables: [y]
-  para_func: [d]
+  auxiliary_parameters: [d]
 equations:
   model:
     - x = rho*x(-1) + e
@@ -16,10 +16,10 @@ calibration:
     rho: 0.85
     sigma: 1.0
 
-  covariances:
+  covariance:
     e : sigma^2
 
-  parafunc:
+  auxiliary_parameters:
     d: rho^2
 estimation:
   data: dsge/examples/ar1/arma23_sim200.txt

@@ -1,0 +1,103 @@
+declarations:
+  type: dict
+  schema:
+    type:
+      type: string
+      allowed: ['fhp']
+      required: true
+    variables:
+      type: list
+      schema:
+        type: string
+      required: true
+    shocks:
+      type: list
+      schema:
+        type: string
+      required: true
+    innovations:
+      type: list
+      schema:
+        type: string
+      required: true
+    values:
+      type: list
+      schema:
+        type: string
+      required: true
+    value_updates:
+      type: list
+      schema:
+        type: string
+      required: true
+    expectations:
+      type: integer
+    parameters:
+      type: list
+      schema:
+        type: string
+      required: true
+    auxiliary_parameters:
+      type: list
+      schema:
+        type: string
+    k:
+      type: integer
+      required: true
+    observables:
+      type: list
+      schema:
+        type: string
+
+model:
+  type: dict
+  schema:
+    static:
+      type: list
+      schema:
+        type: string
+    cycle:
+      type: dict
+      schema:
+        terminal:
+          type: list
+          schema:
+            type: string
+        plan:
+          type: list
+          schema:
+            type: string
+    shocks:
+      type: list
+      schema:
+        type: string
+    trend:
+      type: dict
+      schema:
+        terminal:
+          type: list
+          schema:
+            type: string
+        plan:
+          type: list
+          schema:
+            type: string
+    value:
+      type: dict
+      schema:
+        function:
+          type: list
+          schema:
+            type: string
+        update:
+          type: list
+          schema:
+            type: string
+    observables:
+      type: dict
+      valuesrules:
+        type: string
+
+calibration: !include common.yaml#calibration
+
+estimation: !include common.yaml#estimation

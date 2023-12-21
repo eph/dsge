@@ -5,14 +5,14 @@ from numpy.testing import assert_equal
 
 from unittest import TestCase
 
-from dsge import DSGE
+from dsge import read_yaml
 
 import pkg_resources
 
 class TestABCD(TestCase):
 
     def test_abcd(self):
-        model = DSGE.read('/home/eherbst/Dropbox/code/dsge/dsge/examples/pi/pi.yaml')
+        model = read_yaml('/home/eherbst/Dropbox/code/dsge/dsge/examples/pi/pi.yaml')
 
         m = model.compile_model()
 

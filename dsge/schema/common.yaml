@@ -1,0 +1,23 @@
+calibration:
+  type: dict
+  schema:
+    auxiliary_parameters:
+      type: dict
+    parameters:
+      type: dict
+    covariance:
+      type: dict
+
+estimation:
+  type: dict
+  schema:
+    data:
+      oneof:
+        - type: dict
+          schema:
+            file: {type: string, required: true}
+            start: {type: string, required: true}
+        - type: string
+    prior:
+      type: dict
+
