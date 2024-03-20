@@ -1,0 +1,37 @@
+declarations:
+  name: 'ar1_sv'
+  variables: [x]
+  shocks: [e]
+  parameters: [rho, sigma, rho_sv, sigma_sv]
+  sv: [e]
+  observables: [y]
+  para_func: [d]
+equations:
+  model:
+    - x = rho*x(-1) + e
+  observables:
+    y: x
+  sv:
+    transition: [[rho_sv]]
+    covariance: [[sigma_sv**2]]
+    initial_condition:
+      mean: [0]
+      covariance: [[3*sigma_sv**2]]
+calibration:
+  parameters:
+    rho: 0.85
+    sigma: 1.0
+    rho_sv: 0.9
+    sigma_sv: 0.5
+
+  covariances:
+    e : sigma^2*exp(2*sv_e)
+
+  parafunc:
+    d: rho^2
+estimation:
+  data: dsge/examples/ar1/arma23_sim200.txt
+
+  prior:
+    rho: [uniform, 0, 1]
+    sigma: [gamma, 1, 1]

@@ -1,0 +1,20 @@
+declarations:
+  name: 'mr'
+  type: 'sticky-information'
+  index: j
+  variables : [pp, y, ygr, delm]
+  shocks : [e]
+  parameters : [alp, lam, sigm, rho]
+  
+equations:
+  - ygr + pp = -sigm*delm
+  - alp*lam/(1-lam)*y + lam * SUM((1-lam)^j * EXP(-j-1) (pp + alp*ygr), (j, 0, inf)) = pp
+  - ygr = y - y(-1)
+  - delm = rho*delm(-1) + e
+
+calibration:
+  parameters:
+    alp : 0.1
+    lam : 0.25
+    rho : 0.5
+    sigm : 0.007

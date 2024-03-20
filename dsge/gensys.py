@@ -32,13 +32,13 @@ def gensys(G0, G1, PSI, PI, DIV=1 + 1e-8,
         zxz = ((np.abs(beta) < REALSMALL) * (np.abs(alpha) < REALSMALL)).any()
 
         x = alpha / beta
-        nunstab = (x * x.conjugate() < 1.0).sum()
+        nunstab = (x * x.conjugate() < (1.0-REALSMALL)).sum()
 
     if zxz:
         RC = [-2, -2]
         print("Coincident zeros")
         return
-
+        
     nstab = n - nunstab
 
     Q = Q.T.conjugate()
@@ -53,6 +53,7 @@ def gensys(G0, G1, PSI, PI, DIV=1 + 1e-8,
     veta = veta[bigev, :].conjugate().T
 
     RC = np.array([0, 0])
+
     RC[0] = len(bigev) >= nunstab
 
     if RC[0] == 0:
@@ -85,8 +86,7 @@ def gensys(G0, G1, PSI, PI, DIV=1 + 1e-8,
     if unique:
         RC[1] = 1
     else:
-        pass
-        # print("Indeterminancy")
+        print("Indeterminancy")
 
     deta = np.diag(1.0 / deta)
     deta1 = np.diag(deta1)

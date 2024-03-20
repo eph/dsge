@@ -3,36 +3,34 @@ declarations:
   variables: [qq,kp,cc,yy,inv,dp,mc,nr,re,mu,chi,gg,emon]
   shocks: [epr,epmu,epchi,epg,epm]
   parameters: [ra,dpstar,yg,kk,sigma,alpha,delta,shareg,kappa,phik,phidp,phiy,phidpbar,phiybar,gammah,gammadp,gammak,rhor,rhomu,rhochi,rhog,rhom,stdre,stdmu,stdchi,stdg,stdm]
+  auxiliary_parameters: [beta,rkss,sharei,sharec]
 
-  para_func: [beta,rkss,sharei,sharec]
 equations:
-  model:
+  - qq = (1/sigma)*(cc - cc(+1)) + beta*qq(+1) + beta*rkss*(mc(+1)+yy(+1)-kp) + beta*delta*mu(+1)
 
-    - qq = (1/sigma)*(cc - cc(+1)) + beta*qq(+1) + beta*rkss*(mc(+1)+yy(+1)-kp) + beta*delta*mu(+1)
+  - kp = kp(-1) + (delta/phik)*qq + (delta*(1+phik)/phik)*mu
 
-    - kp = kp(-1) + (delta/phik)*qq + (delta*(1+phik)/phik)*mu
+  - cc = cc(+1) - sigma*(nr - dp(+1) - re)
 
-    - cc = cc(+1) - sigma*(nr - dp(+1) - re)
+  - yy = sharec*cc + (1-sharec-shareg)*inv + shareg*gg
 
-    - yy = sharec*cc + (1-sharec-shareg)*inv + shareg*gg
+  - inv = -mu + (1/delta)*(kp - (1-delta)*kp(-1))
 
-    - inv = -mu + (1/delta)*(kp - (1-delta)*kp(-1))
+  - dp = beta*dp(+1) + kappa*mc
 
-    - dp = beta*dp(+1) + kappa*mc
+  - mc = (1/sigma)*cc + chi + (alpha/(1-alpha))*(yy-kp(-1))
 
-    - mc = (1/sigma)*cc + chi + (alpha/(1-alpha))*(yy-kp(-1))
+  - nr = phidp*dp + phiy*yy + emon
 
-    - nr = phidp*dp + phiy*yy + emon
+  - re = rhor*re(-1) + epr
 
-    - re = rhor*re(-1) + epr
+  - mu = rhomu*mu(-1) + epmu
 
-    - mu = rhomu*mu(-1) + epmu
+  - chi = rhochi*chi(-1) + epchi
 
-    - chi = rhochi*chi(-1) + epchi
+  - gg = rhog*gg(-1) + epg
 
-    - gg = rhog*gg(-1) + epg
-
-    - emon = rhom*emon(-1) + epm
+  - emon = rhom*emon(-1) + epm
 
 calibration:
 
@@ -65,7 +63,7 @@ calibration:
     stdg: 0.01
     stdm: 0.01
 
-  parafunc:
+  auxiliary_parameters:
     beta: 1/(1+ra/400)
     rkss: (1/beta)-(1-delta)
     sharei: delta*alpha*beta/(1-beta*(1-delta))
@@ -77,6 +75,3 @@ calibration:
     epchi: stdchi**2
     epg: stdg**2
     epm: stdm**2
-
-estimation:
-  nothing:

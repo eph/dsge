@@ -4,6 +4,7 @@ from typing import List, Dict, Union
 
 from .DSGE import DSGE
 from .FHPRepAgent import FHPRepAgent
+from .SIDSGE import SIDSGE, read_si
 
 warnings.formatwarning = lambda message, category, filename, lineno, line=None: f'{category.__name__}: {message}\n'
 
@@ -98,8 +99,9 @@ def load_schema(schema_name):
     return schema
 
 # Example usage
-validators = {model: Validator(load_schema(model)) for model in ['fhp','lre']}
+validators = {model: Validator(load_schema(model)) for model in ['fhp','lre','si']}
 validators['dsge'] = validators['lre']
+validators['sticky-information'] = validators['si']
 
 def read_yaml(yaml_file: str,
                sub_list : List[tuple]=[('^', '**'), (';','')]):
@@ -115,7 +117,6 @@ def read_yaml(yaml_file: str,
     txt = re.sub(r"@ ?\n", " ", txt)
 
     yaml_dict = yaml.safe_load(txt)
-
     yaml_dict = update_deprecated_keys(yaml_dict)
 
     kind =  yaml_dict['declarations'].get('type','dsge')
@@ -127,8 +128,8 @@ def read_yaml(yaml_file: str,
 
     if kind=='fhp':
         return FHPRepAgent.read(yaml_dict)
-    elif kind=='si':
-        raise NotImplementedError('SI model not implemented yet')
+    elif kind=='si' or kind=='sticky-information':
+        return read_si(yaml_dict)
     elif kind=='dsge-sv':
         raise NotImplementedError('DSGE-SV model not implemented yet')
     else:

@@ -1,7 +1,5 @@
 import unittest
 from sympy import symbols, Function
-import dsge
-
 from dsge.Base import Base, Parameter
 
 
@@ -23,7 +21,15 @@ class TestBase(unittest.TestCase):
         self.assertEqual(len(self.base_obj['auxiliary_parameters']), 3)
         self.assertEqual(self.base_obj['auxiliary_parameters'][Parameter('beta')], 0.99*Parameter('gamma'))
         self.assertEqual(self.base_obj['auxiliary_parameters'][Parameter('gamma')], 0.5)
-
+        print(self.base_obj['parameters'])
+        print(self.base_obj.parameters)
+   # def test_fix_parameters_dsge(self):
+   #     from dsge.examples import sw
+   #     #sw = sw.compile_model()
+   #     npara = len(sw.parameters)
+   #     nauxpara = len(sw['auxiliary_parameters'])
+   #     print(sw['parameters'])
+   #     sw.fix_parameters(constebeta=0.1657)
 
 if __name__ == "__main__":
     unittest.main()

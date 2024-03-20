@@ -3,7 +3,7 @@ import numpy as np
 from scipy.stats import beta, norm, uniform, gamma
 from .OtherPriors import InvGamma
 
-
+pdict = {"gamma": 1, "beta": 2, "norm": 3, "inv_gamma": 4, "uniform": 5}
 def construct_prior(prior_list, parameters):
 
     prior = []
@@ -69,3 +69,20 @@ class Prior(object):
             return np.array([x.rvs() for x in self.priors])
         else:
             return np.array([[x.rvs() for x in self.priors] for _ in range(size)])
+
+    def fortran_prior(self):
+        def return_stats(dist):
+            if dist.name == "uniform":
+                return (
+                    pdict[dist.name],
+                    dist.kwds["loc"],
+                    dist.kwds["loc"] + dist.kwds["scale"],
+                    0,
+                    0,
+                 )
+            elif dist.name == "inv_gamma":
+                return pdict[dist.name], dist.a, dist.b, 0, 0
+            else:
+                return pdict[dist.name], dist.stats()[0], np.sqrt(dist.stats()[1]), 0, 0
+
+        return np.array([return_stats(x) for x in self.priors])

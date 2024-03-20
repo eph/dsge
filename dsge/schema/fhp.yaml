@@ -1,6 +1,9 @@
 declarations:
   type: dict
   schema:
+    name:
+      type: string
+      required: true
     type:
       type: string
       allowed: ['fhp']

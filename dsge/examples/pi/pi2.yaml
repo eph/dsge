@@ -1,0 +1,25 @@
+declarations:
+  name: pi
+  variables : [c, y_c]
+  shocks: [w]
+  parameters: [sigw,R]
+  observables: [y_c]
+
+equations:
+  model:
+    - c = c(-1) +  sigw *(1/R-1) * w
+    - y_c = -c(-1) + sigw* w
+  observables:
+    y_c : y_c
+    
+
+calibration:
+  parameters:
+    sigw : 1
+    R : 1.2
+
+  covariances:
+    w : 1
+
+estimation:
+  blah:

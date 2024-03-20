@@ -1,9 +1,9 @@
 import sympy as sp
 from typing import Dict, List, Any
-from .symbols import Equation
+from .symbols import Equation, Parameter, Shock
 import itertools
 
-def from_dict_to_mat(dictionary: Dict[str, str], element_array: List[str], context: Dict[str, Any]) -> sp.Matrix:
+def from_dict_to_mat(dictionary: Dict[str, str], element_array: List[str], context: Dict[str, Any], is_symmetric: bool =True) -> sp.Matrix:
     """
     This function takes a dictionary, an array of elements, and a context.
     It then transforms the dictionary into a SymPy matrix based on the element_array and evaluates
@@ -47,12 +47,16 @@ def from_dict_to_mat(dictionary: Dict[str, str], element_array: List[str], conte
             i = element_array.index(type_of_array(shocks[0].strip()))
             j = element_array.index(type_of_array(shocks[1].strip()))
             matrix[i, j] = eval(str(value), context)
+
+            if is_symmetric:
+                matrix[j, i] = matrix[i, j]
         else:
             raise ValueError('The key {} is not valid'.format(key))
     return matrix
 
 def construct_equation_list(raw_equations, context):
     equations = []
+
     for eq in raw_equations:
         if "=" in eq:
             lhs, rhs = str.split(eq, "=")
@@ -60,26 +64,42 @@ def construct_equation_list(raw_equations, context):
             lhs, rhs = eq, "0"
 
         try:
-            lhs = eval(lhs, context)
-            rhs = eval(rhs, context)
+            lhs = sp.sympify(lhs, locals=context)
+            rhs = sp.sympify(rhs, locals=context)
         except TypeError as e:
             print("While parsing %s, got this error: %s" % (eq, repr(e)))
-            return
 
-        equations.append(Equation(sp.sympify(lhs), sp.sympify(rhs)))
+        equations.append(Equation(lhs,rhs))
+
     return equations
 
 def find_max_lead_lag(equations, shocks_or_variables):
     it = itertools.chain.from_iterable
 
-    max_lead_exo = dict.fromkeys(shocks_or_variables)
-    max_lag_exo = dict.fromkeys(shocks_or_variables)
+    max_lead = dict.fromkeys(shocks_or_variables)
+    max_lag = dict.fromkeys(shocks_or_variables)
 
     type_of_array = type(shocks_or_variables[0])
     all_shocks = [list(eq.atoms(type_of_array)) for eq in equations]
 
     for s in shocks_or_variables:
-        max_lead_exo[s] = max([i.date for i in it(all_shocks) if i.name == s.name])
-        max_lag_exo[s] = min([i.date for i in it(all_shocks) if i.name == s.name])
+        max_lead[s] = max([i.date for i in it(all_shocks) if i.name == s.name])
+        max_lag[s] = min([i.date for i in it(all_shocks) if i.name == s.name])
 
-    return max_lead_exo, max_lag_exo
+    return max_lead, max_lag
+
+def parse_calibration(calibration: Dict,
+                      parameters: List[Parameter],
+                      auxiliary_parameters: List[Parameter],
+                      shocks: List[sp.Symbol]) -> Dict[str, Dict[str, float]]:
+
+    calibration_dict = dict()
+
+    # starting values
+    calibration_dict['parameters'] = dict()
+    for p in parameters:
+        calibration_dict['parameters'][p] = float(calibration['parameters'][str(p)])
+
+    # auxiliary parameters
+    #calibration_dict['auxiliary_parameters'] = {p
+    

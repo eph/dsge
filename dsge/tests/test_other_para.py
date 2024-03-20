@@ -18,6 +18,6 @@ class TestOtherPara(TestCase):
         from dsge.examples import sw
         from dsge.translate import smc
 
-        print(smc(sw))
+        # print(smc(sw))
 
         #self.assertAlmostEqual(1,0)

@@ -2,7 +2,7 @@ import sympy
 from sympy.printing.str import StrPrinter
 
 from sympy.core.cache import clear_cache
-
+from sympy import Function
 reserved_names = {'log': sympy.log,
                   'exp': sympy.exp}
                   
@@ -44,6 +44,7 @@ class Parameter(sympy.Symbol):
 class TSymbol(sympy.Symbol):
 
     def __new__(cls, name, **args):
+        clear_cache()
         obj = sympy.Symbol.__new__(cls, name)
         obj.date = args.get("date", 0)
         obj.exp_date = args.get("exp_date", 0)
@@ -57,14 +58,6 @@ class TSymbol(sympy.Symbol):
         # print 'creating', newname, newdate
         clear_cache()
         return self.__class__(newname, date=newdate)
-
-    # @property
-    # def date(self):
-    #     return self.assumptions0["date"]
-
-    # @property
-    # def exp_date(self):
-    #     return self.assumptions0["exp_date"]
 
     def _hashable_content(self):
         return (self.name, str(self.date), str(self.exp_date))
@@ -92,29 +85,9 @@ class TSymbol(sympy.Symbol):
             result = self.name + r"(" + str(self.lag) + r")"
         return result
 
-    # def __repr__(self):
-    #     return self.__str__()
-
-    # def _repr_(self):
-    #     return self.__str__()
-
-    # def repr(self):
-    #     return self.__str__()
-
-    # def _print_TSymbol(self):
-    #     return self.__str__()
-
-    # def _print(self):
-    #     return self.__str__()
 
 
 class Variable(TSymbol):
-    @property
-    def fortind(self):
-        if self.date <= 0:
-            return "v_" + self.name
-        else:
-            return "v_E" + self.name
 
     def __str__(self):
         if self.exp_date == 0:
@@ -181,3 +154,21 @@ class Equation(sympy.Equality):
     def variables(self) -> List[Variable]:
         """Returns a list of unique variables within the equation."""
         return [v for v in self.atoms() if isinstance(v, Variable)]
+
+class EXP(Function):
+
+    @classmethod
+    def eval(cls, j, x):
+        if len(x.atoms()) > 1:                                          
+            x = x.subs({xa:EXP(j)(xa) for xa in x.atoms() if isinstance(xa, Variable)})
+            return x   
+        elif isinstance(x, Variable):
+            return Variable(x.name, date=x.date, exp_date=j)
+        elif isinstance(x, Parameter):
+            return x
+        else:
+            return None
+
+    def __new__(cls, j):
+        return lambda x: EXP.eval(j, x)
+

@@ -16,10 +16,7 @@ calibration:
     tau: 1
     kap: 0.2
 
-  covariances:
+  covariance:
     ephi : 1.0
     er : 1.0
     exi : 1.0
-
-estimation:
-  blah:

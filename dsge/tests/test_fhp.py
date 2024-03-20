@@ -198,8 +198,16 @@ class TestFHP(TestCase):
         print(compiled_model.log_lik(p0))
 
     def test_compile(self):
-        from dsge.FHPRepAgent import make_fortran_model
-        make_fortran_model(self.model)
+        from dsge.codegen import create_fortran_smc
+
+        template_file = self.model.smc()
+        cmodel = self.model.compile_model()
+        # cmodel.prior.fortran_prior() is empty
+        prior = np.zeros((27, 5), dtype=int)
+        create_fortran_smc(template_file,
+                           other_files={'data.txt': cmodel.yy,
+                                        'prior.txt': prior})
+        #make_fortran_model(template_file)
     def test_fortran(self):
 
         p0 = self.model.p0()

@@ -10,6 +10,7 @@ calibration:
 
 estimation:
   type: dict
+  required: False
   schema:
     data:
       oneof:

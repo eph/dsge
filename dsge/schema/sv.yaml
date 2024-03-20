@@ -2,6 +2,10 @@ declarations:
   type: dict
   required: true
   schema:
+    type:
+      type: string
+      allowed: ['sv']
+      required: true
     name:
       type: string
       required: true
@@ -29,22 +33,3 @@ declarations:
       schema:
         type: string
 
-equations:
-  oneof:
-  - type: dict
-    schema:
-      model:
-        type: list
-        required: true
-        schema:
-          type: string
-      observables:
-        type: dict
-        required: true
-        valuesrules:
-          type: string
-  - type: list
-    
-calibration: !include common.yaml#calibration
-
-estimation: !include common.yaml#estimation

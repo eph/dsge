@@ -20,9 +20,10 @@ from .StateSpaceModel import LinearDSGEModel, LinearDSGEModelwithSV
 from typing import List, Dict, Union
 
 from .parsing_tools import (from_dict_to_mat,
+                            parse_calibration,
                             construct_equation_list,
                             find_max_lead_lag)
-
+from .Base import Base
 
 class EquationList(list):
     """A container for holding a set of equations.
@@ -53,7 +54,7 @@ class EquationList(list):
         return super(EquationList, self).__setitem__(key, value)
 
 
-class DSGE(dict):
+class DSGE(Base):
 
     max_lead = 1
     max_lag = 1
@@ -135,7 +136,7 @@ class DSGE(dict):
     def __repr__(self):
         indent = "\n    "
         repr = f"""
-Model name: {self.name}
+Model name: {self['name']}
 
 Parameters: {self.parameters}
 
@@ -159,10 +160,6 @@ Equations:
     @property
     def variables(self):
         return self["var_ordering"]
-
-    @property
-    def parameters(self):
-        return [str(x) for x in self["par_ordering"]]
 
     @property
     def shocks(self):
@@ -200,8 +197,6 @@ Equations:
         return list(map(lambda x: self["calibration"][str(x)], self.parameters))
 
     def python_sims_matrices(self, matrix_format="numeric"):
-
-
 
         vlist = self["var_ordering"] + self["fvars"]
         llist = [var(-1) for var in self["var_ordering"]] + self["fvars_lagged"]
@@ -296,49 +291,18 @@ Equations:
                 context[n] = sympy.Function(n)  # getattr(module, n)
                 context_f[n] = getattr(module, n)
 
+        self.GAM0 = self.lambdify(GAM0)
+        self.GAM1 = self.lambdify(GAM1)
+        self.PSI = self.lambdify(PSI)
+        self.PPI = self.lambdify(PPI)
 
-        ss = {}
+        self.QQ = self.lambdify(self["covariance"])
+        self.HH = self.lambdify(self["measurement_errors"])
 
-        for p in self["other_para"]:
-            ss[str(p)] = eval(str(self["auxiliary_parameters"][p.name]), context)
-            context[str(p)] = ss[str(p)]
+        self.DD = self.lambdify(DD)
+        self.ZZ = self.lambdify(ZZ)
 
-
-        all_para =[self.parameters + self["other_para"]]
-        GAM0 = lambdify(all_para,GAM0)
-        GAM1 = lambdify(all_para,GAM1)
-        PSI = lambdify(all_para,PSI)
-        PPI = lambdify(all_para,PPI)
-        context_f['ImmutableDenseMatrix'] =  np.array
-        psi = lambdify(
-            [self.parameters], [ss[str(px)] for px in self["other_para"]], modules=context_f)
-       
-        self.psi = psi
-        def add_auxiliary_parameters(f):
-            def wrapped_f(px):
-                return f([*px, *psi(px)])
-            return wrapped_f
-
-        self.GAM0 = add_auxiliary_parameters(GAM0)
-        self.GAM1 = add_auxiliary_parameters(GAM1)
-        self.PSI = add_auxiliary_parameters(PSI)
-        self.PPI = add_auxiliary_parameters(PPI)
-
-        QQ = self["covariance"].subs(subs_dict)
-        HH = self["measurement_errors"].subs(subs_dict)
-
-        DD = DD.subs(subs_dict)
-        ZZ = ZZ.subs(subs_dict)
-
-        QQ = lambdify(all_para, self["covariance"])
-        HH = lambdify(all_para, self["measurement_errors"])
-        DD = lambdify(all_para, DD)
-        ZZ = lambdify(all_para, ZZ)
-
-        self.QQ = add_auxiliary_parameters(QQ)
-        self.DD = add_auxiliary_parameters(DD)
-        self.ZZ = add_auxiliary_parameters(ZZ)
-        self.HH = add_auxiliary_parameters(HH)
+        self.psi = None
 
         # if self['__data__']['declarations']['type'] == 'sv':
         #     sv = self['__data__']['equations']['sv']
@@ -499,13 +463,13 @@ Equations:
                    for s in var_ordering + par_ordering + shk_ordering + other_para}
         context.update(symbolic_context)
 
-        equations = []
-
         if "model" in model_yaml["equations"]:
             raw_equations = model_yaml["equations"]["model"]
         else:
             raw_equations = model_yaml["equations"]
+
         equations = construct_equation_list(raw_equations, context)
+
 
         # ------------------------------------------------------------
         # Figure out max leads and lags
@@ -552,15 +516,11 @@ Equations:
             # still need to do leads
 
         equations = [eq.subs(subs_dict) for eq in equations]
-
-        cov = cal["covariance"]
-
-        nshock = len(shk_ordering)
-        npara = len(par_ordering)
-
-        info = {"nshock": nshock, "npara": npara}
-        QQ = from_dict_to_mat(cov, shk_ordering, context)
-
+        if 'covariance' in cal:
+            QQ = from_dict_to_mat(cal['covariance'], shk_ordering, context)
+        else:
+            print('No covariance matrix provided. Assuming identity matrix.')
+            QQ = sympy.eye(len(shk_ordering))
 
         #------------------------------------------------------------------
         # observation equation
@@ -580,14 +540,29 @@ Equations:
             HH = from_dict_to_mat(me_dict, observables, context)
 
 
+        #calibration = parse_calibration(model_yaml['calibration'],
+        #                                parameters,
+        #                                auxiliary_parameters,
+        #                                shocks)
+        
         calibration = model_yaml["calibration"]["parameters"]
 
         if "auxiliary_parameters" not in cal:
             cal["auxiliary_parameters"] = {}
+        else:
+            cal['auxiliary_parameters'] = {op:
+                                    sympy.sympify(cal["auxiliary_parameters"][str(op)],
+                                                  {str(p): p for p in
+                                                   par_ordering+other_para})
+                                    for op in other_para}
 
+
+        if 'estimation' not in model_yaml:
+            model_yaml['estimation'] = {}
+            
         model_dict = {
             "var_ordering": var_ordering,
-            "par_ordering": par_ordering,
+            "parameters": par_ordering,
             "shk_ordering": shk_ordering,
             "other_parameters": other_para,
             "other_para": other_para,
