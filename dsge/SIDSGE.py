@@ -69,7 +69,7 @@ class LinLagExModel(StateSpaceModel):
 
         F = np.array(self.F(p0), dtype=float)
 
-        if solve=='fortran':
+        if solver=='fortran':
             find_max_it = meyer_gohde_interface.mg.find_max_it
             j = find_max_it(Aj, Bj, Cj, Fj, Gj, F.shape[0], F.shape[1])
             return j
@@ -244,11 +244,11 @@ class LinLagExModel(StateSpaceModel):
         LHS = sparse.coo_matrix((LHS_data, (LHS_rows, LHS_cols)), shape=((max_it+1) * neq, (max_it+1) * neq)).tocsr()
 
         # Solve the linear system
-        MA_VECTOR = spsolve(LHS, RHS.T.flatten())
+        MA_VECTOR = spsolve(LHS, RHS)
 
         return MA_VECTOR, ALPHA, BETA, RC
 
-    def system_matrices(self, p0):
+    def system_matrices(self, p0, solver='python'):
         A = np.array(self.A(p0), dtype=float)
         B = np.array(self.B(p0), dtype=float)
         C = np.array(self.C(p0), dtype=float)
@@ -270,9 +270,11 @@ class LinLagExModel(StateSpaceModel):
         Finf = np.array(self.Finf(p0),dtype=float)
          
         h = self.find_max_it(p0)
-        h = 200
-        import meyer_gohde_interface
-        ma_solve = meyer_gohde_interface.mg.solve_ma_alt
+        if solver=='fortran':
+            import meyer_gohde_interface
+            ma_solve = meyer_gohde_interface.mg.solve_ma_alt
+        else:
+            ma_solve = self.solve_ma_alt
         MA_VECTOR, ALPHA, BETA, RC = ma_solve(A, B, C, F, G, N,
                                               Aj, Bj, Cj, Fj, Gj,
                                               Ainf, Binf, Cinf, Finf, Ginf, h-1)
@@ -389,6 +391,24 @@ class SIDSGE(Base):
         subs_dict.update( {v:0 for v in self.variables})
         subs_dict.update( {v(-1):0 for v in self.variables})
         subs_dict.update( {v(1):0 for v in self.variables})
+
+        def d_rulej(i, j, order, varsel='var_ordering'):
+            e = self['sequations'][i]
+            v = self[varsel][j]
+            ee = e.lhs - e.rhs
+            j = self.index
+     
+            get_order = re.search('E\[([a-zA-Z0-9 -]+)\]', ee.__str__())
+
+            if get_order is not None:
+                e_order = eval(get_order.groups(0)[0], {j.name:j})
+                gap = e_order + j
+                d = ee.diff(EXP(e_order)(v(order))).subs({j:j+gap})
+                # if d is not sympy.S.Zero:
+                #     print e_order, gap, d, v(order)
+            else:
+                d = 0
+            return d
 
 
         #--------------------------------------------------------------------------
@@ -653,7 +673,7 @@ class SIDSGE(Base):
         with open(fortran_template_file) as f:
             template = f.read()
 
-        npara = len(self['par_ordering'])
+        npara = len(self['parameters'])
 
         para = sympy.IndexedBase("para", shape=(npara + 1,))
 
@@ -673,7 +693,7 @@ class SIDSGE(Base):
         fortran_subs[4] = 4.0
 
         context_tuple = [(str(p), p) for p in self['parameters']] + [
-            (p.name, p) for p in self["auxiliary_parameters"]
+            (p.name, p) for p in self["auxiliary_parameters"].keys()
         ]
 
         context = dict(context_tuple)
@@ -681,8 +701,8 @@ class SIDSGE(Base):
         context["log"] = sympy.log
 
         to_replace = {}
-        for p in self["auxiliary_parameters"]:
-            to_replace[p] = eval(str(self["para_func"][p.name]), context)
+        for p in self['auxiliary_parameters'].keys():
+            to_replace[p] = eval(str(self["auxiliary_parameters"][p]), context)
 
         to_replace = list(to_replace.items())
         from itertools import combinations, permutations
@@ -776,7 +796,7 @@ class SIDSGE(Base):
 
         from fortress import make_smc
 
-        paths = {'f90':'/cmc/home/m1eph00/miniconda2/envs/proxy-svar/bin/mpif90',
+        paths = {'f90':'mpif90',
                  'lib_path':'/cmc/home/m1eph00/miniconda2/envs/proxy-svar/lib/',
                  'inc_path':'/cmc/home/m1eph00/miniconda2/envs/proxy-svar/include/'}
 
@@ -784,15 +804,15 @@ class SIDSGE(Base):
 LIB={lib_path}
 INC={inc_path}
 FPP=fypp
-FRUIT=-I$(INC)/fruit -L$(LIB) -lfruit -Wl,-rpath=$(LIB)
-FLAP=-I$(INC)/flap -L$(LIB) -lflap
-FORTRESS=-I$(INC)/fortress -L$(LIB)/fortress -lfortress
-JSON=-I$(INC)/json-fortran -L$(LIB)/json-fortran -ljsonfortran
-MKLROOT=/opt/intel/2019.1/mkl
-MKL=-I$(MKLROOT)/include/ -L$(MKLROOT)/lib/intel64 -Wl,--no-as-needed -lmkl_scalapack_lp64 -lmkl_gf_lp64 -lmkl_sequential -lmkl_core -lmkl_blacs_intelmpi_lp64 -lpthread -lm -ldl
+FRUIT?=-I$(INC)/fruit -L$(LIB) -lfruit -Wl,-rpath=$(LIB)
+FLAP?=-I$(INC)/flap -L$(LIB) -lflap
+FORTRESS?=-I$(INC)/fortress -L$(LIB)/fortress -lfortress
+JSON?=-I$(INC)/json-fortran -L$(LIB)/json-fortran -ljsonfortran
+MKLROOT?=/opt/intel/2019.1/mkl
+MKL?=-I$(MKLROOT)/include/ -L$(MKLROOT)/lib/intel64 -Wl,--no-as-needed  -lmkl_gf_lp64 -lmkl_sequential -lmkl_core -lpthread -lm -ldl
 FC={f90} -O3 -ffree-line-length-1000 #-Wall -fcheck=all -g -fbacktrace
 smc_driver : {model_file} smc_driver.f90 mg.f90
-\t$(FC) $^  -I. -Wl,--start-group $(FORTRESS) $(JSON) $(FLAP) $(FRUIT) -l{lapack} -Wl,--end-group $(MKL) -o smc 
+\t$(FC) $^  -I. -Wl,--start-group $(FORTRESS) $(JSON) $(FLAP) $(FRUIT) $(OPENBLAS) -Wl,--end-group $(MKL) -o smc 
 check_likelihood : {model_file} check_likelihood.f90 mg.f90
 \t$(FC) $^  -I. -Wl,--start-group $(FORTRESS) $(JSON) $(FLAP) $(FRUIT) -l{lapack} -Wl,--end-group $(MKL) -o check_likelihood 
 """.format(model_file='model_t.f90', lapack='openblas', **paths)
@@ -929,7 +949,7 @@ def read_si(model_yaml):
         cal['auxiliary_parameters'] = {op:
                                        sympy.sympify(cal["auxiliary_parameters"][str(op)],
                                                   {str(p): p for p in
-                                                   parameters+other_para})
+                                                   par_ordering+other_para})
                                        for op in other_para}
 
 

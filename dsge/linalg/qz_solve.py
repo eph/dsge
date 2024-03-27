@@ -16,13 +16,12 @@ def qz_solve(Ai, Bi, Ci, Fi, Gi, N, neq, neps):
         AA[neq + i, i] = 1.0
         BB[neq + i, neq + i] = 1.0
  
-    print(f'BB = {BB}',f'AA = {AA}')
-    print(f'Ai = {Ai}',f'Bi = {Bi}',f'Ci = {Ci}',f'Fi = {Fi}',f'Gi = {Gi}',f'N = {N}')
+    #print(f'BB = {BB}',f'AA = {AA}')
+    #print(f'Ai = {Ai}',f'Bi = {Bi}',f'Ci = {Ci}',f'Fi = {Fi}',f'Gi = {Gi}',f'N = {N}')
     # QZ decomposition
-    TTS, SSS, alpha, beta, QS, ZS = ordqz(BB, AA, output='complex', sort='iuc')
- 
-    # Additional computations based on Fortran code
-    nunstab = np.sum(np.abs(beta/alpha) > 1)
+    with np.errstate(invalid='ignore', divide='ignore'):
+        TTS, SSS, alpha, beta, QS, ZS = ordqz(BB, AA, output='complex', sort='iuc')
+        nunstab = np.sum(np.abs(beta/alpha) > 1)
  
     RC = 0
     if nunstab > neq:
@@ -53,8 +52,12 @@ def qz_solve(Ai, Bi, Ci, Fi, Gi, N, neq, neps):
             r_tran += TTS[2 * neq - j - 1, i + neq-1] * Gamma[i, :]
             r_tran -= np.dot(SSS[2 * neq + 1 - j, i + neq].conj(), N) @ Gamma[i, :]
  
-        Ni = SSS[2 * neq - j-1, 2 * neq - j-1] * N - TTS[2 * neq - j-1, 2 * neq  - j-1]
+        #Ni = SSS[2 * neq - j-1, 2 * neq - j-1] * N - TTS[2 * neq - j-1, 2 * neq  - j-1]
+        Ni = SSS[2 * neq - j-1, 2 * neq - j-1] * N 
+        for i in range(neps):
+            Ni[i,i] -= TTS[2 * neq - j-1, 2 * neq  - j-1]
         lu, piv = lu_factor(Ni)
+
         Gamma[neq - j - 1, :] = lu_solve((lu, piv), r_tran)
  
     izs = np.linalg.inv(ZS[:neq, :neq])
