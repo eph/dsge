@@ -554,9 +554,9 @@ class FHPRepAgent(Base):
 
         expectations_variables = []
         for j in range(1, expectations+1):
-            expectations_variables += ([Variable(str(v)+f'({j})') for v in self['variables']]
-                                       +[Variable(str(v)+f'_cycle({j})') for v in self['variables']]
-                                       +[Variable(str(v)+f'_trend({j})') for v in self['variables']])
+            expectations_variables += ([Variable(str(v))(j) for v in self['variables']]
+                                       +[Variable(str(v)+'_cycle')(j) for v in self['variables']]
+                                       +[Variable(str(v)+'_trend')(j) for v in self['variables']])
 
 
         ZZ_variables = (self['variables']
