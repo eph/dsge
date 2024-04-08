@@ -574,7 +574,7 @@ Equations:
             "covariance": QQ,
             "measurement_errors": HH,
             "meas_ordering": measurement_errors,
-            "info": info,
+            "info": dict(),
             "make_log": make_log,
             "__data__": model_yaml,
             "name": dec["name"],
