@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import yaml, re, os, warnings
-from typing import List, Dict, Union
+from typing import List, Dict, Union, IO
 
 from .DSGE import DSGE
 from .FHPRepAgent import FHPRepAgent
@@ -12,12 +12,21 @@ class ValidationError(Exception):
     """Custom exception for validation errors."""
     pass
 
-def validate_data(data, validator):
+def validate_data(data: Union[Dict, List], validator) -> None:
+    """
+    Validates the given data against a schema defined in the validator.
+
+    Args:
+        data (Union[Dict, List]): The data to be validated.
+        validator: The validator object with a validate method and errors attribute.
+
+    Raises:
+        ValidationError: If the data fails to validate against the schema.
+    """
     if not validator.validate(data):
         # Join the error messages into a single string
         error_messages = '\n'.join([f'{field}: {error}' for field, error in validator.errors.items()])
         raise ValidationError(f"Validation failed: \n{error_messages}")
-    
 
 def update_deprecated_keys(data):
     # Define the keys you want to replace and their new preferred names
@@ -103,13 +112,16 @@ validators = {model: Validator(load_schema(model)) for model in ['fhp','lre','si
 validators['dsge'] = validators['lre']
 validators['sticky-information'] = validators['si']
 
-def read_yaml(yaml_file: str,
+def read_yaml(yaml_file: Union[str,IO[str]],
                sub_list : List[tuple]=[('^', '**'), (';','')]):
     """
     This function reads a yaml file and returns a dictionary.
     """
-    with open(yaml_file) as f:
-        txt = f.read()
+    if isinstance(yaml_file, str):
+        with open(yaml_file) as f:
+            txt = f.read()
+    else:
+        txt = yaml_file.read()
 
     for old, new in sub_list:
         txt = txt.replace(old, new)

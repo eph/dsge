@@ -37,8 +37,7 @@ def parse_loss(loss_string: str,
     
     W = Matrix(n_endog, n_endog, lambda i, j: loss.diff(endogenous_variables[i]).diff(endogenous_variables[j]))
     Q = Matrix(n_policy, n_policy, lambda i, j: loss.diff(policy_instruments[j]).diff(policy_instruments[j]))
-    print('W = ', W)
-    print('Q = ', Q)
+
     return W, Q
 
 
@@ -388,7 +387,7 @@ def compile_discretion(model, loss_string, policy_instruments, policy_shocks=Non
         Wnp = W(p0)
         Qnp = Q(p0)
         try:
-            H1, H2, F1, F2 = solve_fixed_point(A0np, A1np, A2np, A3np, A4np, A5np, Wnp, Qnp, betanp, alpha=0.5)
+            H1, H2, F1, F2 = solve_fixed_point(A0np, A1np, A2np, A3np, A4np, A5np, Wnp, Qnp, betanp, alpha=alpha)
             ny,nx = A3np.shape
             nnu = A5np.shape[1]
             TT = np.zeros((ny+nx, ny+nx))
@@ -397,6 +396,7 @@ def compile_discretion(model, loss_string, policy_instruments, policy_shocks=Non
             RR = np.r_[H2, F2]
             return TT, RR, 1
         except ValueError:
+            print('Discretion failed to solve!')
             return None, None, None
     linmod.solve_LRE = solve
     return linmod
