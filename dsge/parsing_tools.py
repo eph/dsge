@@ -1,7 +1,17 @@
 import sympy as sp
-from typing import Dict, List, Any
-from .symbols import Equation, Parameter, Shock
+from typing import List, Dict, Tuple, Union, Callable, Optional, Any
+from .symbols import Equation, Parameter, Shock, Variable
 import itertools
+
+def parse_expression(expr: str, context: Dict[str, Union[Parameter, Variable, Shock]]) -> sp.Expr:
+
+    expr = sp.sympify(expr, locals=context)
+
+    symbols_in_expr = expr.atoms(Parameter) | expr.atoms(Variable) | expr.atoms(Shock)
+    for symbol in symbols_in_expr:
+        if symbol.name not in context:
+            raise ValueError(f"In expression {expr}, symbol {symbol} is not in the context {context}")
+    return expr
 
 def from_dict_to_mat(dictionary: Dict[str, str], element_array: List[str], context: Dict[str, Any], is_symmetric: bool =True) -> sp.Matrix:
     """
@@ -42,11 +52,11 @@ def from_dict_to_mat(dictionary: Dict[str, str], element_array: List[str], conte
 
         if len(shocks) == 1:
             i = element_array.index(type_of_array(shocks[0].strip()))
-            matrix[i, i] = eval(str(value), context)
+            matrix[i, i] = parse_expression(str(value), context)
         elif len(shocks) == 2:
             i = element_array.index(type_of_array(shocks[0].strip()))
             j = element_array.index(type_of_array(shocks[1].strip()))
-            matrix[i, j] = eval(str(value), context)
+            matrix[i, j] = parse_expression(str(value), context)
 
             if is_symmetric:
                 matrix[j, i] = matrix[i, j]
@@ -64,8 +74,8 @@ def construct_equation_list(raw_equations, context):
             lhs, rhs = eq, "0"
 
         try:
-            lhs = sp.sympify(lhs, locals=context)
-            rhs = sp.sympify(rhs, locals=context)
+            lhs = parse_expression(lhs, context)
+            rhs = parse_expression(rhs, context)
         except TypeError as e:
             print("While parsing %s, got this error: %s" % (eq, repr(e)))
 

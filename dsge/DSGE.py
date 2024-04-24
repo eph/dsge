@@ -19,7 +19,8 @@ from .StateSpaceModel import LinearDSGEModel, LinearDSGEModelwithSV
 
 from typing import List, Dict, Union
 
-from .parsing_tools import (from_dict_to_mat,
+from .parsing_tools import (parse_expression,
+                            from_dict_to_mat,
                             parse_calibration,
                             construct_equation_list,
                             find_max_lead_lag)
@@ -282,25 +283,31 @@ Equations:
         context_f = {}
         context_f["exp"] = np.exp
 
-        if "helper_func" in self["__data__"]["declarations"]:
-            from imp import load_source
-
-            f = self["__data__"]["declarations"]["helper_func"]["file"]
-            module = load_source("helper_func", f)
-            for n in self["__data__"]["declarations"]["helper_func"]["names"]:
-                context[n] = sympy.Function(n)  # getattr(module, n)
+        if "external" in self["__data__"]["declarations"]:
+            from importlib.machinery import SourceFileLoader
+            import importlib.util
+         
+            f = self["__data__"]["declarations"]["external"]["file"]
+            
+            # Load module from source file
+            spec = importlib.util.spec_from_loader("external", SourceFileLoader("external", f))
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            
+            for n in self["__data__"]["declarations"]["external"]["names"]:
+                context[n] = sympy.Function(n)  # or getattr(module, n) for other uses, if necessary
                 context_f[n] = getattr(module, n)
 
-        self.GAM0 = self.lambdify(GAM0)
-        self.GAM1 = self.lambdify(GAM1)
-        self.PSI = self.lambdify(PSI)
-        self.PPI = self.lambdify(PPI)
+        self.GAM0 = self.lambdify(GAM0, context=context_f) 
+        self.GAM1 = self.lambdify(GAM1, context=context_f) 
+        self.PSI = self.lambdify(PSI, context=context_f)
+        self.PPI = self.lambdify(PPI, context=context_f)
 
-        self.QQ = self.lambdify(self["covariance"])
-        self.HH = self.lambdify(self["measurement_errors"])
+        self.QQ = self.lambdify(self["covariance"], context=context_f)
+        self.HH = self.lambdify(self["measurement_errors"], context=context_f)
 
-        self.DD = self.lambdify(DD)
-        self.ZZ = self.lambdify(ZZ)
+        self.DD = self.lambdify(DD, context=context_f)
+        self.ZZ = self.lambdify(ZZ, context=context_f)
 
         self.psi = None
 
@@ -538,12 +545,6 @@ Equations:
             HH = from_dict_to_mat(me_dict, measurement_errors, context)
         else:
             HH = from_dict_to_mat(me_dict, observables, context)
-
-
-        #calibration = parse_calibration(model_yaml['calibration'],
-        #                                parameters,
-        #                                auxiliary_parameters,
-        #                                shocks)
         
         calibration = model_yaml["calibration"]["parameters"]
 
@@ -551,10 +552,11 @@ Equations:
             cal["auxiliary_parameters"] = {}
         else:
             cal['auxiliary_parameters'] = {op:
-                                    sympy.sympify(cal["auxiliary_parameters"][str(op)],
-                                                  {str(p): p for p in
-                                                   par_ordering+other_para})
-                                    for op in other_para}
+                                           parse_expression(cal["auxiliary_parameters"][str(op)],
+                                                         {str(p): p for p in
+                                                          par_ordering+other_para})
+
+                                           for op in other_para}
 
 
         if 'estimation' not in model_yaml:

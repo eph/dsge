@@ -1,0 +1,437 @@
+declarations:
+  name: 'DGS'
+  variables: [r, labobs, robs, pinfobs, dy, dc, dinve, dw, zcapf, rkf, kf, pkf, cf, invef, yf, labf, w, wf, rrf, mc, zcap, rk, k, pk, c, inve, y, lab, pinf, kpf, kp, a, b, g,  spinf, sw, ms, qs, vew, vepinf, z, zhat, n, inv_rk, spread, omega, pitarg, piexp]
+
+  shocks: [ea,  eb,  eg, epinf, ew, em, eqs, ez, eomega, epitarg]
+
+  parameters : [constebeta, constepinf, constelab, calfa, csigma,     #
+  cfc, csadjcost, chabb, cprobw, csigl, cprobp, cindw, cindp, ctrend, #
+  czcap, crpi, crr, cry, crdy, crhoa, crhob, crhog, crhoqs, crhoms,   #
+  crhopinf, crhow, cgy, cmap, cmaw, siga, sigb, sigg, sigqs, sigm,    #
+  sigpinf, sigw, crhoz, sigz, zeta_b, sigomega, crhomega, sp, sigpitarg]
+
+  auxiliary_parameters: [sprd, ctou, clandaw, cg, curvp, curvw, cgamma, clandap, cbeta, cpie, #
+  cbetabar, cr, crk, cw, cikbar, cik, clk, cky, ciy, ccy, crkky, cwhlc, cwly, #
+  conster, thet_pi, Fom, gammstar,rstar, kstar, pistar, zstar, crhopitarg,    #
+  zwstar, sigwstar, omegabarstar, Gstar, Gammastar, dGdomegastar,             #
+  d2Gdomega2star, dGammadomegastar, d2Gammadomega2star, dGdsigmastar,             #
+  d2Gdomegadsigmastar, dGammadsigmastar, d2Gammadomegadsigmastar, muestar,        #
+  nkstar, Rhostar, wekstar, vkstar, nstar, vstar, GammamuG, GammamuGprime,        #
+  zeta_bw, zeta_zw, zeta_bw_zw, zeta_bsigw, zeta_zsigw, zeta_spsigw, zeta_bmue,   #
+  zeta_zmue, zeta_spmue, Rkstar, zeta_Gw, zeta_Gsigw, zeta_nRk, zeta_nR,          #
+  zeta_nqk, zeta_nn, zeta_nmue, zeta_nsigw, zeta_nrk, zeta_nr, zeta_nqk, zeta_omega]
+
+  observables: [ygr, cgr, igr, wgr, lnh, pinfobs, robs, spreadobs, piexpobs]
+
+
+  external:
+    file: '/home/eherbst/Dropbox/code/dsge/dsge/examples/DGS/helper_func.py'
+    names: [normcdf, normpdf, get_sigwstar,  zetaspbfcn,  zetabomegafcn,  zetazomegafcn,  nkfcn,  mufcn,  omegafcn,  Gfcn,  Gammafcn,  dGdomegafcn,  d2domega2fcn,  dGammadomegafcn,  d2Gammmadomegafcn,  d2Gammadomega2fcn,  dGdsigmafcn,  d2Gdomegadsigmafcn,  dGammadsigmafcn,  d2Gammadomegadsigmafcn, norminv, d2Gdomega2fcn]
+
+equations:
+  model:
+    - a=ea;
+
+    #------------------------------------------------------------
+    # DGS Equation 3 (Euler Equation)
+    #------------------------------------------------------------
+    - c = -(1-chabb/cgamma)/(csigma*(1+chabb/cgamma))*(r - pinf(1)) + b @
+    + (1/(1+chabb/cgamma))*(c(+1) + z(+1))                              @
+    + ((csigma-1)*cwhlc/(csigma*(1+chabb/cgamma)))*(lab-lab(1))         @
+    + (chabb/cgamma)/(1+chabb/cgamma)*(c(-1)-z)
+
+    # flex price version
+    - cf = - (1-chabb/cgamma)/(csigma*(1+chabb/cgamma))*(rrf) + b @
+    + (chabb/cgamma)/(1+chabb/cgamma)*(cf(-1) - z)              @
+    + (1/(1+chabb/cgamma))*(cf(1)+z(+1))                        @
+    + ((csigma-1)*cwhlc/(csigma*(1+chabb/cgamma)))*(labf-labf(+1))
+
+    #------------------------------------------------------------
+    # DGS Equation 4 (Price of Investment)
+    #------------------------------------------------------------
+    - inve = (1/(1+cbetabar*cgamma))* (  inve(-1)-z + cbetabar*cgamma*(inve(1)+z(1)) @
+    + (1/(cgamma^2*csadjcost))*pk ) + qs
+    # flexible price counterpart
+    - invef = (1/(1+cbetabar*cgamma))* (  invef(-1)-z + (1/(cgamma^2*csadjcost))*pkf ) + qs
+
+    #------------------------------------------------------------
+    # DGS Equation 20  (Expost real real to capital)
+    #------------------------------------------------------------
+    - inv_rk - pinf = crk/(crk + 1 - ctou)*rk + (1-ctou)/(crk + 1 - ctou)*pk - pk(-1)
+    # flexible price counterpart
+  #  - inv_rkf = crk/(crk + 1 - ctou)*rkf + (1-ctou)/(crk + (1-ctou))*pkf - pkf(-1)
+
+
+    #------------------------------------------------------------
+    # DGS Equation 19  (Spread)
+    #------------------------------------------------------------
+    - inv_rk(+1) - r = -(csigma*(1+chabb/cgamma))/(1-chabb/cgamma)*b + zeta_b*(pk + kp - n) + omega
+    # flexible price counterpart
+#   - inv_rkf(+1) - rrf = b + zeta_b*(pkf + kpf - nf) + omega
+
+    #------------------------------------------------------------
+    # DGS Equation 21  (Expost real real to capital)
+    #------------------------------------------------------------
+    - n = zeta_nrk*(inv_rk - pinf) - zeta_nr*(r(-1) - pinf) @
+    + zeta_nqk*(pk(-1) + kp(-1)) + zeta_nn*n(-1) - zeta_omega*omega(-1) @
+    - gammstar*vstar/nstar*z
+
+    #------------------------------------------------------------
+    # DGS Equation 6
+    #------------------------------------------------------------
+    #- r - pinf(+1) + b = crk/(crk + 1 - ctou)*rk(+1) + (1-ctou)/(crk + (1-
+    # flex price counterpart
+    - rrf  - (csigma*(1+chabb/cgamma))/(1-chabb/cgamma)*b = crk/(crk + 1 - ctou)*rkf(+1) + (1-ctou)/(crk + (1- ctou))*pkf(+1) - pkf
+
+
+    #------------------------------------------------------------
+    # DGS Equation 1 (Linearly Detrended Log Productivity)
+    #------------------------------------------------------------
+    - zhat = crhoz*zhat(-1) + ez
+
+    #------------------------------------------------------------
+    # DGS Equation 2 (Deviations from trend)
+    #------------------------------------------------------------
+    - z = 1/(1-calfa)*(crhoz-1)*zhat(-1) + 1/(1-calfa)*ez
+
+
+    - b = crhob*b(-1) + eb
+
+
+
+    # investment specific technology shock
+    - qs = crhoqs*qs(-1) + eqs
+
+
+    #------------------------------------------------------------
+    # DGS Equation 5 (Evolution of Capital Stock
+    #------------------------------------------------------------
+    - kp =  (1-cikbar)*(kp(-1)-z)+cikbar*inve + (1+cbetabar*cgamma)*cikbar*cgamma^2*csadjcost*qs
+    # flexible price counterpart
+    - kpf =  (1-cikbar)*(kpf(-1)-z)+(cikbar)*invef + (1+cbetabar*cgamma)*(cikbar)*(cgamma^2*csadjcost)*qs
+
+    #------------------------------------------------------------
+    # DGS Equation 7 (Effective Capital)
+    #------------------------------------------------------------
+    - k =  kp(-1) + zcap - z
+    # flexible price counterpart
+    - kf =  kpf(-1) + zcapf - z
+
+    #------------------------------------------------------------
+    # DGS Equation 8 (Utilization Rate)
+    #------------------------------------------------------------
+    - zcap =  (1/(czcap/(1-czcap)))* rk
+    # flexible price counterpart
+    - zcapf =  (1/(czcap/(1-czcap)))* rkf
+
+    #------------------------------------------------------------
+    # DGS Equation 9 (Marginal Costs)
+    #------------------------------------------------------------
+    - mc =  w + calfa*lab - calfa*k
+
+    # flexible price version
+    - 0 = wf + calfa*(labf - kf)
+
+    #------------------------------------------------------------
+    # DGS Equation 10 (Capital-Labor Ratio)
+    #------------------------------------------------------------
+    - rk =  w+lab-k
+    # flexible price counterpart
+    - rkf =  (wf)+labf-kf
+
+    #------------------------------------------------------------
+    # DGS Equation 11 (Production Function)
+    #------------------------------------------------------------
+    # if rhoz == 1, the last term drops out
+    - y = cfc*( calfa*k+(1-calfa)*lab +a )+(cfc-1)/(1-calfa)*zhat
+    # flexible price model
+    - yf = cfc*( calfa*kf+(1-calfa)*labf +a ) + (cfc-1)/(1-calfa)*zhat
+
+    #------------------------------------------------------------
+    # DGS Equation 12 (Resource Constraint)
+    #------------------------------------------------------------
+    # if rhoz == 1, the last term drops out
+    - y = ccy*c+ciy*inve+ cg*g  +  crkky*zcap - cg*1/(1-calfa)*zhat
+    # flexible price counterpart
+    - yf = ccy*cf+ciy*invef+ cg*g  +  crkky*zcapf - cg*1/(1-calfa)*zhat
+
+    # government spending shock
+    - g = crhog*g(-1) + eg + cgy*ez
+
+    #------------------------------------------------------------
+    # DGS Equation 13 (Price Phillips Curve)
+   #------------------------------------------------------------
+    - pinf =  (1/(1+cbetabar*cgamma*cindp)) * ( cbetabar*cgamma*pinf(1) +cindp*pinf(-1)+((1-cprobp)*(1-cbetabar*cgamma*cprobp)/cprobp)/((cfc-1)*curvp+1)*(mc)  )  + spinf
+
+    # price markup
+    - spinf = crhopinf*spinf(-1) + epinf - cmap*vepinf(-1)
+    - vepinf = epinf
+
+    #------------------------------------------------------------
+    # DGS Equation 14 (Wage Phillips Curve)
+    #------------------------------------------------------------
+    - w = (1/(1+cbetabar*cgamma))*(w(-1)-z)+(cbetabar*cgamma/(1+cbetabar*cgamma))*(w(+1)+z(+1)) +(cindw/(1+cbetabar*cgamma))*pinf(-1)-(1+cbetabar*cgamma*cindw)/(1+cbetabar*cgamma)*pinf+(cbetabar*cgamma)/(1+cbetabar*cgamma)*pinf(1)+(1-cprobw)*(1-cbetabar*cgamma*cprobw)/((1+cbetabar*cgamma)*cprobw)*(1/((clandaw-1)*curvw+1))*(csigl*lab + (1/(1-chabb/cgamma))*c - ((chabb/cgamma)/(1-chabb/cgamma))*(c(-1)-z) -w)+1*sw
+
+    # wage markup
+    - sw = crhow*sw(-1) + ew - cmaw*vew(-1)
+    - vew = ew
+
+    #------------------------------------------------------------
+    # DGS Equation 15 (Households MRS)
+    #------------------------------------------------------------
+    # flexible price counterpart
+    - wf = csigl*labf + (1/(1-chabb/cgamma))*cf - (chabb/cgamma)/(1-chabb/cgamma)*(cf(-1)-z)
+
+
+    #------------------------------------------------------------
+    # DGS Equation 17 (MP Rule + Time-varying target
+    #------------------------------------------------------------
+    - r =  crpi*(1-crr)*(pinf-pitarg) + cry*(1-crr)*(y-yf) + crdy*(y-yf-y(-1)+yf(-1))+crr*r(-1) +ms
+
+    # monetary policy shock
+    - ms = crhoms*ms(-1) + em
+
+    #------------------------------------------------------------
+    # DGS Equation 18 (Time-varying target)
+    #------------------------------------------------------------
+    - pitarg = crhopitarg*pitarg(-1) + epitarg
+
+
+
+    # flexible price
+#   - nf = zeta_nrk*(inv_rkf) - zeta_nr*(rrf(-1)) + zeta_nqk*(pkf(-1) - kpf(-1)) @
+#   + zeta_nn*nf(-1) - zeta_omega*omega(-1)
+
+    # shock to net worth
+    - omega = crhomega*omega(-1) + eomega
+
+
+    #------------------------------------------------------------
+    # Observables
+    #------------------------------------------------------------
+    - dy = y - y(-1) + z
+    - dc = c - c(-1) + z
+    - dinve = inve - inve(-1) + z
+    - dw = w - w(-1) + z
+    - pinfobs = pinf
+    - robs = r
+    - labobs = lab
+    - spread = inv_rk(+1) - r
+    - piexp = thet_pi*pinf(+1) + (1-thet_pi)*piexp(-1)
+
+  observables:
+    ygr     : ctrend + dy #y - y(-1)
+    cgr     : ctrend + dc #c - c(-1)
+    igr     : ctrend + dinve #inve - inve(-1)
+    wgr     : ctrend + dw #w - w(-1)
+    lnh     : constelab + labobs #lab
+    pinfobs : constepinf + pinfobs
+    robs    : (cpie/((cbeta)*(cgamma)^(-(csigma)))-1)*100 + robs
+    spreadobs: 100*log(sprd) + spread
+    piexpobs   : constepinf + piexp #
+
+calibration:
+
+  auxiliary_parameters:
+    thet_pi : 40.0/41.0
+    ctou : 0.025
+    clandaw : 1.5
+    cg : 0.18
+    curvp : 10
+    curvw : 10
+    cgamma : exp(ctrend/100.0) #ctrend/100+1
+    clandap : cfc
+    sprd: (1+sp/100)^(1/4) #1.0+sp/100
+    cbeta : 100/(constebeta+100)
+    cpie : constepinf/100.0+1.0
+    cbetabar : cbeta*cgamma^(-csigma)
+    cr : cpie/(cbeta*cgamma^(-csigma))
+    crk : sprd*(cbeta^(-1))*(cgamma^csigma) - (1-ctou)
+    cw  : (calfa^calfa*(1-calfa)^(1-calfa)/(clandap*crk^calfa))^(1/(1-calfa))
+    cikbar : (1-(1-ctou)/cgamma)
+    cik : (1-(1-ctou)/cgamma)*cgamma
+    clk : ((1-calfa)/calfa)*(crk/cw)
+    cky : cfc*(clk)^(calfa-1)
+    ciy : cik*cky
+    ccy : 1-cg-cik*cky
+    crkky : crk*cky
+    cwhlc : (1/clandaw)*(1-calfa)/calfa*crk*cky/ccy
+    cwly : 1-crk*cky
+    conster : (cr-1)*100;
+    Fom: 1-(1-0.03)^(1/4)
+    zwstar: norminv(Fom)
+    rstar: cr/cpie
+    kstar: (calfa/(1-calfa))*cw/crk
+    zstar: ctrend/100
+    pistar: cpie
+    gammstar: 0.99
+    sigwstar: get_sigwstar(zwstar, sprd, zeta_b)
+    omegabarstar : exp(sigwstar*zwstar - 0.5*sigwstar**2)
+    Gstar : normcdf(zwstar-sigwstar)
+    Gammastar : exp(sigwstar*zwstar - 0.5*sigwstar**2)*(1-normcdf(zwstar))+ normcdf(zwstar-sigwstar)
+    dGdomegastar : dGdomegafcn(zwstar,sigwstar);
+    d2Gdomega2star : d2Gdomega2fcn(zwstar,sigwstar);
+    dGammadomegastar : dGammadomegafcn(zwstar);
+    d2Gammadomega2star : d2Gammadomega2fcn(zwstar,sigwstar);
+    dGdsigmastar : dGdsigmafcn(zwstar,sigwstar);
+    d2Gdomegadsigmastar : d2Gdomegadsigmafcn(zwstar,sigwstar);
+    dGammadsigmastar : dGammadsigmafcn(zwstar,sigwstar);
+    d2Gammadomegadsigmastar : d2Gammadomegadsigmafcn(zwstar,sigwstar);
+    muestar : mufcn(zwstar,sigwstar,sprd);
+    nkstar : nkfcn(zwstar,sigwstar,sprd)
+    Rhostar : 1/nkstar-1;
+    wekstar : (1-gammstar/cbeta)*nkstar-gammstar/cbeta*(sprd*(1-muestar*Gstar)-1);
+    vkstar : (nkstar-wekstar)/gammstar;
+    nstar: nkstar*kstar;
+    vstar: vkstar*kstar;
+    GammamuG : Gammastar-muestar*Gstar;
+    GammamuGprime : dGammadomegastar-muestar*dGdomegastar;
+
+    # elasticities wrt omegabar
+    zeta_bw : zetabomegafcn(zwstar,sigwstar,sprd);
+    zeta_zw : zetazomegafcn(zwstar,sigwstar,sprd);
+    zeta_bw_zw : zeta_bw/zeta_zw;
+
+    # elasticities wrt sigw
+    zeta_bsigw : sigwstar*(((1-muestar*dGdsigmastar/dGammadsigmastar)/(1-muestar*dGdomegastar/dGammadomegastar)-1)*dGammadsigmastar*sprd+muestar*nkstar*(dGdomegastar*d2Gammadomegadsigmastar-dGammadomegastar*d2Gdomegadsigmastar)/GammamuGprime^2)/((1-Gammastar)*sprd+dGammadomegastar/GammamuGprime*(1-nkstar));
+    zeta_zsigw : sigwstar*(dGammadsigmastar-muestar*dGdsigmastar)/GammamuG;
+    zeta_spsigw : (zeta_bw_zw*zeta_zsigw-zeta_bsigw)/(1-zeta_bw_zw);
+
+
+    # elasticities wrt mue
+    zeta_bmue : muestar*(nkstar*dGammadomegastar*dGdomegastar/GammamuGprime+dGammadomegastar*Gstar*sprd)/((1-Gammastar)*GammamuGprime*sprd+dGammadomegastar*(1-nkstar));
+
+    zeta_zmue : -muestar*Gstar/GammamuG;
+    zeta_spmue : (zeta_bw_zw*zeta_zmue-zeta_bmue)/(1-zeta_bw_zw);
+
+
+
+    # some ratios/elasticities
+    Rkstar : sprd*pistar*rstar
+    zeta_Gw : dGdomegastar/Gstar*omegabarstar;
+    zeta_Gsigw : dGdsigmastar/Gstar*sigwstar;
+
+
+    # elasticities for the net worth evolution
+    zeta_nRk : gammstar*Rkstar/pistar/exp(zstar)*(1+Rhostar)*(1-muestar*Gstar*(1-zeta_Gw/zeta_zw))
+    zeta_nR : gammstar/cbeta*(1+Rhostar)*(1-nkstar+muestar*Gstar*sprd*zeta_Gw/zeta_zw)
+    zeta_nqk : gammstar*Rkstar/pistar/exp(zstar)*(1+Rhostar)*(1-muestar*Gstar*(1+zeta_Gw/zeta_zw/Rhostar))-gammstar/cbeta*(1+Rhostar)
+
+    zeta_nn : gammstar/cbeta+gammstar*Rkstar/pistar/exp(zstar)*(1+Rhostar)*muestar*Gstar*zeta_Gw/zeta_zw/Rhostar
+
+    zeta_nmue : gammstar*Rkstar/pistar/exp(zstar)*(1+Rhostar)*muestar*Gstar*(1-zeta_Gw*zeta_zmue/zeta_zw);
+
+    zeta_nsigw : gammstar*Rkstar/pistar/exp(zstar)*(1+Rhostar)*muestar*Gstar*(zeta_Gsigw-zeta_Gw/zeta_zw*zeta_zsigw);
+
+    zeta_nrk : zeta_nRk;
+    zeta_nr : zeta_nR;
+    zeta_omega : zeta_nsigw/zeta_spsigw;
+
+
+    crhopitarg : 0.99
+
+
+  parameters:
+    constebeta :  0.136800
+    constepinf :  0.626823
+    constelab  : -43.7454
+    calfa      :  0.214050
+    csigma     :  1.662724
+    cfc        :  1.642215
+    csadjcost  :  5.23004
+    chabb      :  0.251476
+    cprobw     :  0.858637
+    cindw      :  0.476646
+    csigl      :  2.16549
+    cprobp     :  0.806292
+    cindp      :  0.772076
+    czcap      :  0.733831
+    crpi       :  1.263218
+    crr        :  0.762714
+    cry        :  0.056610
+    crdy       :  0.245995
+    crhoa      :  0.5
+    crhob      :  0.992677
+    crhog      :  0.975821
+    crhoqs     :  0.699691
+    crhoms     :  0.040541
+    crhopinf   :  0.259992
+    crhow      :  0.976975
+    cgy        :  0.843962
+    cmap       :  0.403510
+    cmaw       :  0.963266
+    siga       :  0.4582
+    sigb       :  0.026477
+    sigg       :  2.920280
+    sigqs      :  0.428471
+    sigm       :  0.243927
+    sigpinf    :  0.185276
+    sigw       :  0.274871
+    crhomega   :  0.989877
+    sigomega   :  0.052918
+    zeta_b     :  0.0443
+    sp         :  1.523782
+    crhoz      :  0.975633
+    sigz       :  0.465088
+    ctrend     :  0.336667
+    sigpitarg  :  0.030000
+  covariance:
+    ea    : siga^2
+    eb    : sigb^2
+    eg    : sigg^2
+    eqs   : sigqs^2
+    em    : sigm^2
+    epinf : sigpinf^2
+    ew    : sigw^2
+    ez    : sigz^2
+    eomega : sigomega^2
+    epitarg : sigpitarg^2
+
+estimation:
+  data: '/home/eherbst/Dropbox/code/dsge/dsge/examples/DGS/yy.txt'
+
+  prior:
+    ctrend : [normal, 0.40, 0.10]
+    constebeta : [gamma, 0.25, 0.1]
+    constepinf : [gamma, 0.75, 0.4] # changed 11/12 EH
+    constelab :  [normal, -45, 5]
+    calfa : [normal, 0.3, 0.05]
+    csigma : [normal, 1.5, 0.375]
+    cfc : [normal, 1.25, 0.125]
+    csadjcost : [normal, 4, 1.5]
+    chabb :    [beta, 0.7, 0.1]
+    cprobw :   [beta, 0.5, 0.1]
+    cindw  :   [beta, 0.5, 0.15]
+    csigl :    [normal, 2, 0.75]
+    cprobp :   [beta, 0.5, 0.1]
+    cindp  :   [beta, 0.5, 0.15]
+    czcap :    [beta, 0.5, 0.15]
+    crpi :     [normal, 1.5, 0.25]
+    crr :      [beta, 0.75, 0.10]
+    cry :      [normal, 0.125, 0.05]
+    crdy :     [normal, 0.125, 0.05]
+    crhoa :    [beta, 0.5, 0.2]
+    crhob :    [beta, 0.5, 0.2]
+    crhog :    [beta, 0.5, 0.2]
+    crhoqs :   [beta, 0.5, 0.2]
+    crhoms :   [beta, 0.5, 0.2]
+    crhopinf : [beta, 0.5, 0.2]
+    crhow :    [beta, 0.5, 0.2]
+    cgy     :  [beta, 0.5, 0.2]
+    cmap    :  [beta, 0.5, 0.2]
+    cmaw    :  [beta, 0.5, 0.2]
+    siga    :  [inv_gamma, 0.1, 2]
+    sigb    :  [inv_gamma, 0.1, 2]
+    sigg    :  [inv_gamma, 0.1, 2]
+    sigqs   :  [inv_gamma, 0.1, 2]
+    sigm    :  [inv_gamma, 0.1, 2]
+    sigpinf :  [inv_gamma, 0.1, 2]
+    sigw    :  [inv_gamma, 0.1, 2]
+    sigomega    :  [inv_gamma, 0.05, 4]
+    sp : [gamma, 2.0, 0.1]
+    crhomega: [beta, 0.75, 0.15]  #
+    zeta_b :   [beta, 0.05, 0.005]
+    crhoz: [beta, 0.5, 0.2]
+    sigz : [inv_gamma, 0.1, 2]
+    sigpitarg : [inv_gamma, 0.03, 6.00]
+

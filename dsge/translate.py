@@ -1,6 +1,7 @@
 import numpy as np
 
 import os
+from dsge.parsing_tools import parse_expression
 
 template_path = os.path.join(os.path.dirname(__file__), "templates")
 
@@ -37,6 +38,8 @@ module model_t
   
   
 contains
+
+  {extra_code}
 
   type(model) function new_model() result(self)
 
@@ -112,7 +115,7 @@ end module model_t
 """
 
 
-def smc(model, t0=0):
+def smc(model, t0=0, extra_code=""):
 
     import sympy
     from sympy.printing import fcode
@@ -148,15 +151,23 @@ def smc(model, t0=0):
     context["exp"] = sympy.exp
     context["log"] = sympy.log
     context["betacdf"] = sympy.Function('betacdf')
-    to_replace = {}
-    for p in model["other_para"]:
-        to_replace[p] = eval(str(model["para_func"][p.name]), context)
+    user_functions = {}
+    if 'external' in model["__data__"]["declarations"]:
+        for n in model["__data__"]["declarations"]["external"]["names"]:
+            context[n] = sympy.Function(n)  
+            user_functions[n] = n
 
+
+    # to_replace = {}
+    # for p in model["other_para"]:
+    #     to_replace[p] = parse_expression(str(model["auxiliary_parameters"][p]), context)
+
+    to_replace = model['auxiliary_parameters']
     to_replace = list(to_replace.items())
-    print(to_replace)
+
     from itertools import combinations, permutations
 
-    edges = [
+    edges = [ 
         (i, j)
         for i, j in permutations(to_replace, 2)
         if type(i[1]) not in [float, int] and i[1].has(j[0])
@@ -167,19 +178,22 @@ def smc(model, t0=0):
     para_func = topological_sort([to_replace, edges], default_sort_key)
 
     to_write = ["GAM0", "GAM1", "PSI", "PPI", "self%QQ", "DD2", "self%ZZ", "self%HH"]
+    # print(fcode(system_matrices[1][7,45].subs(para_func).subs(fortran_subs), user_functions=user_function))
+    
     fmats = [
         fcode(
             (mat.subs(para_func)).subs(fortran_subs),
             assign_to=n,
             source_format="free",
-            standard=95,
+            standard=2008,
             contract=False,
+            user_functions=user_functions,
         )
         for mat, n in zip(system_matrices, to_write)
     ]
     sims_mat = "\n\n".join(fmats)
     template = template.format(
-        model=model, yy=cmodel.yy, p0="", t0=t0, sims_mat=sims_mat
+        model=model, yy=cmodel.yy, p0="", t0=t0, sims_mat=sims_mat, extra_code=extra_code
     )
 
     return template
@@ -244,7 +258,9 @@ def make_fortran_model(model, **kwargs):
     t0 = kwargs.pop("t0", 0)
 
     from fortress import make_smc
-    model_file = smc(model, t0=t0)
+    extra_code = kwargs.pop("extra_code", "")
+
+    model_file = smc(model, t0=t0, extra_code=extra_code)
     modelc = model.compile_model()
 
     r = make_smc(

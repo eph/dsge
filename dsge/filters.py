@@ -1,9 +1,9 @@
 import numpy as np
 
-from numba import jit
+#from numba import jit
 
 
-@jit(nopython=True)
+#@jit(nopython=True)
 def chand_recursion(y, CC, TT, RR, QQ, DD, ZZ, HH, A0, P0, t0=0):
     nobs, ny = y.shape
 
@@ -59,7 +59,7 @@ def chand_recursion(y, CC, TT, RR, QQ, DD, ZZ, HH, A0, P0, t0=0):
     return loglh
 
 
-@jit(nopython=True)
+#@jit(nopython=True)
 def kalman_filter(y, CC, TT, RR, QQ, DD, ZZ, HH, A0, P0, t0=0):
 
     # y = np.asarray(y)
@@ -105,7 +105,7 @@ def kalman_filter(y, CC, TT, RR, QQ, DD, ZZ, HH, A0, P0, t0=0):
     return loglh
 
 
-@jit(nopython=True)
+#@jit(nopython=True)
 def filter_and_smooth(y, CC, TT, RR, QQ, DD, ZZ, HH, A0, P0, t0=0):
 
     nobs, ny = y.shape

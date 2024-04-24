@@ -455,7 +455,7 @@ class StateSpaceModel(object):
 
         return irfs
 
-    def anticipated_impulse_response(self, para, h=20, *args, **kwargs):
+    def anticipated_impulse_response(self, para, anticipated_h=1, h=20, *args, **kwargs):
         """
         Computes anticipated impulse response functions of model.
 
@@ -467,7 +467,34 @@ class StateSpaceModel(object):
         h : int, optional
            The maximum horizon length for the impulse responses.
         """
+        TT, RR, RC, = self.solve_LRE(para, anticipated_h=anticipated_h)
+        from itertools import product
+        additional_shock_names = [f'{s}^{h+1}' for s in product(self.shock_names, range(anticipated_h))]
 
+        QQ = self.QQ(para)
+        neps = QQ.shape[0]
+        irfs = {}
+        for i in range(neps):
+
+            At = np.zeros((TT.shape[0], h + 1))
+            QQz = np.zeros_like(QQ)
+            QQz[i, i] = QQ[i, i]
+            cQQz = np.sqrt(QQz)
+
+            # cQQz = np.linalg.cholesky(QQz)
+
+            At[:, 0] = (RR[:,neps:].dot(cQQz)[:, i]).squeeze()
+
+            for j in range(h):
+                At[:, j + 1] = TT.dot(At[:, j])
+
+            irfs[self.shock_names[i]] = p.DataFrame(At.T, columns=self.state_names+
+                                                    additional_shock_names)
+
+        return irfs
+
+
+        return None
 
 
     def simulate(self, para, nsim=200, *args, **kwargs):
@@ -594,7 +621,7 @@ class LinearDSGEModel(StateSpaceModel):
 
         self.prior = prior
 
-    def solve_LRE(self, para, *args, **kwargs):
+    def solve_LRE(self, para, anticipated_h=0, *args, **kwargs):
 
         G0 = self.GAM0(para, *args, **kwargs)
         G1 = self.GAM1(para, *args, **kwargs)
@@ -605,9 +632,31 @@ class LinearDSGEModel(StateSpaceModel):
         G1 = np.atleast_2d(G1)
         PSI = np.atleast_2d(PSI)
         PPI = np.atleast_2d(PPI)
-
         C0 = np.zeros(G0.shape[0])
 
+        nstates, nshocks = PSI.shape
+        if anticipated_h > 0:
+            additional_states = nshocks*anticipated_h
+
+            G0_ext = np.eye(nstates + additional_states)
+            G1_ext = np.zeros((nstates + additional_states, nstates + additional_states))
+            PSI_ext = np.zeros((nstates + additional_states, nshocks + nshocks))
+            PPI_ext = np.zeros((nstates + additional_states, PPI.shape[1]))
+
+            
+            # Fill the extended G0 and G1 matrices
+            G0_ext[:nstates, :nstates] = G0
+            G1_ext[:nstates, :nstates] = G1
+            PSI_ext[:nstates, :nshocks] = PSI
+            PSI_ext[nstates:(nstates+nshocks), nshocks:] = np.eye(nshocks)
+            G1_ext[:nstates, -nshocks:] = PSI
+
+            for i in range(anticipated_h - 1):
+                G1_ext[nstates+(i+1)*nshocks:nstates+(i+2)*nshocks, nstates+i*nshocks:nstates+(i+1)*nshocks] = np.eye(nshocks)
+            PPI_ext[:nstates, :] = PPI
+
+            G0, G1, PSI, PPI = G0_ext, G1_ext, PSI_ext, PPI_ext
+            
         nf = PPI.shape[1]
 
         if nf > 0:

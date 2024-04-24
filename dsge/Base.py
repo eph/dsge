@@ -13,7 +13,8 @@ from .contexts import numeric_context, function_context
 class Base(dict, ABC):
     """Base class for DSGE model"""
     
-    def __lambdify_auxiliary(self, sort=False, context=numeric_context) -> Callable:
+    lambdify_auxiliary = None
+    def __lambdify_auxiliary(self, sort: bool = False, context=numeric_context) -> Callable:
         if sort:
             raise NotImplementedError('Sorting not implemented yet')
 
@@ -26,17 +27,23 @@ class Base(dict, ABC):
 
         lambdified = lambdify([self['parameters']], aux,
                               modules=context)
+
         return lambdified
         
 
     def lambdify(self, expr_or_matrix: Union[Expr, sympy.Matrix], with_auxiliary=False, context={}) -> Callable:
         all_parameters = [self['parameters'] + list(self['auxiliary_parameters'].keys())]
         expanded_numeric = lambdify(all_parameters, expr_or_matrix,
-                                    modules={'ImmutableDenseMatrix': np.array, **context})
+                                    modules=[{'ImmutableDenseMatrix': np.array, **context}, 'numpy', 'scipy'])
         if with_auxiliary:
             return expanded_numeric
         else:
-            auxiliary = self.__lambdify_auxiliary(context=context)
+            if self.lambdify_auxiliary is None:
+                auxiliary = self.__lambdify_auxiliary(context=context)
+                self.lambdify_auxiliary = auxiliary
+            else:
+                auxiliary = self.lambdify_auxiliary
+                
             def wrap_f(f):
                 return lambda x: f([*x, *auxiliary(x)])
             return wrap_f(expanded_numeric)

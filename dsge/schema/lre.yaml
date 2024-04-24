@@ -28,6 +28,10 @@ declarations:
       type: list
       schema:
         type: string
+    external:
+      type: dict
+      
+
 
 equations:
   oneof:
