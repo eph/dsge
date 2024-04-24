@@ -255,12 +255,19 @@ def write_prior_file(prior, output_dir):
 
 
 def make_fortran_model(model, **kwargs):
+
     t0 = kwargs.pop("t0", 0)
+    extra_code = kwargs.pop("extra_code", "")
+    filter_function = kwargs.pop("filter_function", None)
+    
 
     from fortress import make_smc
-    extra_code = kwargs.pop("extra_code", "")
+
 
     model_file = smc(model, t0=t0, extra_code=extra_code)
+    if filter_function is not None:
+        model_file = filter_function(model_file)
+
     modelc = model.compile_model()
 
     r = make_smc(
