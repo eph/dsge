@@ -1,10 +1,8 @@
-from __future__ import division
 import numpy as np
+from scipy.stats import rv_continuous
+from scipy.special import gammaln, gammaincc, gammaincinv, gamma
 
-from scipy.special import gammaln
-import scipy.stats as rv
-
-class InvGamma(object):
+class invgamma_zellner_gen(rv_continuous):
     """
     An inverse gamma random variable as detailed in Zellner (1971). 
 
@@ -13,43 +11,69 @@ class InvGamma(object):
     \begin{align}
     p(\sigma|s,\nu) = \frac{2}{\Gamma(\nu/2)} \left(\frac{\nu s^2}{2}\right)^{\nu/2} \frac{1}{\sigma^{\nu+1}} e^{-\nu s^2 / (2\sigma^2)}. 
     \end{align}
-
     """
-    name = 'inv_gamma'
+    _support_mask = rv_continuous._open_support_mask
 
-    def __init__(self, s, nu):
+    def _param_info(self):
+        return [
+            {"name": "s", "value_type": float, "domain": (0, np.inf), "inclusive": (False, False)}, 
+            {"name": "nu", "value_type": float, "domain": (0, np.inf), "inclusive": (False, False)}
+        ]
 
-        self.a = s
-        self.b = nu
+    def _shape_info(self):
+        return [
+            {"name": "s", "value_type": False, "domain": (0, np.inf), "inclusive": (False, False)}, 
+            {"name": "nu", "value_type": False, "domain": (0, np.inf), "inclusive": (False, False)}
+        ]
 
-    def logpdf(self, x):
-        a = self.a
-        b = self.b
-        if x < 0:
-            return -1000000000000
+    def _logpdf(self, x, s, nu):
+        return (np.log(2) - gammaln(nu/2) + (nu/2)*np.log(nu*s**2/2)
+                - (nu+1)*np.log(x) - (nu*s**2) / (2*x**2))
 
-        lpdf = (np.log(2) - gammaln(b/2) + b/2*np.log(b*a**2/2)
-                -(b+1)/2*np.log(x**2) - b*a**2/(2*x**2))
-        return lpdf
-        
-    
-    def rvs(self):
-        rn = rv.norm.rvs(size=(int(self.b), 1))
-        return np.sqrt(self.b*self.a**2 / np.sum(rn**2, 0))
+    def _pdf(self, x, s, nu):
+        return np.exp(self._logpdf(x, s, nu))
 
+    def _cdf(self, x, s, nu):
+        return gammaincc(nu/2, nu * s**2 / (2 * x**2))
 
-class InvGamma1(object):
-    """Inverse Gamma 1 distribution
-    X ~ IG1(s, nu) if X = sqrt(Y), where Y ~IG2(s, nu) with Y = INV(Z), Z~Gamma(nu/2, 2/s)
-    """
-    def __init__(self, s, nu):
-    
-        self.s = s
-        self.nu = nu
+    def _ppf(self, q, s, nu):
+        return np.sqrt(nu * s**2 / (2 * gammaincinv(nu/2, q)))
 
-    def rvs(self):
-        return np.sqrt(1.0/rv.gamma.rvs(self.nu/2.0, scale=2.0/self.s))
+    def _sf(self, x, s, nu):
+        return 1 - self._cdf(x, s, nu)
 
+    def _isf(self, q, s, nu):
+        return self._ppf(1 - q, s, nu)
 
-    def logpdf(self, x):
-        pass
+    def _stats(self, s, nu, moments='mvsk'):
+        mean = np.inf if nu <= 1 else gamma( (nu - 1) / 2) * np.sqrt(nu * s**2 / 2) / gamma(nu / 2)
+        variance = np.inf if nu <= 2 else nu * s**2 / (nu - 2) - mean**2
+        skewness = None if nu <= 3 else gamma( (nu - 3) / 2) * (nu * s**2 / 2)**(3/2) / gamma(nu / 2) - 3 * mean * variance - mean**3
+        kurtosis = None
+
+        if 's' in moments:
+            skewness = None  # Skewness is undefined for this distribution
+        if 'k' in moments:
+            kurtosis = None  # Kurtosis is undefined for this distribution
+
+        return mean, variance, skewness, kurtosis
+
+    def _entropy(self, s, nu):
+        return (nu + 1)/2 * np.log(2) + (nu + 1) * np.log(s) - np.log(gammaln(nu/2)) + (1 - nu)/2 * np.log(nu) + gammaln(nu/2)
+
+    def _rvs(self, s, nu, size=None, random_state=None):
+        shape = np.prod(size) if size else 1
+        rn = self._random_state.standard_normal(size=(shape, int(nu)))
+        return np.sqrt(nu * s**2 / np.sum(rn**2, axis=-1))
+
+# Create an instance of the custom distribution
+invgamma_zellner = invgamma_zellner_gen(a=0.0, name='invgamma_zellner')
+
+# Test the custom distribution
+# pdf_value = invgamma_zellner.pdf(1.0, s=1.0, nu=2.0)  # PDF at x = 1.0
+# logpdf_value = invgamma_zellner.logpdf(1.0, s=1.0, nu=2.0)  # log PDF at x = 1.0
+# cdf_value = invgamma_zellner.cdf(1.0, s=1.0, nu=2.0)  # CDF at x = 1.0
+# ppf_value = invgamma_zellner.ppf(0.5, s=1.0, nu=2.0)  # PPF at q = 0.5
+# rvs_values = invgamma_zellner.rvs(s=1.0, nu=2.0, size=5)  # Generate 5 random variates
+
+# pdf_value, logpdf_value, cdf_value, ppf_value, rvs_values

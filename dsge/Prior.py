@@ -1,9 +1,9 @@
 import numpy as np
 
 from scipy.stats import beta, norm, uniform, gamma
-from .OtherPriors import InvGamma
+from .OtherPriors import invgamma_zellner as InvGamma
 
-pdict = {"gamma": 1, "beta": 2, "norm": 3, "inv_gamma": 4, "uniform": 5}
+pdict = {"gamma": 1, "beta": 2, "norm": 3, "invgamma_zellner": 4, "uniform": 5}
 def construct_prior(prior_list, parameters):
 
     prior = []
@@ -34,7 +34,7 @@ def construct_prior(prior_list, parameters):
         if ptype == "inv_gamma":
             a = pmean
             b = pstdd
-            prior.append(InvGamma(a, b))
+            prior.append(invgamma_zellner(a, b))
         if ptype == "uniform":
             a, b = pmean, pstdd
             pr = uniform(loc=a, scale=(b - a))
@@ -80,7 +80,7 @@ class Prior(object):
                     0,
                     0,
                  )
-            elif dist.name == "inv_gamma":
+            elif dist.name == "invgamma_zellner":
                 return pdict[dist.name], dist.a, dist.b, 0, 0
             else:
                 return pdict[dist.name], dist.stats()[0], np.sqrt(dist.stats()[1]), 0, 0

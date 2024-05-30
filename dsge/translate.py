@@ -12,7 +12,7 @@ fortran_files = {
     "Makefile": "Makefile_dsge",
 }
 
-pdict = {"gamma": 1, "beta": 2, "norm": 3, "inv_gamma": 4, "uniform": 5}
+pdict = {"gamma": 1, "beta": 2, "norm": 3, "invgamma_zellner": 4, "uniform": 5}
 
 fortran_model = """
 module model_t
@@ -236,18 +236,19 @@ def translate(model, output_dir=".", language="fortran"):
 
 def write_prior_file(prior, output_dir):
     def return_stats(dist):
-        if dist.name == "uniform":
+        name = dist.dist.name
+        if name == "uniform":
             return (
-                pdict[dist.name],
+                pdict[name],
                 dist.kwds["loc"],
                 dist.kwds["loc"] + dist.kwds["scale"],
                 0,
                 0,
             )
-        elif dist.name == "inv_gamma":
-            return pdict[dist.name], dist.a, dist.b, 0, 0
+        elif name == "invgamma_zellner":
+            return pdict[name], *dist.args, 0, 0
         else:
-            return pdict[dist.name], dist.stats()[0], np.sqrt(dist.stats()[1]), 0, 0
+            return pdict[name], dist.stats()[0], np.sqrt(dist.stats()[1]), 0, 0
 
     with open(os.path.join(output_dir, "prior.txt"), mode="w") as prior_file:
         plist = [", ".join(map(str, return_stats(pr))) for pr in prior.priors]
