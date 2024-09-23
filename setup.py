@@ -23,12 +23,13 @@ if __name__ == "__main__":
              "dsge": [
                  "examples/ar1/*",
                  "examples/DGS/*",
-                 "examples/edo/*",
+                 "examples/edo/*"
                  "examples/nkmp/*",
                  "examples/schorf_phillips_curve/*",
                  "examples/simple-model/*",
                  "examples/sw/*",
                  'schema/*',
+                 'linalg/*',
              ]
          },
         requires=["pandas", "scipy", "sympy", "pyyaml", "numba"],

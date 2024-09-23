@@ -103,7 +103,9 @@ class StateSpaceModel(object):
         self.state_names = state_names
         self.obs_names = obs_names
 
-    def log_lik(self, para, *args, **kwargs):
+        self.cached_system_matrices = None
+
+    def log_lik(self, para, use_cache=False, *args, **kwargs):
         """
         Computes the log likelihood of the model.
 
@@ -145,7 +147,11 @@ class StateSpaceModel(object):
         filt = kwargs.pop("filter", default_filter)
         filt_func = filt_choices[filt]
 
-        CC, TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para)
+        if use_cache:
+            CC, TT, RR, QQ, DD, ZZ, HH = self.cached_system_matrices
+        else:
+            CC, TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para)
+
         A0 = kwargs.pop("A0", np.zeros(CC.shape))
         if (np.isnan(TT)).any():
             lik = -1000000000000.0
@@ -169,7 +175,7 @@ class StateSpaceModel(object):
         )
         return lik
 
-    def kf_everything(self, para, *args, **kwargs):
+    def kf_everything(self, para, use_cache=False, *args, **kwargs):
         """
         Runs the kalman filter and returns objects of interest.
 
@@ -211,7 +217,11 @@ class StateSpaceModel(object):
         get_shocks = kwargs.pop("shocks", True)
         yy = p.DataFrame(yy)
 
-        CC, TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
+        if use_cache:
+            CC, TT, RR, QQ, DD, ZZ, HH = self.cached_system_matrices
+        else:
+            CC, TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
+
         if get_shocks:
             from scipy.linalg import block_diag
 
@@ -277,7 +287,7 @@ class StateSpaceModel(object):
         results['smoothed_cov'] = smoothed_cov
         return results
 
-    def pred(self, para, h=20, shocks=True, append=False, return_states=False, filt_para=None, *args, **kwargs):
+    def pred(self, para, h=20, shocks=True, append=False, return_states=False, filt_para=None, use_cache=False, *args, **kwargs):
         """
         Draws from the predictive distribution $p(Y_{t+1:t+h}|Y_{1:T}, \theta)$.
 
@@ -306,7 +316,10 @@ class StateSpaceModel(object):
         yy = kwargs.pop("y", self.yy)
         res = self.kf_everything(filt_para, y=yy, shocks=False, *args, **kwargs)
 
-        CC, TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
+        if use_cache:
+            CC, TT, RR, QQ, DD, ZZ, HH = self.cached_system_matrices
+        else:
+            CC, TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
 
         At = res["smoothed_means"].iloc[-1].values
         ysim = np.zeros((h, DD.size))
@@ -370,6 +383,8 @@ class StateSpaceModel(object):
         ZZ = np.atleast_2d(self.ZZ(para, *args, **kwargs))
         HH = np.atleast_1d(self.HH(para, *args, **kwargs))
 
+        self.cached_system_matrices = (CC, TT, RR, QQ, DD, ZZ, HH)
+
         return CC, TT, RR, QQ, DD, ZZ, HH
 
     def abcd_representation(self, para, *args, **kwargs):
@@ -403,7 +418,7 @@ class StateSpaceModel(object):
 
         return A, B, C, D
 
-    def impulse_response(self, para, h=20, *args, **kwargs):
+    def impulse_response(self, para, h=20, use_cache=False, *args, **kwargs):
         """
         Computes impulse response functions of model.
 
@@ -427,7 +442,10 @@ class StateSpaceModel(object):
         1 standard deviation shocks.  The method does not return IRFs in terms
         of the model observables.
         """
-        CC, TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
+        if use_cache:
+            CC, TT, RR, QQ, DD, ZZ, HH = self.cached_system_matrices
+        else:
+            CC, TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
 
         if self.shock_names == None:
             self.shock_names = ["shock_" + str(i) for i in range(QQ.shape[0])]
@@ -454,47 +472,6 @@ class StateSpaceModel(object):
             irfs[self.shock_names[i]] = p.DataFrame(At.T, columns=self.state_names)
 
         return irfs
-
-    def anticipated_impulse_response(self, para, anticipated_h=1, h=20, *args, **kwargs):
-        """
-        Computes anticipated impulse response functions of model.
-
-        Parameters
-        ----------
-        para : array-like
-            An npara length vector of parameter values that defines the system matrices.
-
-        h : int, optional
-           The maximum horizon length for the impulse responses.
-        """
-        TT, RR, RC, = self.solve_LRE(para, anticipated_h=anticipated_h)
-        from itertools import product
-        additional_shock_names = [f'{s}^{h+1}' for s in product(self.shock_names, range(anticipated_h))]
-
-        QQ = self.QQ(para)
-        neps = QQ.shape[0]
-        irfs = {}
-        for i in range(neps):
-
-            At = np.zeros((TT.shape[0], h + 1))
-            QQz = np.zeros_like(QQ)
-            QQz[i, i] = QQ[i, i]
-            cQQz = np.sqrt(QQz)
-
-            # cQQz = np.linalg.cholesky(QQz)
-
-            At[:, 0] = (RR[:,neps:].dot(cQQz)[:, i]).squeeze()
-
-            for j in range(h):
-                At[:, j + 1] = TT.dot(At[:, j])
-
-            irfs[self.shock_names[i]] = p.DataFrame(At.T, columns=self.state_names+
-                                                    additional_shock_names)
-
-        return irfs
-
-
-        return None
 
 
     def simulate(self, para, nsim=200, *args, **kwargs):
@@ -620,13 +597,18 @@ class LinearDSGEModel(StateSpaceModel):
         self.parameter_names = parameter_names
 
         self.prior = prior
+        self.cached_lre_matrices = None
 
-    def solve_LRE(self, para, anticipated_h=0, *args, **kwargs):
+    def solve_LRE(self, para, anticipated_h=0, use_cache=False, *args, **kwargs):
 
-        G0 = self.GAM0(para, *args, **kwargs)
-        G1 = self.GAM1(para, *args, **kwargs)
-        PSI = self.PSI(para, *args, **kwargs)
-        PPI = self.PPI(para, *args, **kwargs)
+        if use_cache:
+            G0, G1, PSI, PPI = self.cached_lre_matrices
+        else:
+            G0 = self.GAM0(para, *args, **kwargs)
+            G1 = self.GAM1(para, *args, **kwargs)
+            PSI = self.PSI(para, *args, **kwargs)
+            PPI = self.PPI(para, *args, **kwargs)
+            self.cached_lre_matrices = (G0, G1, PSI, PPI)
 
         G0 = np.atleast_2d(G0)
         G1 = np.atleast_2d(G1)
@@ -683,6 +665,8 @@ class LinearDSGEModel(StateSpaceModel):
         if RC != 1:
             TT = np.nan * TT
 
+        self.cached_system_matrices = (CC, TT, RR, QQ, DD, ZZ, HH)
+        
         return (np.ascontiguousarray(mat) for mat in (CC, TT, RR, QQ, DD, ZZ, HH))
 
     def log_pr(self, para, *args, **kwargs):
@@ -699,6 +683,46 @@ class LinearDSGEModel(StateSpaceModel):
         if x < -1000000000.0:
             x = -1000000000.0
         return x
+
+    def anticipated_impulse_response(self, para, anticipated_h=1, h=20, use_cache=False, *args, **kwargs, ):
+        """
+        Computes anticipated impulse response functions of model.
+
+        Parameters
+        ----------
+        para : array-like
+            An npara length vector of parameter values that defines the system matrices.
+
+        h : int, optional
+           The maximum horizon length for the impulse responses.
+        """
+        TT, RR, RC, = self.solve_LRE(para, anticipated_h=anticipated_h, use_cache=use_cache)
+        from itertools import product
+        additional_shock_names = [f'{s}^{h+1}' for s in product(self.shock_names, range(anticipated_h))]
+
+        QQ = self.QQ(para)
+        neps = QQ.shape[0]
+        irfs = {}
+        for i in range(neps):
+
+            At = np.zeros((TT.shape[0], h + 1))
+            QQz = np.zeros_like(QQ)
+            QQz[i, i] = QQ[i, i]
+            cQQz = np.sqrt(QQz)
+
+            # cQQz = np.linalg.cholesky(QQz)
+
+            At[:, 0] = (RR[:,neps:].dot(cQQz)[:, i]).squeeze()
+
+            for j in range(h):
+                At[:, j + 1] = TT.dot(At[:, j])
+
+            irfs[self.shock_names[i]] = p.DataFrame(At.T, columns=self.state_names+
+                                                    additional_shock_names)
+
+        return irfs
+
+
 
 class LinearDSGEModelwithSV(LinearDSGEModel):
     def __init__(

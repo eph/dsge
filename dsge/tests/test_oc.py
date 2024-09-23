@@ -96,6 +96,42 @@ class TestOC(TestCase):
         A0, A1, A2, A3, A4, A5, names = write_system_in_dennis_form(f, 'i', 'em')
         pass
 
+    def test_interest_rate_smoothing(self):
+        from dsge import read_yaml
+        from io import StringIO
+        simple_dsge = StringIO(
+            """
+declarations:
+  name: 'example_dsge'
+  variables: [pi, y, i, u, re, deli]
+  parameters: [beta, kappa, sigma, rho, gamma_pi, gamma_y, rho_u, rho_r]
+  shocks: [eu, er, em]
+
+equations:
+  - pi = beta * pi(+1) + kappa * y + u
+  - y = y(+1) - sigma * (i - pi(+1) - re)
+  - i = rho * i(-1) + (1 - rho) * (gamma_pi * pi + gamma_y * y) + em
+  - u = rho_u * u(-1) + eu
+  - re = rho_r * re(-1) + er
+  - deli = i - i(-1)
+
+calibration:
+  parameters:
+    beta: 0.99
+    kappa: 0.024
+    sigma: 6.25
+    rho: 0.70
+    gamma_pi: 1.50
+    gamma_y: 0.15
+    rho_u: 0.0
+    rho_r: 0.50
+""")
+
+        f = read_yaml(simple_dsge)
+
+        mod_simple = f.compile_model()
+        mod_commit = compile_commitment(f, 'pi**2 + y**2 + deli**2', 'i', 'em', beta='beta')
+
     def test_compile_commitment(self):
         from dsge import read_yaml
         from io import StringIO
