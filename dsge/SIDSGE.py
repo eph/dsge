@@ -1,9 +1,21 @@
+#!/usr/bin/env python3
+"""
+SIDSGE - Sticky Information DSGE model implementation.
+
+This module provides classes for working with Sticky Information Dynamic 
+Stochastic General Equilibrium models, which include information
+rigidities with distributed lags in expectations.
+"""
+
 import numpy as np
 import sympy
+from typing import Dict, List, Any, Optional, Tuple, Union
 
 from .Base import Base
 from .symbols import Variable, Parameter, Shock, Equation, EXP
 from .contexts import si_context as symbolic_context
+from .validation import validate_si_model, validate_model_consistency
+from .logging_config import get_logger
 
 from .parsing_tools import (from_dict_to_mat,
                             parse_calibration,
@@ -17,6 +29,9 @@ from scipy import sparse
 from scipy.sparse.linalg import spsolve
 
 import pandas as p
+
+# Get module logger
+logger = get_logger("dsge.si")
 
 class LinLagExModel(StateSpaceModel):
 
@@ -838,40 +853,59 @@ check_likelihood : {model_file} check_likelihood.f90 mg.f90
         write_prior_file(pri(prior), model_dir)           
 
 
-def read_si(model_yaml):
+def read_si(model_yaml: Dict[str, Any]) -> SIDSGE:
+    """
+    Read a Sticky Information DSGE model from a YAML specification.
+    
+    Args:
+        model_yaml: Dictionary containing the model specification
+        
+    Returns:
+        A SIDSGE model instance
+        
+    Raises:
+        ValueError: If the model specification contains errors
+    """
+    logger.info("Reading SI model from YAML specification")
+    
     dec = model_yaml['declarations']
     cal = model_yaml['calibration']
 
     name = dec['name']
+    logger.debug(f"Model name: {name}")
 
     var_ordering = [Variable(v) for v in dec['variables']]
     par_ordering = [Parameter(v) for v in dec['parameters']]
     shk_ordering = [Shock(v) for v in dec['shocks']]
     exo_ordering = [Variable('exo_'+v) for v in dec['shocks']]
 
+    logger.debug(f"Model has {len(var_ordering)} variables, {len(shk_ordering)} shocks, and {len(par_ordering)} parameters")
+    
     exo_subs_dict = dict(zip(shk_ordering, exo_ordering))
 
     if 'auxiliary_parameters' in dec:
-        other_para   = [Parameter(v) for v in dec['auxiliary_parameters']]
+        other_para = [Parameter(v) for v in dec['auxiliary_parameters']]
+        logger.debug(f"Model has {len(other_para)} auxiliary parameters")
     else:
         other_para = []
 
     if 'observables' in dec:
         observables = [Variable(v) for v in dec['observables']]
         obs_equations = model_yaml['equations']['observables']
+        logger.debug(f"Model has {len(observables)} observables")
     else:
         observables = [Variable(v) for v in dec["variables"]]
         obs_equations = {v: v for v in dec['variables']}
+        logger.debug("Using variables as observables")
 
     index = [Parameter(j) for j in dec['index']]
+    logger.debug(f"Index variable: {dec['index']}")
     
     context = {s.name:s for s in
                (var_ordering + par_ordering + index + shk_ordering + other_para)};
 
-
     context['EXP'] = EXP
     context['inf'] = sympy.oo
-
     context['SUM'] = sympy.Sum
     rcontext = context.copy()
     rcontext['SUM'] = lambda x, d: x
@@ -883,11 +917,38 @@ def read_si(model_yaml):
         raw_equations = model_yaml["equations"]["model"]
     else:
         raw_equations = model_yaml["equations"]
-  
+    
+    logger.debug(f"Processing {len(raw_equations)} model equations")
+    
     sum_rem_equations = [eq.subs(exo_subs_dict)
                          for eq in construct_equation_list(raw_equations, rcontext)]
     equations = [eq.subs(exo_subs_dict)
                  for eq in construct_equation_list(raw_equations, context)]
+                 
+    # Validate SI model constraints
+    logger.info("Validating SI model constraints")
+    index_var = dec['index']
+    validation_errors = validate_si_model({
+        'equations': equations,
+        'variables': var_ordering,
+        'index': index_var
+    }, index_var)
+    
+    if validation_errors:
+        for error in validation_errors:
+            logger.error(error)
+        raise ValueError(
+            f"SI model validation failed. The following errors were found:\n" + 
+            "\n".join(validation_errors)
+        )
+    
+    # General model consistency checks (warning only)
+    warnings = validate_model_consistency({
+        'equations': equations, 
+        'variables': var_ordering
+    })
+    for warning in warnings:
+        logger.warning(warning)
 
     max_lead_endo, max_lag_endo = find_max_lead_lag(equations, var_ordering)
  
@@ -954,26 +1015,28 @@ def read_si(model_yaml):
 
 
 
-    model_dict = {'var_ordering': var_ordering, 
-                  'exo_ordering': exo_ordering, 
-                  'parameters': par_ordering, 
-                  'shk_ordering': shk_ordering, 
-                  'index': index, 
-                  'equations': equations, 
-                  'exo_equations': exo_equations, 
-                  'sequations': sum_rem_equations, 
-                  'calibration': calibration, 
-                  'p': calibration, 
-                  'QQ': QQ, 
-                  'other_para': other_para,
-                  'auxiliary_parameters': cal['auxiliary_parameters'],
-                  'observables': observables, 
-                  'obs_equations': obs_equations, 
-                  'name': name, 
-                  '__data__': model_yaml, 
-                  'para_func_d': func_dict
-              }
+    model_dict = {
+        'var_ordering': var_ordering, 
+        'exo_ordering': exo_ordering, 
+        'parameters': par_ordering, 
+        'shk_ordering': shk_ordering, 
+        'index': index, 
+        'equations': equations, 
+        'exo_equations': exo_equations, 
+        'sequations': sum_rem_equations, 
+        'calibration': calibration, 
+        'p': calibration, 
+        'QQ': QQ, 
+        'other_para': other_para,
+        'auxiliary_parameters': cal['auxiliary_parameters'],
+        'observables': observables, 
+        'obs_equations': obs_equations, 
+        'name': name, 
+        '__data__': model_yaml, 
+        'para_func_d': func_dict
+    }
 
+    logger.info(f"SI model {name} creation complete with {len(var_ordering)} variables")
     model = SIDSGE(**model_dict)
     return model
 

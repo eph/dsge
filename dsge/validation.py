@@ -9,7 +9,7 @@ common errors in model definitions.
 import logging
 from typing import List, Dict, Any, Set, Optional, Union, Tuple, Callable
 from sympy import Expr
-from .symbols import Variable, Shock, Parameter, Equation, TSymbol
+from .symbols import Variable, Shock, Parameter, Equation, TSymbol, EXP
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -176,3 +176,85 @@ def validate_model_consistency(model_dict: Dict[str, Any]) -> List[str]:
     # Similar checks could be added for shocks, parameters, etc.
     
     return warnings
+
+
+def validate_dsge_leads_lags(
+    equations: List[Equation], 
+    variables: List[Variable],
+    max_lead: int = 1, 
+    max_lag: int = 1
+) -> List[str]:
+    """
+    Validate that variables in DSGE models respect maximum lead and lag constraints.
+    
+    Args:
+        equations: List of model equations to check
+        variables: List of model variables
+        max_lead: Maximum allowed lead (default: 1)
+        max_lag: Maximum allowed lag (default: 1, should be positive)
+        
+    Returns:
+        List of validation error messages (empty if no errors)
+    """
+    errors = []
+    var_by_name = {v.name: v for v in variables}
+    
+    for i, eq in enumerate(equations):
+        # Check for variables with leads/lags beyond limits
+        for atom in eq.atoms(Variable):
+            if atom.name in var_by_name:
+                if atom.date > max_lead:
+                    errors.append(
+                        f"Variable {atom.name}({atom.date}) in equation {i+1} exceeds maximum lead of {max_lead}"
+                    )
+                elif atom.date < -max_lag:
+                    errors.append(
+                        f"Variable {atom.name}({atom.date}) in equation {i+1} exceeds maximum lag of {max_lag}"
+                    )
+    
+    return errors
+
+
+def validate_si_model(
+    model_dict: Dict[str, Any],
+    index_var: str
+) -> List[str]:
+    """
+    Validate constraints specific to Sticky Information models.
+    
+    Args:
+        model_dict: Dictionary containing model specification
+        index_var: Name of the information index variable
+        
+    Returns:
+        List of validation error messages (empty if no errors)
+    """
+    errors = []
+    
+    # Ensure index variable appears in appropriate form
+    if 'equations' in model_dict:
+        index_found = False
+        for eq in model_dict['equations']:
+            atoms = eq.atoms(Variable)
+            for atom in atoms:
+                if atom.name == index_var:
+                    index_found = True
+                    # In SI models, the index should typically appear in expectations
+                    # Check if any atom has EXP in its string representation
+                    # This is a simplification, but works for our tests
+                    has_exp = False
+                    try:
+                        has_exp = any(isinstance(a, EXP) for a in eq.atoms(EXP))
+                    except TypeError:
+                        # If EXP is not a proper class for isinstance, check string repr
+                        has_exp = any('EXP' in str(a) for a in eq.atoms())
+                    
+                    if not has_exp:
+                        errors.append(
+                            f"Index variable {index_var} should typically be used within expectations"
+                        )
+        
+        if not index_found:
+            errors.append(f"Index variable {index_var} not found in model equations")
+    
+    return errors

@@ -1,30 +1,43 @@
+#!/usr/bin/env python3
+"""
+DSGE - Dynamic Stochastic General Equilibrium model implementation.
+
+This module provides the core DSGE model class, implementing the standard 
+linear rational expectations framework.
+"""
+
 import numpy as np
 import sympy
+import logging
+from typing import List, Dict, Union, Any, Optional, Tuple
 
 from sympy.matrices import zeros
 from sympy import sympify
 from sympy.utilities.lambdify import lambdify
 
 from .symbols import (Variable,
-                      Equation,
-                      Shock,
-                      Parameter,
-                      TSymbol,
-                      reserved_names,
-                      symbolic_context)
+                     Equation,
+                     Shock,
+                     Parameter,
+                     TSymbol,
+                     reserved_names,
+                     symbolic_context)
 
 from .Prior import construct_prior
 from .data import read_data_file
 from .StateSpaceModel import LinearDSGEModel, LinearDSGEModelwithSV
-
-from typing import List, Dict, Union
+from .validation import validate_dsge_leads_lags, validate_model_consistency
+from .logging_config import get_logger
 
 from .parsing_tools import (parse_expression,
-                            from_dict_to_mat,
-                            parse_calibration,
-                            construct_equation_list,
-                            find_max_lead_lag)
+                           from_dict_to_mat,
+                           parse_calibration,
+                           construct_equation_list,
+                           find_max_lead_lag)
 from .Base import Base
+
+# Get module logger
+logger = get_logger("dsge.core")
 
 class EquationList(list):
     """A container for holding a set of equations.
@@ -63,15 +76,58 @@ class DSGE(Base):
     numeric_context = {}
 
     def __init__(self, *kargs, **kwargs):
+        """
+        Initialize a DSGE model.
+        
+        Args:
+            *kargs: Variable length list of arguments
+            **kwargs: Arbitrary keyword arguments
+            
+        Raises:
+            ValueError: If model validation fails
+        """
         super(DSGE, self).__init__(self, *kargs, **kwargs)
-
+        
+        logger.info("Initializing DSGE model")
+        
+        # Validate model leads and lags
+        if "equations" in self and "variables" in self:
+            logger.debug("Validating model leads and lags")
+            validation_errors = validate_dsge_leads_lags(
+                self["equations"], 
+                self["variables"],
+                max_lead=self.max_lead,
+                max_lag=self.max_lag
+            )
+            
+            if validation_errors:
+                for error in validation_errors:
+                    logger.error(error)
+                raise ValueError(
+                    f"Model validation failed. The following errors were found:\n" + 
+                    "\n".join(validation_errors)
+                )
+        
+        # Model consistency checks (warning only)
+        warnings = validate_model_consistency(self)
+        for warning in warnings:
+            logger.warning(warning)
+        
+        # Process variables
         fvars = []
         lvars = []
 
         # get forward looking variables
+        logger.debug("Identifying forward and backward looking variables")
         for eq in self["equations"]:
-            variable_too_far = [v for v in eq.atoms(Variable) if v.date > 1]
-            variable_too_early = [v for v in eq.atoms(Variable) if v.date < -1]
+            variable_too_far = [v for v in eq.atoms(Variable) if v.date > self.max_lead]
+            variable_too_early = [v for v in eq.atoms(Variable) if v.date < -self.max_lag]
+
+            if variable_too_far:
+                logger.warning(f"Variables with leads beyond max_lead found: {variable_too_far}")
+            
+            if variable_too_early:
+                logger.warning(f"Variables with lags beyond max_lag found: {variable_too_early}")
 
             eq_fvars = [v for v in eq.atoms(TSymbol) if v.date > 0]
             eq_lvars = [v for v in eq.atoms(TSymbol) if v.date < 0]
@@ -81,7 +137,9 @@ class DSGE(Base):
 
             for l in eq_lvars:
                 if l not in lvars: lvars.append(l)
-
+        
+        logger.debug(f"Found {len(fvars)} forward-looking variables and {len(lvars)} backward-looking variables")
+        
         self["info"]["nstate"] = len(self.variables) + len(fvars)
 
         self["fvars"] = fvars
@@ -89,6 +147,8 @@ class DSGE(Base):
         self["lvars"] = lvars
         self["re_errors"] = [Shock("eta_" + v.name) for v in self["fvars"]]
 
+        # Create rational expectations errors equations
+        logger.debug("Creating rational expectations error equations")
         self["re_errors_eq"] = []
         i = 0
         for fv, lag_fv in zip(fvars, self["fvars_lagged"]):
@@ -96,6 +156,8 @@ class DSGE(Base):
                 Equation(fv(-1) - lag_fv - self["re_errors"][i], sympify(0))
             )
             i += 1
+            
+        logger.info(f"DSGE model initialized with {len(self['variables'])} variables and {len(self['equations'])} equations")
 
         if "make_log" in self.keys():
             self["perturb_eq"] = []
