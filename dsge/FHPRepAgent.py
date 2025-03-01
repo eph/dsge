@@ -410,45 +410,62 @@ class FHPRepAgent(Base):
         equations['shocks'] = construct_equation_list(yaml_eq['shocks'], context)
         
         # Check for future shocks in all equation groups
-        # This function checks all equation groups for future shocks
+        from itertools import chain
+        
+        # Helper function moved outside the inner check_for_future_shocks function
+        def find_shock_instances(eq, shock_list):
+            """Find all instances of shocks in an equation."""
+            return [atom for atom in eq.atoms() 
+                    if isinstance(atom, Variable) and atom.name in [s.name for s in shock_list]]
+        
+        def get_original_equation(eq_idx, equation_type):
+            """Get the original equation text from the YAML for better error messages."""
+            # Parse the equation_type which might contain a path like 'cycle/terminal'
+            parts = equation_type.split('/')
+            
+            if len(parts) == 2:
+                # Handle nested sections like cycle/terminal, trend/plan, value/function
+                section, subsection = parts
+                if (section in yaml_eq and 
+                    subsection in yaml_eq[section] and 
+                    isinstance(yaml_eq[section][subsection], list) and 
+                    eq_idx < len(yaml_eq[section][subsection])):
+                    return yaml_eq[section][subsection][eq_idx]
+            elif isinstance(yaml_eq.get(equation_type, []), list) and eq_idx < len(yaml_eq[equation_type]):
+                # Handle flat sections like 'static'
+                return yaml_eq[equation_type][eq_idx]
+            
+            return "unknown equation"
+        
         def check_for_future_shocks(equation_list, shock_list, equation_type):
-            from itertools import chain
-            # Function to find all shock instances in an equation
-            def find_shock_instances(eq):
-                return [atom for atom in eq.atoms() if isinstance(atom, Variable) and atom.name in [s.name for s in shock_list]]
-                
+            """
+            Check if any equation contains future-dated shocks, which are not allowed in FHP models.
+            
+            Args:
+                equation_list: List of equations to check
+                shock_list: List of shock variables to look for
+                equation_type: Section of the model being checked (e.g., 'cycle/terminal')
+            
+            Raises:
+                ValueError: If any future shock is found
+            """                
             for eq_idx, eq in enumerate(equation_list):
                 # Get all shock instances from both sides of the equation
-                shock_instances = find_shock_instances(eq.lhs) + find_shock_instances(eq.rhs)
+                shock_instances = find_shock_instances(eq, shock_list) 
                 
                 # Check if any shock has a future date (date > 0)
                 future_shocks = [s for s in shock_instances if s.date > 0]
                 
                 if future_shocks:
                     shock_names = set(s.name + "(" + str(s.date) + ")" for s in future_shocks)
-                    # Parse the equation_type which might contain a path like 'cycle/terminal'
-                    parts = equation_type.split('/')
+                    original_eq = get_original_equation(eq_idx, equation_type)
                     
-                    if len(parts) == 2:
-                        # Handle nested sections like cycle/terminal, trend/plan, value/function
-                        section, subsection = parts
-                        if (section in yaml_eq and 
-                            subsection in yaml_eq[section] and 
-                            isinstance(yaml_eq[section][subsection], list) and 
-                            eq_idx < len(yaml_eq[section][subsection])):
-                            original_eq = yaml_eq[section][subsection][eq_idx]
-                        else:
-                            original_eq = "unknown equation"
-                    elif isinstance(yaml_eq.get(equation_type, []), list) and eq_idx < len(yaml_eq[equation_type]):
-                        # Handle flat sections like 'static'
-                        original_eq = yaml_eq[equation_type][eq_idx]
-                    else:
-                        original_eq = "unknown equation"
                     raise ValueError(
                         f"Future shocks are not allowed in FHP models. Found future shock(s) {', '.join(shock_names)} in "
                         f"equation: {original_eq} in section '{equation_type}'"
                     )
         
+        # Check all equation types for future shocks
         # Check static equations
         if equations['static']:
             check_for_future_shocks(equations['static'], shocks, 'static')
