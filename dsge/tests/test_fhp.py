@@ -208,6 +208,77 @@ class TestFHP(TestCase):
                            other_files={'data.txt': cmodel.yy,
                                         'prior.txt': prior})
         #make_fortran_model(template_file)
+    def test_future_shocks_check(self):
+        """Test that future shocks in FHP models raise an error."""
+        import yaml
+        import io
+        from dsge import read_yaml
+        
+        # Create a simple FHP model YAML with a future shock in cycle/plan
+        invalid_yaml = """
+declarations:
+  name: test_future_shocks
+  type: fhp
+  variables: [y, c, r]
+  shocks: [e_a, e_b]
+  innovations: [eps_a, eps_b]
+  values: [v]
+  value_updates: [vp]
+  parameters: [alpha, beta]
+  k: 1
+
+model:
+  static: []
+  cycle:
+    terminal:
+      - y = c + r
+      - c = alpha*r
+      - r = beta*y(-1)
+    plan:
+      - y = c + r
+      - c = alpha*r
+      - r = beta*y(-1) + e_a(+1)  # This has a future shock!
+  trend:
+    terminal:
+      - y = c + r
+      - c = alpha*r
+      - r = beta*y(-1)
+    plan:
+      - y = c + r
+      - c = alpha*r
+      - r = beta*y(-1)
+  value:
+    function:
+      - v = vp
+    update:
+      - vp = alpha*y + beta*r
+  shocks:
+    - e_a = 0.9*e_a(-1) + eps_a
+    - e_b = 0.8*e_b(-1) + eps_b
+  observables:
+    y: y
+    c: c
+    r: r
+
+calibration:
+  parameters:
+    alpha: 0.3
+    beta: 0.99
+  covariance:
+    eps_a: 1.0
+    eps_b: 1.0
+"""
+        
+        # Test that an error is raised when loading this model
+        with self.assertRaises(ValueError) as cm:
+            read_yaml(io.StringIO(invalid_yaml))
+        
+        # Check that the error message contains the expected information
+        error_msg = str(cm.exception)
+        self.assertIn("Future shocks are not allowed", error_msg)
+        self.assertIn("e_a(1)", error_msg)
+        self.assertIn("cycle/plan", error_msg)
+
     def test_fortran(self):
 
         p0 = self.model.p0()
