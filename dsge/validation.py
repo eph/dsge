@@ -1,0 +1,178 @@
+#!/usr/bin/env python3
+"""
+Validation utilities for DSGE models.
+
+This module provides functions for validating model specifications and detecting
+common errors in model definitions.
+"""
+
+import logging
+from typing import List, Dict, Any, Set, Optional, Union, Tuple, Callable
+from sympy import Expr
+from .symbols import Variable, Shock, Parameter, Equation, TSymbol
+
+# Configure logging
+logger = logging.getLogger(__name__)
+
+
+def find_symbols_in_equation(
+    eq: Equation, 
+    symbol_type: type, 
+    names: Optional[List[str]] = None
+) -> List[TSymbol]:
+    """
+    Find all symbols of a given type in an equation.
+    
+    Args:
+        eq: The equation to search within
+        symbol_type: The type of symbol to look for (e.g., Variable, Shock)
+        names: Optional list of symbol names to restrict the search to
+        
+    Returns:
+        List of symbols found in the equation
+    """
+    atoms = eq.atoms(symbol_type)
+    if names:
+        return [atom for atom in atoms if atom.name in names]
+    return list(atoms)
+
+
+def find_future_symbols(
+    equations: List[Equation], 
+    symbols: List[TSymbol],
+    symbol_type: type = Variable
+) -> Dict[Equation, List[Tuple[TSymbol, int]]]:
+    """
+    Find all future-dated symbols in a list of equations.
+    
+    Args:
+        equations: List of equations to check
+        symbols: List of symbols to look for
+        symbol_type: Type of symbol to check (Variable or Shock)
+        
+    Returns:
+        Dictionary mapping equations to lists of (symbol, date) tuples for future symbols
+    """
+    symbol_names = [s.name for s in symbols]
+    result = {}
+    
+    for eq in equations:
+        # Search both sides of the equation
+        future_symbols = []
+        
+        for side in [eq.lhs, eq.rhs]:
+            found_symbols = find_symbols_in_equation(side, symbol_type, symbol_names)
+            future_symbols.extend([(s, s.date) for s in found_symbols if s.date > 0])
+            
+        if future_symbols:
+            result[eq] = future_symbols
+            
+    return result
+
+
+def check_for_future_shocks(
+    equation_list: List[Equation], 
+    shock_list: List[Variable], 
+    equation_type: str,
+    get_original_eq_fn: Callable[[int, str], str]
+) -> None:
+    """
+    Check if any equation contains future-dated shocks, which are not allowed in certain models.
+    
+    Args:
+        equation_list: List of equations to check
+        shock_list: List of shock variables to look for
+        equation_type: Section of the model being checked (e.g., 'cycle/terminal')
+        get_original_eq_fn: Function to retrieve the original equation string
+    
+    Raises:
+        ValueError: If any future shock is found
+    """
+    shock_names = [s.name for s in shock_list]
+    
+    for eq_idx, eq in enumerate(equation_list):
+        # Find all shock instances
+        future_shocks = []
+        
+        for side in [eq.lhs, eq.rhs]:
+            symbols = find_symbols_in_equation(side, Variable, shock_names)
+            future_shocks.extend([s for s in symbols if s.date > 0])
+        
+        if future_shocks:
+            shock_names_with_dates = set(f"{s.name}({s.date})" for s in future_shocks)
+            original_eq = get_original_eq_fn(eq_idx, equation_type)
+            
+            raise ValueError(
+                f"Future shocks are not allowed in this model. Found future shock(s) "
+                f"{', '.join(shock_names_with_dates)} in equation: {original_eq} "
+                f"in section '{equation_type}'"
+            )
+
+
+def find_max_lead_lag(
+    equations: List[Equation], 
+    variables: List[Union[Variable, Shock]]
+) -> Tuple[Dict[TSymbol, int], Dict[TSymbol, int]]:
+    """
+    Find the maximum lead and lag for each variable in a set of equations.
+    
+    Args:
+        equations: List of equations to analyze
+        variables: List of variables or shocks to check
+        
+    Returns:
+        Tuple of (max_lead, max_lag) dictionaries
+    """
+    max_lead = {v: 0 for v in variables}
+    max_lag = {v: 0 for v in variables}
+    
+    var_by_name = {v.name: v for v in variables}
+    
+    for eq in equations:
+        for atom in eq.atoms():
+            if isinstance(atom, Variable) and atom.name in var_by_name:
+                var = var_by_name[atom.name]
+                if atom.date > max_lead[var]:
+                    max_lead[var] = atom.date
+                elif atom.date < max_lag[var]:
+                    max_lag[var] = atom.date
+    
+    return max_lead, max_lag
+
+
+def validate_model_consistency(model_dict: Dict[str, Any]) -> List[str]:
+    """
+    Perform general consistency checks on a model.
+    
+    Args:
+        model_dict: Dictionary containing model specification
+        
+    Returns:
+        List of warning messages (empty if no issues found)
+    """
+    warnings = []
+    
+    # Check that all variables used in equations are declared
+    if 'equations' in model_dict and 'variables' in model_dict:
+        declared_vars = {v.name for v in model_dict['variables']}
+        
+        # Gather all variables used in equations
+        used_vars = set()
+        for eq_section in model_dict['equations'].values():
+            if isinstance(eq_section, dict):
+                for sub_section in eq_section.values():
+                    for eq in sub_section:
+                        for atom in eq.atoms(Variable):
+                            used_vars.add(atom.name)
+            else:
+                for eq in eq_section:
+                    for atom in eq.atoms(Variable):
+                        used_vars.add(atom.name)
+        
+        undeclared = used_vars - declared_vars
+        if undeclared:
+            warnings.append(f"Used variables not declared: {', '.join(undeclared)}")
+    
+    # Similar checks could be added for shocks, parameters, etc.
+    
+    return warnings

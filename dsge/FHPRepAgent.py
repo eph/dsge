@@ -1,24 +1,39 @@
 #!/usr/bin/env python3
+"""
+FHP Representative Agent DSGE model implementation.
+
+This module provides classes for working with FHP (Full Information Home Production)
+Representative Agent DSGE models, which include cycle, trend, and value function components.
+"""
+
 import numpy as np
 import sympy
+from typing import Dict, List, Union, Optional, Any, Tuple, Callable
 
 from sympy import sympify
 from sympy.utilities.lambdify import lambdify
 
 from .symbols import (Variable,
                       Shock,
-                      Parameter)
+                      Parameter,
+                      Equation,
+                      TSymbol)
 
 
 from .Prior import construct_prior
 from .data import read_data_file
 from .StateSpaceModel import LinearDSGEModel
 from .parsing_tools import from_dict_to_mat, construct_equation_list
+from .validation import check_for_future_shocks, find_symbols_in_equation
+from .logging_config import get_logger
 
 from sympy.printing import fcode
 from sympy.printing.fortran import FCodePrinter
 
 from .Base import Base
+
+# Get module logger
+logger = get_logger("fhp")
 
 # Define a new function
 def _print_Integer(self, expr):
@@ -344,7 +359,24 @@ class FHPRepAgent(Base):
 
 
     @classmethod
-    def read(cls, model_yaml, k=None):
+    def read(cls, model_yaml: Dict[str, Any], k: Optional[int] = None) -> "FHPRepAgent":
+        """
+        Read a model specification from a YAML dictionary and create an FHPRepAgent model.
+        
+        Args:
+            model_yaml: Dictionary containing the model specification
+            k: Optional parameter to override the k value in the YAML
+            
+        Returns:
+            An initialized FHPRepAgent model
+            
+        Raises:
+            ValueError: If the model specification is invalid
+            AssertionError: If equation counts don't match variable counts
+        """
+        logger.info("Reading FHP model from YAML specification")
+        
+        # Process declarations
         dec = model_yaml['declarations']
         variables = [Variable(v) for v in dec['variables']]
         values = [Variable(v) for v in dec['values']]
@@ -352,75 +384,141 @@ class FHPRepAgent(Base):
         shocks = [Variable(v) for v in dec['shocks']]
         innovations = [Shock(v) for v in dec['innovations']]
         parameters = [Parameter(v) for v in dec['parameters']]
-        expectations = dec['expectations'] if 'expectations' in dec else 0
+        expectations = dec.get('expectations', 0)  # Use get with default for cleaner code
+        
+        logger.debug(f"Model has {len(variables)} variables, {len(shocks)} shocks, and {len(parameters)} parameters")
 
+        # Process auxiliary parameters
         if "auxiliary_parameters" in dec:
+            logger.debug(f"Processing {len(dec['auxiliary_parameters'])} auxiliary parameters")
             other_para = [Parameter(v) for v in dec["auxiliary_parameters"]]
-
-            other_para = {op: sympify(model_yaml['calibration']["auxiliary_parameters"][op.name],
-                                      {str(x): x for x in parameters+other_para})
-                          for op in other_para}
-
+            
+            # Create a context for parsing
+            param_context = {str(x): x for x in parameters + other_para}
+            
+            try:
+                other_para = {
+                    op: sympify(
+                        model_yaml['calibration']["auxiliary_parameters"][op.name],
+                        param_context
+                    ) for op in other_para
+                }
+            except KeyError as e:
+                logger.error(f"Missing auxiliary parameter definition: {e}")
+                raise ValueError(f"Auxiliary parameter {e} is declared but not defined in calibration")
         else:
             other_para = {}
 
+        # Process measurement errors
         if "measurement_errors" in dec:
             measurement_errors = [Shock(v) for v in dec["measurement_errors"]]
+            logger.debug(f"Model includes {len(measurement_errors)} measurement errors")
         else:
             measurement_errors = None
 
+        # Create parsing context with all symbols
         context = {s.name: s
                    for s in (variables +
                              values + value_updates +
                              shocks + innovations +
                              parameters + list(other_para.keys()))}
 
+        # Process observables
         if "observables" in dec:
-            observables = [Variable(v)  for v in dec["observables"]]
-            obs_equations = {o: sympify(model_yaml["model"]["observables"][str(o)], context)
-                             for o in observables}
+            logger.debug(f"Processing {len(dec['observables'])} observables")
+            observables = [Variable(v) for v in dec["observables"]]
+            
+            # Create observables equations
+            try:
+                obs_equations = {
+                    o: sympify(model_yaml["model"]["observables"][str(o)], context)
+                    for o in observables
+                }
+            except KeyError as e:
+                logger.error(f"Missing observable equation: {e}")
+                raise ValueError(f"Observable {e} is declared but has no equation in model.observables")
         else:
+            # Default: use variables as observables
             observables = [Variable(v) for v in dec["variables"]]
             obs_equations = {v: v for v in observables}
+            logger.debug("No observables specified, using variables as observables")
 
-        # set up the equations
+        # Set up the equations
         yaml_eq = model_yaml['model']
         equations = {}
+        
+        # Process static equations (optional section)
         if 'static' in yaml_eq:
+            logger.debug(f"Processing {len(yaml_eq['static'])} static equations")
             equations['static'] = construct_equation_list(yaml_eq['static'], context)
         else:
             equations['static'] = []
+            logger.debug("No static equations specified")
 
-        equations['cycle'] = {'terminal': construct_equation_list(yaml_eq['cycle']['terminal'], context),
-                              'plan': construct_equation_list(yaml_eq['cycle']['plan'], context)}
+        # Process cycle equations (required sections)
+        logger.debug(f"Processing cycle equations (terminal: {len(yaml_eq['cycle']['terminal'])}, plan: {len(yaml_eq['cycle']['plan'])})")
+        equations['cycle'] = {
+            'terminal': construct_equation_list(yaml_eq['cycle']['terminal'], context),
+            'plan': construct_equation_list(yaml_eq['cycle']['plan'], context)
+        }
 
-        assert len(equations['cycle']['terminal']) + len(equations['static']) == len(variables)
-        assert len(equations['cycle']['plan']) + len(equations['static']) == len(variables)
+        # Verify equation counts match variable counts
+        try:
+            assert len(equations['cycle']['terminal']) + len(equations['static']) == len(variables)
+            assert len(equations['cycle']['plan']) + len(equations['static']) == len(variables)
+        except AssertionError:
+            var_count = len(variables)
+            static_count = len(equations['static']) 
+            terminal_count = len(equations['cycle']['terminal'])
+            plan_count = len(equations['cycle']['plan'])
+            logger.error(
+                f"Equation count mismatch: variables={var_count}, "
+                f"static={static_count}, cycle.terminal={terminal_count}, cycle.plan={plan_count}"
+            )
+            raise AssertionError(
+                f"FHP model requires exactly {var_count} equations, but found "
+                f"{static_count + terminal_count} terminal equations and {static_count + plan_count} plan equations"
+            )
 
-        equations['trend'] = {'terminal': construct_equation_list(yaml_eq['trend']['terminal'], context),
-                              'plan': construct_equation_list(yaml_eq['trend']['plan'], context)}
+        # Process trend equations (required sections)
+        logger.debug(f"Processing trend equations (terminal: {len(yaml_eq['trend']['terminal'])}, plan: {len(yaml_eq['trend']['plan'])})")
+        equations['trend'] = {
+            'terminal': construct_equation_list(yaml_eq['trend']['terminal'], context),
+            'plan': construct_equation_list(yaml_eq['trend']['plan'], context)
+        }
 
-        assert len(equations['trend']['terminal']) + len(equations['static']) == len(variables)
-        assert len(equations['trend']['plan']) + len(equations['static']) == len(variables)
+        # Verify equation counts match variable counts for trend equations
+        try:
+            assert len(equations['trend']['terminal']) + len(equations['static']) == len(variables)
+            assert len(equations['trend']['plan']) + len(equations['static']) == len(variables)
+        except AssertionError:
+            var_count = len(variables)
+            static_count = len(equations['static']) 
+            terminal_count = len(equations['trend']['terminal'])
+            plan_count = len(equations['trend']['plan'])
+            logger.error(
+                f"Trend equation count mismatch: variables={var_count}, "
+                f"static={static_count}, trend.terminal={terminal_count}, trend.plan={plan_count}"
+            )
+            raise AssertionError(
+                f"FHP model requires exactly {var_count} equations, but found "
+                f"{static_count + terminal_count} terminal equations and {static_count + plan_count} plan equations"
+            )
 
-        equations['value'] = {}
-        equations['value']['function'] = construct_equation_list(yaml_eq['value']['function'], context)
-        equations['value']['update'] = construct_equation_list(yaml_eq['value']['update'], context)
+        # Process value function equations
+        logger.debug(f"Processing value equations (function: {len(yaml_eq['value']['function'])}, update: {len(yaml_eq['value']['update'])})")
+        equations['value'] = {
+            'function': construct_equation_list(yaml_eq['value']['function'], context),
+            'update': construct_equation_list(yaml_eq['value']['update'], context)
+        }
 
+        # Process shock equations
+        logger.debug(f"Processing {len(yaml_eq['shocks'])} shock equations")
         equations['shocks'] = construct_equation_list(yaml_eq['shocks'], context)
         
-        # Check for future shocks in all equation groups
-        from itertools import chain
-        
-        # Helper function moved outside the inner check_for_future_shocks function
-        def find_shock_instances(eq, shock_list):
-            """Find all instances of shocks in an equation."""
-            return [atom for atom in eq.atoms() 
-                    if isinstance(atom, Variable) and atom.name in [s.name for s in shock_list]]
-        
-        def get_original_equation(eq_idx, equation_type):
+        # Helper function to get original equation text for error messages
+        def get_original_equation(eq_idx: int, equation_type: str) -> str:
             """Get the original equation text from the YAML for better error messages."""
-            # Parse the equation_type which might contain a path like 'cycle/terminal'
             parts = equation_type.split('/')
             
             if len(parts) == 2:
@@ -437,86 +535,91 @@ class FHPRepAgent(Base):
             
             return "unknown equation"
         
-        def check_for_future_shocks(equation_list, shock_list, equation_type):
-            """
-            Check if any equation contains future-dated shocks, which are not allowed in FHP models.
-            
-            Args:
-                equation_list: List of equations to check
-                shock_list: List of shock variables to look for
-                equation_type: Section of the model being checked (e.g., 'cycle/terminal')
-            
-            Raises:
-                ValueError: If any future shock is found
-            """                
-            for eq_idx, eq in enumerate(equation_list):
-                # Get all shock instances from both sides of the equation
-                shock_instances = find_shock_instances(eq, shock_list) 
-                
-                # Check if any shock has a future date (date > 0)
-                future_shocks = [s for s in shock_instances if s.date > 0]
-                
-                if future_shocks:
-                    shock_names = set(s.name + "(" + str(s.date) + ")" for s in future_shocks)
-                    original_eq = get_original_equation(eq_idx, equation_type)
-                    
-                    raise ValueError(
-                        f"Future shocks are not allowed in FHP models. Found future shock(s) {', '.join(shock_names)} in "
-                        f"equation: {original_eq} in section '{equation_type}'"
-                    )
+        # Validate that no future shocks are used in any equations
+        logger.info("Validating model: checking for future shocks")
         
-        # Check all equation types for future shocks
         # Check static equations
         if equations['static']:
-            check_for_future_shocks(equations['static'], shocks, 'static')
+            check_for_future_shocks(
+                equations['static'], 
+                shocks, 
+                'static',
+                get_original_equation
+            )
             
         # Check cycle equations
-        check_for_future_shocks(equations['cycle']['terminal'], shocks, 'cycle/terminal')
-        check_for_future_shocks(equations['cycle']['plan'], shocks, 'cycle/plan')
+        for section in ['terminal', 'plan']:
+            check_for_future_shocks(
+                equations['cycle'][section], 
+                shocks, 
+                f'cycle/{section}',
+                get_original_equation
+            )
             
         # Check trend equations
-        check_for_future_shocks(equations['trend']['terminal'], shocks, 'trend/terminal')
-        check_for_future_shocks(equations['trend']['plan'], shocks, 'trend/plan')
+        for section in ['terminal', 'plan']:
+            check_for_future_shocks(
+                equations['trend'][section], 
+                shocks, 
+                f'trend/{section}',
+                get_original_equation
+            )
             
         # Check value function equations
-        check_for_future_shocks(equations['value']['function'], shocks, 'value/function')
-        check_for_future_shocks(equations['value']['update'], shocks, 'value/update')
+        for section in ['function', 'update']:
+            check_for_future_shocks(
+                equations['value'][section], 
+                shocks, 
+                f'value/{section}',
+                get_original_equation
+            )
+            
+        logger.info("Model validation passed: no future shocks found")
 
+        # Process covariance matrix
         if 'covariance' in model_yaml['calibration']:
+            logger.debug("Processing covariance matrix from calibration")
             QQ = from_dict_to_mat(model_yaml['calibration']['covariance'], innovations, context)
         else:
-            print('No covariance matrix provided. Assuming identity matrix.')
+            logger.warning('No covariance matrix provided. Assuming identity matrix.')
             QQ = sympy.eye(len(innovations))
 
+        # Process measurement errors
         me_dict = {}
         if 'measurement_errors' in model_yaml['calibration']:
             me_dict = model_yaml['calibration']['measurement_errors']
+            logger.debug("Processing measurement error specifications from calibration")
 
+        # Create measurement error covariance matrix
         if measurement_errors is not None:
+            logger.debug(f"Creating measurement error covariance matrix of size {len(measurement_errors)}x{len(measurement_errors)}")
             HH = from_dict_to_mat(me_dict, measurement_errors, context)
         else:
-
+            logger.debug(f"Creating measurement error covariance matrix of size {len(observables)}x{len(observables)}")
             HH = from_dict_to_mat(me_dict, observables, context)
 
-        model_dict = {'variables': variables,
-                      'values': values,
-                      'value_updates': value_updates,
-                      'shocks': shocks,
-                      'expectations': expectations,
-                      'innovations': innovations,
-                      'parameters': parameters,
-                      'auxiliary_parameters': other_para,
-                      'context': context,
-                      'equations': equations,
-                      'calibration': model_yaml['calibration'],
-                      'estimation': model_yaml['estimation'] if 'estimation' in model_yaml else {},
-                      'observables': observables,
-                      'obs_equations': obs_equations,
-                      'QQ': QQ,
-                      'HH': HH,
-                      'k': dec['k']}
+        # Create the model dictionary with all components
+        model_dict = {
+            'variables': variables,
+            'values': values,
+            'value_updates': value_updates,
+            'shocks': shocks,
+            'expectations': expectations,
+            'innovations': innovations,
+            'parameters': parameters,
+            'auxiliary_parameters': other_para,
+            'context': context,
+            'equations': equations,
+            'calibration': model_yaml['calibration'],
+            'estimation': model_yaml['estimation'] if 'estimation' in model_yaml else {},
+            'observables': observables,
+            'obs_equations': obs_equations,
+            'QQ': QQ,
+            'HH': HH,
+            'k': k if k is not None else dec['k']  # Allow k override from parameter
+        }
 
-
+        logger.info(f"FHP model creation complete: {len(variables)} variables, {len(parameters)} parameters")
         return cls(**model_dict)
 
     def compile_model(self, k=None,expectations=None):
