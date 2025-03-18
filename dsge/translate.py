@@ -2,6 +2,7 @@ import numpy as np
 
 import os
 from dsge.parsing_tools import parse_expression
+from dsge.matlab_tools import translate_matlab
 
 template_path = os.path.join(os.path.dirname(__file__), "templates")
 
