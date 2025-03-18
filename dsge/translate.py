@@ -224,7 +224,8 @@ def translate(model, output_dir=".", language="fortran"):
 
     if language == "fortran":
         translate_fortran(model, output_dir)
-    elif language == "matlab":
+    elif language == "cpp":
+        raise NotImplementedError("C++ export not implemented.")
         translate_matlab(model, output_dir)
     elif language == "dynare":
         raise NotImplementedError("Dynare not yet implemented.")
