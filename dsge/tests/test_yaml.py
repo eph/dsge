@@ -1,5 +1,4 @@
 import unittest
-import os
 from dsge.parse_yaml import navigate_path, yaml, read_yaml
 
 class TestIncludeConstructor(unittest.TestCase):

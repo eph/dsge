@@ -6,10 +6,9 @@ This module contains unit tests for the validation functions in the dsge.validat
 """
 
 import unittest
-from unittest.mock import MagicMock, patch
-import sympy
+from unittest.mock import MagicMock
 
-from dsge.symbols import Variable, Shock, Parameter, Equation
+from dsge.symbols import Variable, Equation
 from dsge.validation import (
     find_symbols_in_equation,
     find_future_symbols,

@@ -6,12 +6,16 @@ This module provides functions for loading and validating DSGE model specificati
 from YAML files, handling different model types and validation requirements.
 """
 
-import yaml, re, os, warnings, logging
-from typing import List, Dict, Union, IO, Any, Optional
+import yaml
+import re
+import os
+import warnings
+import logging
+from typing import List, Dict, Union, IO
 
 from .DSGE import DSGE
 from .FHPRepAgent import FHPRepAgent
-from .SIDSGE import SIDSGE, read_si
+from .SIDSGE import read_si
 
 warnings.formatwarning = lambda message, category, filename, lineno, line=None: f'{category.__name__}: {message}\n'
 

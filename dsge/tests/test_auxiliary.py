@@ -1,5 +1,3 @@
-import numpy as np
-from numpy.testing import assert_equal, assert_array_almost_equal
 
 from unittest import TestCase
 
@@ -8,7 +6,6 @@ from dsge import read_yaml
 class TestAuxiliary(TestCase):
 
     def test_simple(self):
-        from dsge import read_yaml
         from io import StringIO
         simple_dsge = StringIO("""
 declarations:

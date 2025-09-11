@@ -35,7 +35,7 @@ test = [
 ]
 codegen = [
   # Fortress is hosted on GitHub and provides `fortress.make_smc` used by codegen
-  "fortress @ git+https://github.com/eph/fortress.git",
+  "fortress @ file:////home/eherbst/Dropbox/code/fortress/", #git+https://github.com/eph/fortress.git",
 ]
 
 [tool.setuptools]

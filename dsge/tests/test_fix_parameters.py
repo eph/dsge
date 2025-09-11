@@ -1,5 +1,4 @@
 import unittest
-from sympy import symbols, Function
 from dsge.Base import Base, Parameter
 
 

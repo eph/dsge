@@ -1,10 +1,8 @@
 import numpy as np
-from numpy.testing import assert_equal
 
 from unittest import TestCase
 
 from dsge.gensys import gensys
-from numpy.testing import assert_equal
 
 class TestLinver(TestCase):
 

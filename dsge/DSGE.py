@@ -8,12 +8,10 @@ linear rational expectations framework.
 
 import numpy as np
 import sympy
-import logging
-from typing import List, Dict, Union, Any, Optional, Tuple
+from typing import List, Dict, Union
 
 from sympy.matrices import zeros
 from sympy import sympify
-from sympy.utilities.lambdify import lambdify
 
 from .symbols import (Variable,
                      Equation,
@@ -31,7 +29,6 @@ from .logging_config import get_logger
 
 from .parsing_tools import (parse_expression,
                             from_dict_to_mat,
-                            parse_calibration,
                             construct_equation_list,
                             find_max_lead_lag)
 from .Base import Base
@@ -104,7 +101,7 @@ class DSGE(Base):
                 for error in validation_errors:
                     logger.error(error)
                 raise ValueError(
-                    f"Model validation failed. The following errors were found:\n" + 
+                    "Model validation failed. The following errors were found:\n" + 
                     "\n".join(validation_errors)
                 )
         
@@ -561,7 +558,7 @@ Equations:
             for error in validation_errors:
                 logger.error(f"Validation error: {error}")
             raise ValueError(
-                f"DSGE model validation failed. The following errors were found:\n" + 
+                "DSGE model validation failed. The following errors were found:\n" + 
                 "\n".join(validation_errors)
             )
         

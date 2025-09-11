@@ -1,7 +1,5 @@
-import numpy as np
-import pandas as pd
 
-from numpy.testing import assert_equal, assert_array_almost_equal
+from numpy.testing import assert_equal
 
 from unittest import TestCase
 
@@ -10,9 +8,9 @@ from dsge.symbols import Variable, Parameter, Shock, EXP
 from dsge.resource_utils import resource_path
 from dsge.parsing_tools import construct_equation_list
 try:
-    from importlib.resources import files, as_file
+    pass
 except Exception:  # pragma: no cover
-    from importlib_resources import files, as_file  # type: ignore
+    pass  # type: ignore
 
 import sympy
 

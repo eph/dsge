@@ -1,4 +1,3 @@
-import numpy as np
 def EXP(j):
     return lambda x: E(j, x)
 

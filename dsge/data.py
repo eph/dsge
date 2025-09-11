@@ -62,7 +62,6 @@ def read_data_file(datafile, obs_names):
         data.index = pd.period_range(startdate, freq=freq, periods=nobs)
 
     return data
-import numpy as np
 #import pandas as p
 #
 #import warnings

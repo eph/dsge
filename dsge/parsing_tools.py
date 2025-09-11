@@ -1,5 +1,5 @@
 import sympy as sp
-from typing import List, Dict, Tuple, Union, Callable, Optional, Any
+from typing import List, Dict, Union, Any
 from .symbols import Equation, Parameter, Shock, Variable
 import itertools
 

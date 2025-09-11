@@ -1,7 +1,7 @@
 from __future__ import division
 
 import numpy as np
-from numpy.testing import assert_equal, assert_allclose
+from numpy.testing import assert_allclose
 
 from unittest import TestCase
 

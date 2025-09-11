@@ -1,7 +1,6 @@
 import os
 import unittest
 import numpy as np
-import pandas as pd
 
 from dsge.data import read_data_file
 

@@ -1,5 +1,4 @@
-import numpy as np
-from numpy.testing import assert_equal, assert_array_almost_equal
+from numpy.testing import assert_equal
 
 from unittest import TestCase
 
@@ -8,7 +7,6 @@ from dsge import read_yaml
 class TestExternal(TestCase):
 
     def test_simple(self):
-        from dsge import read_yaml
         from io import StringIO
         simple_dsge = StringIO("""
 declarations:
@@ -38,7 +36,6 @@ calibration:
 
 
     def test_DGS(self):
-        from dsge import read_yaml
         DGS = read_yaml('/home/eherbst/Dropbox/code/dsge/dsge/examples/DGS/DGS.yaml')
         DGSlin = DGS.compile_model()
         p0 = DGS.p0()

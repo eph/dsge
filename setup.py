@@ -1,4 +1,3 @@
-import setuptools
 from setuptools import setup, find_packages
 # def build_ext(config):
 

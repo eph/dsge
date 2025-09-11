@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 import numpy as np
-import pandas as pd
 
-from numpy.testing import assert_equal, assert_array_almost_equal
+from numpy.testing import assert_array_almost_equal
 
 from unittest import TestCase
 
@@ -209,7 +208,6 @@ class TestFHP(TestCase):
         #make_fortran_model(template_file)
     def test_future_shocks_check(self):
         """Test that future shocks in FHP models raise an error."""
-        import yaml
         import io
         from dsge import read_yaml
         

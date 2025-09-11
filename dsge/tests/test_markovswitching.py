@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 import numpy as np
-import pandas as pd
 
-from numpy.testing import assert_equal, assert_array_almost_equal
+from numpy.testing import assert_array_almost_equal
 
 from unittest import TestCase
 
@@ -99,8 +98,7 @@ calibration:
 
         ms.solve_LRE(para1)
         irfs = ms.impulse_response(para1, 0)
-        import matplotlib.pyplot as plt
         #irfs['er'][['y', 'pi', 'i']].plot(); plt.show()
 
-        sim = ms.simulate(para1);
+        sim = ms.simulate(para1)
         print(sim)

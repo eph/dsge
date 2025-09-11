@@ -1,5 +1,5 @@
 import numpy as np
-from numpy.testing import assert_equal, assert_array_almost_equal
+from numpy.testing import assert_array_almost_equal
 
 from unittest import TestCase
 
@@ -8,7 +8,6 @@ from dsge import read_yaml
 class TestAnticipatedShocks(TestCase):
 
     def test_parse(self):
-        from dsge import read_yaml
         from io import StringIO
         simple_dsge = StringIO(
             """
@@ -57,7 +56,6 @@ calibration:
         assert_array_almost_equal(irf['e']['x'].values, exact)
 
     def test_anticipated_irf(self):
-        from dsge import read_yaml
         from io import StringIO
         simple_dsge = StringIO(
             """

@@ -1,12 +1,8 @@
-import numpy as np
-from numpy.testing import assert_equal
 
 from unittest import TestCase
 
-from dsge import DSGE
 from dsge.symbols import Variable, Equation
 
-from numpy.testing import assert_equal
 
 class TestEquations(TestCase):
 
@@ -33,7 +29,6 @@ class TestEquations(TestCase):
 
     def test_sympify(self):
 
-        from sympy import sympify
         y = Variable('y')
         eq = 'y - y(-1)'
         print(eval(eq, {'y': y}).atoms())

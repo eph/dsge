@@ -1,7 +1,6 @@
 import numpy as np
 
 import os
-from dsge.parsing_tools import parse_expression
 from dsge.translate_cpp import translate_cpp
 
 template_path = os.path.join(os.path.dirname(__file__), "templates")
@@ -166,7 +165,7 @@ def smc(model, t0=0, extra_code=""):
     to_replace = model['auxiliary_parameters']
     to_replace = list(to_replace.items())
 
-    from itertools import combinations, permutations
+    from itertools import permutations
 
     edges = [ 
         (i, j)
@@ -402,7 +401,6 @@ def write_model_file(model, output_dir, language="fortran", nobs=None):
     GAM0, GAM1, PSI, PPI, QQ, DD, ZZ, HH = system_matrices
 
     from FCodePrinter import fcode_double as wf
-    from FCodePrinter import fcode
     from sympy import MatrixSymbol as MS
 
     sims_mat = "\n\n".join(

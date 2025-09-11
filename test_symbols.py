@@ -4,7 +4,7 @@ Test the enhanced string representation of DSGE symbols.
 """
 
 import sympy
-from dsge.symbols import Variable, Parameter, Shock
+from dsge.symbols import Variable, Parameter
 
 def print_symbol_examples():
     """Print examples of the new symbol representation."""
@@ -52,7 +52,6 @@ def print_symbol_examples():
     
     print("\nVariable examples with expectations:")
     # Create variables with expectations
-    from sympy import symbols
     y_exp = Variable("y", exp_date=1)
     pi_exp = Variable("pi", exp_date=1)
     c_lead_exp = Variable("c", date=1, exp_date=1)  # Expectation of future c

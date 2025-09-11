@@ -7,9 +7,8 @@ common errors in model definitions.
 """
 
 import logging
-from typing import List, Dict, Any, Set, Optional, Union, Tuple, Callable
-from sympy import Expr
-from .symbols import Variable, Shock, Parameter, Equation, TSymbol, EXP
+from typing import List, Dict, Any, Optional, Union, Tuple, Callable
+from .symbols import Variable, Shock, Equation, TSymbol, EXP
 
 # Configure logging
 logger = logging.getLogger(__name__)

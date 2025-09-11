@@ -1,18 +1,13 @@
 import numpy as np
-from numpy.testing import assert_equal, assert_array_almost_equal
+from numpy.testing import assert_array_almost_equal
 
 from unittest import TestCase
 
 from dsge import read_yaml
 from dsge.oc import parse_loss, write_system_in_dennis_form, compile_commitment, compile_discretion
 
-import numpy as np
-from numpy.testing import assert_equal, assert_array_almost_equal
 
-from unittest import TestCase
 
-from dsge import read_yaml
-from dsge.oc import parse_loss, write_system_in_dennis_form, compile_commitment, compile_discretion
 
 class TestOC(TestCase):
 
@@ -32,13 +27,11 @@ class TestOC(TestCase):
         assert_array_almost_equal(Q, np.array([[2]]))
 
     def test_A_matrices(self):
-        from dsge import read_yaml
         f = read_yaml('/home/eherbst/tmp/dsge_example.yaml')
         A0, A1, A2, A3, A4, A5, names = write_system_in_dennis_form(f, 'i', 'em')
         pass
 
     def test_compile_commitment(self):
-        from dsge import read_yaml
         from io import StringIO
         simple_dsge = StringIO(
             """
@@ -91,13 +84,11 @@ class TestOC(TestCase):
         assert_array_almost_equal(Q, np.array([[2]]))
 
     def test_A_matrices(self):
-        from dsge import read_yaml
         f = read_yaml('/home/eherbst/tmp/dsge_example.yaml')
         A0, A1, A2, A3, A4, A5, names = write_system_in_dennis_form(f, 'i', 'em')
         pass
 
     def test_interest_rate_smoothing(self):
-        from dsge import read_yaml
         from io import StringIO
         simple_dsge = StringIO(
             """
@@ -133,7 +124,6 @@ calibration:
         mod_commit = compile_commitment(f, 'pi**2 + y**2 + deli**2', 'i', 'em', beta='beta')
 
     def test_compile_commitment(self):
-        from dsge import read_yaml
         from io import StringIO
         simple_dsge = StringIO(
             """

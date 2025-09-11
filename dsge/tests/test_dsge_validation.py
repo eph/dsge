@@ -7,14 +7,11 @@ This module tests the validation code specific to standard DSGE models.
 
 import unittest
 import io
-import yaml
-import sympy
 from unittest.mock import patch
 
 from dsge.parse_yaml import read_yaml
-from dsge.symbols import Variable, Shock, Parameter, Equation
+from dsge.symbols import Variable, Equation
 from dsge.validation import validate_dsge_leads_lags
-from dsge.DSGE import DSGE
 
 
 class TestDSGEValidation(unittest.TestCase):

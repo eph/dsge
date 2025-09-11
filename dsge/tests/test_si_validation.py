@@ -6,15 +6,11 @@ This module tests the validation code specific to SI DSGE models.
 """
 
 import unittest
-import io
-import yaml
 import sympy
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock
 
-from dsge.parse_yaml import read_yaml
-from dsge.symbols import Variable, Shock, Parameter, Equation, EXP
+from dsge.symbols import Variable, Parameter, Equation, EXP
 from dsge.validation import validate_si_model
-from dsge.SIDSGE import read_si
 
 
 class TestSIValidation(unittest.TestCase):

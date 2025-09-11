@@ -10,7 +10,6 @@ import os
 import numpy as np
 import sympy
 from .symbols import Parameter
-from .parsing_tools import parse_expression
 
 # C++ template for the FHP model
 cpp_model = """
@@ -240,7 +239,6 @@ public:
 #endif // MODEL_T_HPP
 """
 
-import re
 
 def generate_dsge_logprior(prior_list):
     """
@@ -409,7 +407,6 @@ def cpp_code_printer(expr, already_declared=False):
     Returns:
         C++ code string for the expression or matrix
     """
-    from sympy import Matrix, eye, zeros
     from sympy.printing.c import C99CodePrinter
     
     class EigenMatrixPrinter(C99CodePrinter):

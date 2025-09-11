@@ -1,7 +1,6 @@
 import unittest
 import numpy as np
-from scipy.stats import kstest
-from scipy.special import gammaln, gammaincc, gammaincinv
+from scipy.special import gammaln
 from dsge.OtherPriors import invgamma_zellner
 
 class TestInvGammaZellner(unittest.TestCase):

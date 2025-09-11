@@ -8,23 +8,21 @@ Representative Agent DSGE models, which include cycle, trend, and value function
 
 import numpy as np
 import sympy
-from typing import Dict, List, Union, Optional, Any, Tuple, Callable
+from typing import Dict, Optional, Any
 
 from sympy import sympify
 from sympy.utilities.lambdify import lambdify
 
 from .symbols import (Variable,
                       Shock,
-                      Parameter,
-                      Equation,
-                      TSymbol)
+                      Parameter)
 
 
 from .Prior import construct_prior
 from .data import read_data_file
 from .StateSpaceModel import LinearDSGEModel
 from .parsing_tools import from_dict_to_mat, construct_equation_list
-from .validation import check_for_future_shocks, find_symbols_in_equation
+from .validation import check_for_future_shocks
 from .logging_config import get_logger
 
 from sympy.printing import fcode
@@ -282,7 +280,6 @@ class FHPRepAgent(Base):
         npara = len(self['parameters'])
         para = sympy.IndexedBase("para", shape=(npara + 1,))
      
-        from .symbols import Parameter
      
         fortran_subs = dict(
             zip(
@@ -311,7 +308,7 @@ class FHPRepAgent(Base):
      
         to_replace = list(to_replace.items())
      
-        from itertools import combinations, permutations
+        from itertools import permutations
      
         edges = [
             (i, j)

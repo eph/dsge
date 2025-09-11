@@ -8,12 +8,9 @@ the constraints on future shocks.
 
 import unittest
 import io
-import yaml
-import sympy
 from unittest.mock import patch
 
 from dsge.parse_yaml import read_yaml
-from dsge.symbols import Variable, Shock, Parameter, Equation
 
 
 class TestFHPValidation(unittest.TestCase):

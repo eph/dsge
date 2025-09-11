@@ -9,16 +9,14 @@ rigidities with distributed lags in expectations.
 
 import numpy as np
 import sympy
-from typing import Dict, List, Any, Optional, Tuple, Union
+from typing import Dict, Any
 
 from .Base import Base
 from .symbols import Variable, Parameter, Shock, Equation, EXP
-from .contexts import si_context as symbolic_context
 from .validation import validate_si_model, validate_model_consistency
 from .logging_config import get_logger
 
 from .parsing_tools import (from_dict_to_mat,
-                            parse_calibration,
                             construct_equation_list,
                             find_max_lead_lag)
 
@@ -323,10 +321,7 @@ class LinLagExModel(StateSpaceModel):
         
         return CC,TT,RR,QQ,DD,ZZ,HH
 
-import numpy as np
-import sympy
-from sympy.utilities.lambdify import lambdify
-from dsge.symbols import Variable, Equation, Shock, Parameter, TSymbol
+from dsge.symbols import Variable, Equation, Shock, Parameter
 from sympy.matrices import Matrix, zeros
 import re
 
@@ -692,7 +687,6 @@ class SIDSGE(Base):
 
         para = sympy.IndexedBase("para", shape=(npara + 1,))
 
-        from dsge.symbols import Parameter
         from sympy.printing import fcode
         fortran_subs = dict(
             zip(
@@ -720,7 +714,7 @@ class SIDSGE(Base):
             to_replace[p] = eval(str(self["auxiliary_parameters"][p]), context)
 
         to_replace = list(to_replace.items())
-        from itertools import combinations, permutations
+        from itertools import permutations
 
         edges = [
             (i, j)
@@ -731,7 +725,6 @@ class SIDSGE(Base):
         from sympy import default_sort_key, topological_sort
 
         para_func = topological_sort([to_replace, edges], default_sort_key)
-        from sympy.printing import fcode
 
         symbolic_matrices = {'A': self.A,
                              'B' : self.B,
@@ -902,7 +895,7 @@ def read_si(model_yaml: Dict[str, Any]) -> SIDSGE:
     logger.debug(f"Index variable: {dec['index']}")
     
     context = {s.name:s for s in
-               (var_ordering + par_ordering + index + shk_ordering + other_para)};
+               (var_ordering + par_ordering + index + shk_ordering + other_para)}
 
     context['EXP'] = EXP
     context['inf'] = sympy.oo
@@ -938,7 +931,7 @@ def read_si(model_yaml: Dict[str, Any]) -> SIDSGE:
         for error in validation_errors:
             logger.error(error)
         raise ValueError(
-            f"SI model validation failed. The following errors were found:\n" + 
+            "SI model validation failed. The following errors were found:\n" + 
             "\n".join(validation_errors)
         )
     

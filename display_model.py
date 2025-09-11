@@ -10,14 +10,12 @@ the enhanced Unicode formatting.
 import os
 import sys
 import re
-from pprint import pprint
 
 # Make sure to import from the local implementation
 sys.path.insert(0, os.path.abspath('.'))
 
 # First try the basic NKMP model
 from dsge.parse_yaml import read_yaml
-from dsge.DSGE import DSGE
 from dsge.symbols import Equation, Parameter, Variable, convert_to_greek
 
 def format_equation(eq_str):
@@ -123,15 +121,14 @@ def display_model(model_path):
     # Show state-space representation
     print("\n=== State-Space Representation ===")
     print("  Transition equation:")
-    print(f"  s_t = T·s_{{t-1}} + R·e_t")
+    print("  s_t = T·s_{t-1} + R·e_t")
     print("\n  Measurement equation:")
-    print(f"  y_t = D + Z·s_t + e_t")
+    print("  y_t = D + Z·s_t + e_t")
     
     return model
 
 def create_simple_model_for_display():
     """Create a simple hand-crafted DSGE model for display purposes."""
-    import sympy as sp
     
     # Define variables and parameters
     y = Variable('y')
@@ -187,9 +184,9 @@ if __name__ == "__main__":
             
         print("\n=== State-Space Representation ===")
         print("  Transition equation:")
-        print(f"  s_t = T·s_{{t-1}} + R·e_t")
+        print("  s_t = T·s_{t-1} + R·e_t")
         print("\n  Measurement equation:")
-        print(f"  y_t = D + Z·s_t + e_t")
+        print("  y_t = D + Z·s_t + e_t")
         
     except Exception as e:
         print(f"Error creating model for display: {e}")

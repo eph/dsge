@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from numpy import exp, sqrt, pi
 from scipy.stats import norm
-from scipy.optimize import bisect, fsolve
+from scipy.optimize import fsolve
 
 from functools import lru_cache
 from scipy.special import ndtr
@@ -18,35 +18,35 @@ def get_sigwstar(zwstar, sprd, zeta_spb):
 
 
 def zetaspbfcn(z,sigma,sprd):
-    zetaratio = zetabomegafcn(z,sigma,sprd)/zetazomegafcn(z,sigma,sprd);
-    nk = nkfcn(z,sigma,sprd);
-    return -zetaratio/(1-zetaratio)*nk/(1-nk);
+    zetaratio = zetabomegafcn(z,sigma,sprd)/zetazomegafcn(z,sigma,sprd)
+    nk = nkfcn(z,sigma,sprd)
+    return -zetaratio/(1-zetaratio)*nk/(1-nk)
 
 
 def zetabomegafcn(z,sigma,sprd):
-    nk = nkfcn(z,sigma,sprd);
-    mustar = mufcn(z,sigma,sprd);
-    omegastar = omegafcn(z,sigma);
-    Gammastar = Gammafcn(z,sigma);
-    Gstar = Gfcn(z,sigma);
-    dGammadomegastar = dGammadomegafcn(z);
-    dGdomegastar = dGdomegafcn(z,sigma);
-    d2Gammadomega2star = d2Gammadomega2fcn(z,sigma);
-    d2Gdomega2star = d2Gdomega2fcn(z,sigma);
-    return omegastar*mustar*nk*(d2Gammadomega2star*dGdomegastar-d2Gdomega2star*dGammadomegastar)/(dGammadomegastar-mustar*dGdomegastar)**2/sprd/(1-Gammastar+dGammadomegastar*(Gammastar-mustar*Gstar)/(dGammadomegastar-mustar*dGdomegastar));
+    nk = nkfcn(z,sigma,sprd)
+    mustar = mufcn(z,sigma,sprd)
+    omegastar = omegafcn(z,sigma)
+    Gammastar = Gammafcn(z,sigma)
+    Gstar = Gfcn(z,sigma)
+    dGammadomegastar = dGammadomegafcn(z)
+    dGdomegastar = dGdomegafcn(z,sigma)
+    d2Gammadomega2star = d2Gammadomega2fcn(z,sigma)
+    d2Gdomega2star = d2Gdomega2fcn(z,sigma)
+    return omegastar*mustar*nk*(d2Gammadomega2star*dGdomegastar-d2Gdomega2star*dGammadomegastar)/(dGammadomegastar-mustar*dGdomegastar)**2/sprd/(1-Gammastar+dGammadomegastar*(Gammastar-mustar*Gstar)/(dGammadomegastar-mustar*dGdomegastar))
 
 
 def zetazomegafcn(z,sigma,sprd):
-    mustar = mufcn(z,sigma,sprd);
-    return omegafcn(z,sigma)*(dGammadomegafcn(z)-mustar*dGdomegafcn(z,sigma))/(Gammafcn(z,sigma)-mustar*Gfcn(z,sigma));
+    mustar = mufcn(z,sigma,sprd)
+    return omegafcn(z,sigma)*(dGammadomegafcn(z)-mustar*dGdomegafcn(z,sigma))/(Gammafcn(z,sigma)-mustar*Gfcn(z,sigma))
 
 
 def nkfcn(z,sigma,sprd):
-    return 1-(Gammafcn(z,sigma)-mufcn(z,sigma,sprd)*Gfcn(z,sigma))*sprd;
+    return 1-(Gammafcn(z,sigma)-mufcn(z,sigma,sprd)*Gfcn(z,sigma))*sprd
 
 
 def mufcn(z,sigma,sprd):
-    return (1-1/sprd)/(dGdomegafcn(z,sigma)/dGammadomegafcn(z)*(1-Gammafcn(z,sigma))+Gfcn(z,sigma));
+    return (1-1/sprd)/(dGdomegafcn(z,sigma)/dGammadomegafcn(z)*(1-Gammafcn(z,sigma))+Gfcn(z,sigma))
 
 
 def omegafcn(z, sigma):
@@ -74,15 +74,15 @@ def dGammadomegafcn(z):
 
 
 def d2Gammmadomegafcn(z):
-    return -normpdf(z)/omegafcn(z,sigma)/sigma;
+    return -normpdf(z)/omegafcn(z,sigma)/sigma
 
 
 def d2Gammadomega2fcn(z,sigma):
-    return -normpdf(z)/omegafcn(z,sigma)/sigma;
+    return -normpdf(z)/omegafcn(z,sigma)/sigma
 
 
 def dGdsigmafcn(z,sigma):
-    return -z*normpdf(z-sigma)/sigma;
+    return -z*normpdf(z-sigma)/sigma
 
 
 
