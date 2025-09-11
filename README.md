@@ -1,5 +1,6 @@
 dsge
 ====
+![Coverage](badges/coverage.svg)
 A simple Python (3+) package for Dynamic Stochastic General Equilibrium (DSGE) models.
 
 This was originally forked from Pablo Winant's (excellent) package
@@ -9,9 +10,8 @@ documentation might be lacking in some (many) places.
 
 Installation
 ------------
-```bash
-conda install dsge -c eherbst
-```
+- Editable (dev): `uv pip install -e .`
+- Quick import check: `uv run python -c "import dsge; print(dsge.__file__)"`
 
 Bugs and Questions
 ------------------

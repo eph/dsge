@@ -1,5 +1,6 @@
 declarations:
   type: fhp
+  name: fhp
   variables: [pi]
   shocks: [y]
   innovations: [e_y]
@@ -40,3 +41,9 @@ calibration:
     rho: 0.85
   covariance:
     e_y: 1
+estimation:
+  prior:
+    kappa: [normal, 0, 1]
+    beta: [normal, 0, 1]
+    gamma_p: [normal, 0, 1]
+    rho: [normal, 0, 1]

@@ -1,5 +1,6 @@
 declarations:
   type: fhp
+  name: fhp
   variables: [kp, c, pi, q, i, y, mc, r, y_lag]
   shocks: [re, mu, chi, g, mp]
   innovations: [e_re, e_mu, e_chi, e_g, e_mp]

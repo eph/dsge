@@ -158,17 +158,30 @@ def validate_model_consistency(model_dict: Dict[str, Any]) -> List[str]:
         
         # Gather all variables used in equations
         used_vars = set()
-        for eq_section in model_dict['equations'].values():
-            if isinstance(eq_section, dict):
-                for sub_section in eq_section.values():
-                    for eq in sub_section:
+        
+        # Handle different equation formats based on model type
+        equations = model_dict['equations']
+        
+        # Recursively process all equations regardless of structure
+        def process_equations(eq_container):
+            if isinstance(eq_container, list):
+                # List of equations
+                for eq in eq_container:
+                    if hasattr(eq, 'atoms'):
                         for atom in eq.atoms(Variable):
                             used_vars.add(atom.name)
+            elif isinstance(eq_container, dict):
+                # Dictionary of equation sections
+                for section in eq_container.values():
+                    process_equations(section)
             else:
-                for eq in eq_section:
-                    for atom in eq.atoms(Variable):
-                        used_vars.add(atom.name)
+                # Skip other types
+                pass
         
+        # Process all equations
+        process_equations(equations)
+        
+        # Check for undeclared variables
         undeclared = used_vars - declared_vars
         if undeclared:
             warnings.append(f"Used variables not declared: {', '.join(undeclared)}")

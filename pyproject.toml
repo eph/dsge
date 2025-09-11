@@ -1,0 +1,75 @@
+[build-system]
+requires = ["setuptools>=68", "wheel", "numpy", "setuptools_scm[toml]>=8"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dsge"
+dynamic = ["version"]
+description = "A simple Python package for DSGE models."
+readme = "README.md"
+requires-python = ">=3.8"
+authors = [
+  { name = "Ed Herbst", email = "ed.herbst@gmail.com" },
+]
+keywords = ["dsge", "econometrics", "macroeconomics", "models"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: BSD License",
+  "Operating System :: OS Independent",
+]
+dependencies = [
+  "numpy",	   
+  "pandas",
+  "scipy",
+  "sympy",
+  "pyyaml",
+  "numba",
+  "lark",
+  "cerberus",
+]
+
+[project.optional-dependencies]
+test = [
+  "pytest",
+  "matplotlib",
+]
+codegen = [
+  # Fortress is hosted on GitHub and provides `fortress.make_smc` used by codegen
+  "fortress @ git+https://github.com/eph/fortress.git",
+]
+
+[tool.setuptools]
+packages = { find = { include = ["dsge*"], exclude = ["build*", "dist*", "*.egg-info*"] } }
+include-package-data = true
+
+[tool.setuptools.package-data]
+dsge = [
+  "examples/*/*",
+  "schema/*",
+  "linalg/*",
+  "templates/*",
+  "prior.txt",
+]
+
+[tool.setuptools_scm]
+# Defaults are fine; uncomment below for explicit schemes.
+# version_scheme = "guess-next-dev"
+# local_scheme = "node-and-date"
+
+# uv-specific niceties
+[dependency-groups]
+dev = [
+  "pytest",
+  "pytest-cov",
+  "mypy",
+  "ruff",
+  "mkdocs>=1.5",
+  "mkdocs-material",
+  "mkdocs-macros-plugin",
+  "mkdocstrings[python]",
+  "importlib-resources; python_version < '3.9'",
+  "matplotlib",
+]
+
+[tool.uv]
+default-groups = ["dev"]

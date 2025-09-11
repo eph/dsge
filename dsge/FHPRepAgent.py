@@ -343,10 +343,10 @@ class FHPRepAgent(Base):
         ]
         sims_mat = "\n\n".join(fmats)
 
-        # get templates/fhp.f90, making sure to use the correct pkg_resources filname
-        from pkg_resources import resource_filename
-        template_file = resource_filename("dsge", "templates/fhp.f90")
-        with open(template_file, "r") as f:
+        # get templates/fhp.f90 via importlib.resources (zip-safe)
+        from importlib.resources import files
+        template_res = files("dsge") / "templates" / "fhp.f90"
+        with template_res.open("r", encoding="utf-8") as f:
             fortran_template = f.read()
             
         # turn template in f-string

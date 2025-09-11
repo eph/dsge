@@ -6,10 +6,7 @@ from numpy.testing import assert_equal, assert_allclose
 from unittest import TestCase
 
 from dsge import read_yaml
-try:
-    from importlib.resources import files, as_file
-except Exception:  # pragma: no cover
-    from importlib_resources import files, as_file  # type: ignore
+from dsge.resource_utils import resource_path
 
 class TestFilter(TestCase):
 
@@ -24,8 +21,8 @@ class TestFilter(TestCase):
         self.assertAlmostEqual(-829.7412615500879, lik0, places=6)
 
     def test_ar1(self):
-        with as_file(files('dsge') / 'examples' / 'ar1' / 'ar1.yaml') as mf, \
-             as_file(files('dsge') / 'examples' / 'ar1' / 'arma23_sim200.txt') as df:
+        with resource_path('examples/ar1/ar1.yaml') as mf, \
+             resource_path('examples/ar1/arma23_sim200.txt') as df:
             ar1 = read_yaml(str(mf))
             ar1['__data__']['estimation']['data'] = str(df)
 
@@ -51,8 +48,8 @@ class TestFilter(TestCase):
 
 
     def test_missing(self):
-        with as_file(files('dsge') / 'examples' / 'ar1' / 'ar1.yaml') as mf, \
-             as_file(files('dsge') / 'examples' / 'ar1' / 'arma23_sim200.txt') as df:
+        with resource_path('examples/ar1/ar1.yaml') as mf, \
+             resource_path('examples/ar1/arma23_sim200.txt') as df:
             ar1 = read_yaml(str(mf))
             ar1['__data__']['estimation']['data'] = str(df)
 
@@ -97,8 +94,8 @@ class TestFilter(TestCase):
 
 
     def test_pred(self):
-        with as_file(files('dsge') / 'examples' / 'ar1' / 'ar1.yaml') as mf, \
-             as_file(files('dsge') / 'examples' / 'ar1' / 'arma23_sim200.txt') as df:
+        with resource_path('examples/ar1/ar1.yaml') as mf, \
+             resource_path('examples/ar1/arma23_sim200.txt') as df:
             ar1 = read_yaml(str(mf))
             ar1['__data__']['estimation']['data'] = str(df)
 

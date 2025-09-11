@@ -1,6 +1,13 @@
 #!/usr/bin/env python3
-import yaml, re, os, warnings
-from typing import List, Dict, Union, IO
+"""
+YAML parsing utilities for DSGE models.
+
+This module provides functions for loading and validating DSGE model specifications
+from YAML files, handling different model types and validation requirements.
+"""
+
+import yaml, re, os, warnings, logging
+from typing import List, Dict, Union, IO, Any, Optional
 
 from .DSGE import DSGE
 from .FHPRepAgent import FHPRepAgent
@@ -115,36 +122,72 @@ validators['sticky-information'] = validators['si']
 def read_yaml(yaml_file: Union[str,IO[str]],
                sub_list : List[tuple]=[('^', '**'), (';','')]):
     """
-    This function reads a yaml file and returns a dictionary.
+    Read a model specification from a YAML file and return the appropriate model instance.
+    
+    Args:
+        yaml_file: Path to a YAML file or file-like object containing the model spec
+        sub_list: List of substitution patterns to apply to the YAML text
+        
+    Returns:
+        A model instance of the appropriate type (DSGE, FHPRepAgent, SIDSGE, etc.)
+        
+    Raises:
+        ValidationError: If the model schema validation fails
+        ValueError: If model-specific validation fails
+        NotImplementedError: For unsupported model types
     """
+    # Configure logging for this module
+    logger = logging.getLogger("dsge.parser")
+    
+    # Read the file content
     if isinstance(yaml_file, str):
+        logger.info(f"Reading YAML from file: {yaml_file}")
         with open(yaml_file) as f:
             txt = f.read()
     else:
+        logger.info("Reading YAML from stream")
         txt = yaml_file.read()
 
+    # Apply text replacements
     for old, new in sub_list:
         txt = txt.replace(old, new)
 
     txt = re.sub(r"@ ?\n", " ", txt)
 
+    # Parse YAML to dictionary
     yaml_dict = yaml.safe_load(txt)
     yaml_dict = update_deprecated_keys(yaml_dict)
 
-    kind =  yaml_dict['declarations'].get('type','dsge')
+    # Determine model type and validate schema
+    kind = yaml_dict['declarations'].get('type', 'dsge')
+    logger.info(f"Detected model type: {kind}")
     
+    # Schema validation
     try:
+        logger.debug("Performing schema validation")
         validate_data(yaml_dict, validators[kind])
     except ValidationError as e:
-        print(e)
+        logger.error(f"Schema validation failed: {e}")
+        raise
 
-    if kind=='fhp':
-        return FHPRepAgent.read(yaml_dict)
-    elif kind=='si' or kind=='sticky-information':
-        return read_si(yaml_dict)
-    elif kind=='dsge-sv':
-        raise NotImplementedError('DSGE-SV model not implemented yet')
-    else:
-        return DSGE.read(yaml_dict)
+    # Model-specific parsing and validation
+    try:
+        # Create appropriate model based on type
+        if kind == 'fhp':
+            logger.debug("Creating FHP Representative Agent model")
+            return FHPRepAgent.read(yaml_dict)
+        elif kind == 'si' or kind == 'sticky-information':
+            logger.debug("Creating Sticky Information DSGE model")
+            return read_si(yaml_dict)
+        elif kind == 'dsge-sv':
+            logger.error("DSGE-SV model type not implemented")
+            raise NotImplementedError('DSGE-SV model not implemented yet')
+        else:
+            logger.debug("Creating standard DSGE model")
+            return DSGE.read(yaml_dict)
+    except ValueError as e:
+        # Model-specific validation errors
+        logger.error(f"Model validation failed: {e}")
+        raise
 
     

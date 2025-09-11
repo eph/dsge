@@ -6,15 +6,12 @@ from numpy.testing import assert_equal
 from unittest import TestCase
 
 from dsge import read_yaml
-try:
-    from importlib.resources import files, as_file
-except Exception:  # pragma: no cover
-    from importlib_resources import files, as_file  # type: ignore
+from dsge.resource_utils import resource_path
 
 class TestABCD(TestCase):
 
     def test_abcd(self):
-        with as_file(files('dsge') / 'examples' / 'pi' / 'pi.yaml') as p:
+        with resource_path('examples/pi/pi.yaml') as p:
             model = read_yaml(str(p))
 
         m = model.compile_model()

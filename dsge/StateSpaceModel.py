@@ -512,6 +512,58 @@ class StateSpaceModel(object):
 
         return ysim[nsim:, :]
 
+    def perfect_foresight(self, para, eps_path, s0=None, include_observables=True, use_cache=False, *args, **kwargs):
+        """
+        Deterministic perfect-foresight simulation given a shock path.
+
+        Parameters
+        ----------
+        para : array-like
+            Parameter vector for system matrices.
+        eps_path : array-like (T x neps)
+            Deterministic path for structural shocks (no measurement error).
+        s0 : array-like (ns,), optional
+            Initial state. Defaults to zeros.
+        include_observables : bool
+            If True, also return observables path via y_t = DD + ZZ s_t.
+
+        Returns
+        -------
+        out : dict
+            keys: 'states' (DataFrame), and optionally 'observables' (DataFrame).
+        """
+        if use_cache:
+            CC, TT, RR, QQ, DD, ZZ, HH = self.cached_system_matrices
+        else:
+            CC, TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
+
+        eps_path = np.atleast_2d(np.asarray(eps_path))
+        T = eps_path.shape[0]
+        ns = TT.shape[0]
+        nobs = ZZ.shape[0]
+
+        if s0 is None:
+            s = np.zeros((ns,), dtype=float)
+        else:
+            s = np.asarray(s0, dtype=float).reshape((ns,))
+
+        states = np.zeros((T, ns), dtype=float)
+        ys = np.zeros((T, nobs), dtype=float) if include_observables else None
+
+        for t in range(T):
+            e_t = eps_path[t]
+            s = CC + TT.dot(s) + RR.dot(e_t)
+            states[t, :] = s
+            if include_observables:
+                ys[t, :] = (DD.T + ZZ.dot(s)).reshape((nobs,))
+
+        out = {
+            'states': p.DataFrame(states, columns=self.state_names),
+        }
+        if include_observables:
+            out['observables'] = p.DataFrame(ys, columns=self.obs_names)
+        return out
+
     def historical_decomposition(self, p0, init=1):
         shock_decomposition = []
      

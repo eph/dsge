@@ -30,10 +30,10 @@ from .validation import validate_dsge_leads_lags, validate_model_consistency
 from .logging_config import get_logger
 
 from .parsing_tools import (parse_expression,
-                           from_dict_to_mat,
-                           parse_calibration,
-                           construct_equation_list,
-                           find_max_lead_lag)
+                            from_dict_to_mat,
+                            parse_calibration,
+                            construct_equation_list,
+                            find_max_lead_lag)
 from .Base import Base
 
 # Get module logger
@@ -157,7 +157,10 @@ class DSGE(Base):
             )
             i += 1
             
-        logger.info(f"DSGE model initialized with {len(self['variables'])} variables and {len(self['equations'])} equations")
+        # Get the number of variables and equations from the model itself
+        num_vars = len(self["var_ordering"]) if "var_ordering" in self else 0
+        num_eqs = len(self["equations"]) if "equations" in self else 0
+        logger.info(f"DSGE model initialized with {num_vars} variables and {num_eqs} equations")
 
         if "make_log" in self.keys():
             self["perturb_eq"] = []
@@ -257,7 +260,7 @@ Equations:
         return len(self.parameters)
 
     def p0(self):
-        return list(map(lambda x: self["calibration"][str(x)], self.parameters))
+        return list(map(lambda x: self["calibration"][x], self.parameters))
 
     def python_sims_matrices(self, matrix_format="numeric"):
 
@@ -322,7 +325,7 @@ Equations:
 
         eq_i = 0
         for obs in self["observables"]:
-            eq = self["obs_equations"][str(obs)]
+            eq = self["obs_equations"][obs.name]
 
             DD[eq_i, 0] = eq.subs(subs_dict)
 
@@ -537,12 +540,44 @@ Equations:
         else:
             raw_equations = model_yaml["equations"]
 
+        logger.debug(f"Processing {len(raw_equations)} model equations")
         equations = construct_equation_list(raw_equations, context)
 
+        # Validate the leads and lags in the model
+        logger.info("Validating model leads and lags")
+        # Get the model-defined max_lead and max_lag from class or parameters
+        max_lead = getattr(cls, 'max_lead', 1)
+        max_lag = getattr(cls, 'max_lag', 1)
+        
+        # Use the validation module to check for excessive leads/lags
+        validation_errors = validate_dsge_leads_lags(
+            equations,
+            var_ordering,
+            max_lead=max_lead,
+            max_lag=max_lag
+        )
+        
+        if validation_errors:
+            for error in validation_errors:
+                logger.error(f"Validation error: {error}")
+            raise ValueError(
+                f"DSGE model validation failed. The following errors were found:\n" + 
+                "\n".join(validation_errors)
+            )
+        
+        # Check for general model consistency issues (only warnings)
+        consistency_warnings = validate_model_consistency({
+            'equations': equations, 
+            'variables': var_ordering
+        })
+        
+        for warning in consistency_warnings:
+            logger.warning(f"Model consistency warning: {warning}")
 
         # ------------------------------------------------------------
         # Figure out max leads and lags
         # ------------------------------------------------------------
+        logger.debug("Computing maximum leads and lags for shocks")
         (max_lead_exo,
          max_lag_exo) = find_max_lead_lag(equations, shk_ordering)
 
@@ -646,5 +681,6 @@ Equations:
             "obs_equations": obs_equations,
         }
 
+        logger.info(f"DSGE model '{dec['name']}' creation complete with {len(var_ordering)} variables and {len(equations)} equations")
         model = cls(**model_dict)
         return model

@@ -30,7 +30,10 @@ declarations:
         type: string
     external:
       type: dict
-      
+    measurement_errors:
+      type: list
+      schema:
+        type: string
 
 
 equations:

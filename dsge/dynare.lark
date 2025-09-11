@@ -1,0 +1,50 @@
+// Minimal Dynare .mod grammar (MVP)
+
+start: (statement | block | COMMENT | ML_COMMENT)*
+
+COMMENT: /%[^\n]*/ | /\/\/[^\n]*/
+ML_COMMENT: /(?s)\/\*.*?\*\//
+
+statement: var_block
+         | varexo_block
+         | varexo_det_block
+         | parameters_block
+         | predetermined_block
+         | varobs_block
+         | param_assign ";"
+
+block: model_block
+     | shocks_block
+     | initval_block
+
+var_block: "var" name_list ";"
+varexo_block: "varexo" name_list ";"
+varexo_det_block: "varexo_det" name_list ";"
+parameters_block: "parameters" name_list ";"
+predetermined_block: "predetermined_variables" name_list ";"
+varobs_block: "varobs" name_list ";"
+
+param_assign: NAME "=" expr
+
+model_block: "model" model_opts? ";" equation+ "end" ";"?
+model_opts: "(" /[^)]*/ ")"
+equation: /[^;]+/ ";"
+
+shocks_block: "shocks" shocks_opts? ";" shock_stmt+ "end" ";"?
+shocks_opts: "(" /[^)]*/ ")"
+shock_stmt: "var" NAME ("=" expr)? ";"      -> shock_var
+          | "stderr" NAME ("="|",") expr ";"      -> shock_stderr
+          | "corr" NAME "," NAME ("="|",") expr ";" -> shock_corr
+
+initval_block: "initval" ";" assign_stmt+ "end" ";"?
+endval_block: "endval" ";" assign_stmt+ "end" ";"?
+assign_stmt: NAME "=" expr ";"
+
+name_list: NAME (","? NAME)*
+
+expr: /[^;\n]+/
+
+%import common.CNAME -> NAME
+%import common.WS
+%ignore WS
+%ignore COMMENT

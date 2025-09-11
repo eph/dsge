@@ -1,7 +1,7 @@
 import numpy as np
 
 from scipy.stats import beta, norm, uniform, gamma
-from .OtherPriors import invgamma_zellner as InvGamma
+from .OtherPriors import invgamma_zellner
 
 pdict = {"gamma": 1, "beta": 2, "norm": 3, "invgamma_zellner": 4, "uniform": 5}
 def construct_prior(prior_list, parameters):

@@ -7,6 +7,7 @@ from unittest import TestCase
 
 from dsge import read_yaml
 from dsge.symbols import Variable, Parameter, Shock, EXP
+from dsge.resource_utils import resource_path
 from dsge.parsing_tools import construct_equation_list
 try:
     from importlib.resources import files, as_file
@@ -18,7 +19,7 @@ import sympy
 class TestSI(TestCase):
 
     def setUp(self):
-        with as_file(files('dsge') / 'examples' / 'si' / 'mankiw-reis.yaml') as p:
+        with resource_path('examples/si/mankiw-reis.yaml') as p:
             self.model = read_yaml(str(p))
 
     def test_easy_parse(self):

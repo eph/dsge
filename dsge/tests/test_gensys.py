@@ -4,17 +4,14 @@ from numpy.testing import assert_equal, assert_array_almost_equal
 from unittest import TestCase
 
 from dsge import read_yaml
-try:
-    from importlib.resources import files, as_file
-except Exception:  # pragma: no cover
-    from importlib_resources import files, as_file  # type: ignore
+from dsge.resource_utils import resource_path
 
 
 class TestGensys(TestCase):
 
 
     def test_pc(self):
-        with as_file(files('dsge') / 'examples' / 'schorf_phillips_curve' / 'schorf_phillips_curve.yaml') as p:
+        with resource_path('examples/schorf_phillips_curve/schorf_phillips_curve.yaml') as p:
             pc = read_yaml(str(p))
         p0 = pc.p0()
         model = pc.compile_model()
@@ -34,7 +31,7 @@ class TestGensys(TestCase):
 
     def test_nkmp(self):
 
-        with as_file(files('dsge') / 'examples' / 'nkmp' / 'dsge1.yaml') as p:
+        with resource_path('examples/nkmp/dsge1.yaml') as p:
             dsge1 = read_yaml(str(p))
         nkmp = dsge1.compile_model()
 

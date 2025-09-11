@@ -7,10 +7,7 @@ from numpy.testing import assert_equal, assert_array_almost_equal
 from unittest import TestCase
 
 from dsge import read_yaml
-try:
-    from importlib.resources import files, as_file
-except Exception:  # pragma: no cover
-    from importlib_resources import files, as_file  # type: ignore
+from dsge.resource_utils import resource_path
 
 
 
@@ -71,10 +68,10 @@ class TestFHP(TestCase):
 
     def setUp(self):
 
-        with as_file(files('dsge') / 'examples' / 'fhp' / 'fhp.yaml') as p:
+        with resource_path('examples/fhp/fhp.yaml') as p:
             self.model = read_yaml(str(p))
 
-        with as_file(files('dsge') / 'examples' / 'fhp' / 'partial_equilibrium.yaml') as p:
+        with resource_path('examples/fhp/partial_equilibrium.yaml') as p:
             self.pe_model = read_yaml(str(p))
 
     def test_load(self):

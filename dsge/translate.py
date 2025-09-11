@@ -2,7 +2,7 @@ import numpy as np
 
 import os
 from dsge.parsing_tools import parse_expression
-from dsge.matlab_tools import translate_matlab
+from dsge.translate_cpp import translate_cpp
 
 template_path = os.path.join(os.path.dirname(__file__), "templates")
 
@@ -226,8 +226,7 @@ def translate(model, output_dir=".", language="fortran"):
     if language == "fortran":
         translate_fortran(model, output_dir)
     elif language == "cpp":
-        raise NotImplementedError("C++ export not implemented.")
-        translate_matlab(model, output_dir)
+        translate_cpp(model, output_dir)
     elif language == "dynare":
         raise NotImplementedError("Dynare not yet implemented.")
     elif language == "julia":

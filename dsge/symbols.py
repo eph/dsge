@@ -72,8 +72,9 @@ class Parameter(sympy.Symbol):
         # Convert parameter names to Greek letters where appropriate
         return convert_to_greek(self.name)
 
-    def __str__(self):
+    def __str__(self, greek=False):
         # Use Greek letter representation for string output too
+        if not greek: return self.name
         return convert_to_greek(self.name)
 
     def __set_prior(self, prior):
@@ -117,10 +118,11 @@ class TSymbol(sympy.Symbol):
         return self.date
 
     def __repr__(self):
-        return self.__str__()
+        return self.__str__(greek=True)
 
-    def __str__(self):
+    def __str__(self, greek=False):
         # Convert variable name to Greek if appropriate
+
         greek_name = convert_to_greek(self.name)
         
         if self.lag == 0:
@@ -139,10 +141,15 @@ class TSymbol(sympy.Symbol):
 class Variable(TSymbol):
     
     def __repr__(self):
-        return self.__str__()
+        return self.__str__(greek=True)
 
-    def __str__(self):
+    def __str__(self, greek=False):
         # Convert variable name to Greek if appropriate
+        if not greek:
+            if self.lag == 0:
+                return self.name
+            else:
+                return self.name + r"(" + str(self.lag) + r")"
         greek_name = convert_to_greek(self.name)
         
         if self.lag == 0:
