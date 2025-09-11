@@ -19,5 +19,6 @@ def read_mod(path: str | Path):
     yaml_like = to_yaml_like(parsed, name=p.stem)
     # Build model using existing DSGE flow
     model = DSGE.read(yaml_like)
+    # Prepare simulation matrices so covariance function QQ is available
+    model.python_sims_matrices()
     return model
-

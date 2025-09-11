@@ -3,7 +3,7 @@
 start: (statement | block | COMMENT | ML_COMMENT)*
 
 COMMENT: /%[^\n]*/ | /\/\/[^\n]*/
-ML_COMMENT: /(?s)\/\*.*?\*\//
+ML_COMMENT: /\/\*(.|\n)*?\*\//
 
 statement: var_block
          | varexo_block
@@ -16,6 +16,7 @@ statement: var_block
 block: model_block
      | shocks_block
      | initval_block
+     | endval_block
 
 var_block: "var" name_list ";"
 varexo_block: "varexo" name_list ";"
@@ -27,13 +28,14 @@ varobs_block: "varobs" name_list ";"
 param_assign: NAME "=" expr
 
 model_block: "model" model_opts? ";" equation+ "end" ";"?
-model_opts: "(" /[^)]*/ ")"
+model_opts: "(" /[^)]+/ ")"
 equation: /[^;]+/ ";"
 
 shocks_block: "shocks" shocks_opts? ";" shock_stmt+ "end" ";"?
-shocks_opts: "(" /[^)]*/ ")"
-shock_stmt: "var" NAME ("=" expr)? ";"      -> shock_var
-          | "stderr" NAME ("="|",") expr ";"      -> shock_stderr
+shocks_opts: "(" /[^)]+/ ")"
+shock_stmt: "var" NAME ("=" expr)? ";"                 -> shock_var
+          | "stderr" NAME ("="|",") expr ";"         -> shock_stderr
+          | "stderr" expr ";"                           -> shock_stderr_bare
           | "corr" NAME "," NAME ("="|",") expr ";" -> shock_corr
 
 initval_block: "initval" ";" assign_stmt+ "end" ";"?

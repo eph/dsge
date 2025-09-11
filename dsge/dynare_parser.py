@@ -30,6 +30,7 @@ class _DynareTransformer(Transformer):
         self.varexo_det: List[str] = []
         self.predetermined: List[str] = []
         self.observables: List[str] = []
+        self._last_shock_name: str | None = None
 
     # name_list returns list of tokens; convert to python strings
     def name_list(self, *names):
@@ -67,8 +68,13 @@ class _DynareTransformer(Transformer):
         self.equations.append(str(content).strip())
         return None
 
+    def expr(self, content):
+        # Ensure expressions are plain strings, not Lark Trees/Tokens
+        return str(content)
+
     def shock_var(self, name, expr=None):
         # Dynare: var e = 0.01^2; or just var e; (we only map when a value is provided)
+        self._last_shock_name = str(name)
         if expr is not None:
             self.covariance[str(name)] = str(expr).strip()
         return None
@@ -77,6 +83,14 @@ class _DynareTransformer(Transformer):
         # Map stderr sigma to variance sigma^2 in calibration
         ex = str(expr).strip()
         self.covariance[str(name)] = f"({ex})**2"
+        return None
+
+    def shock_stderr_bare(self, expr):
+        # Dynare allows `var e; stderr 0.1;` meaning last declared var
+        if not self._last_shock_name:
+            raise ValueError("stderr without a preceding `var <name>;` in shocks block")
+        ex = str(expr).strip()
+        self.covariance[self._last_shock_name] = f"({ex})**2"
         return None
 
     def shock_corr(self, n1, n2, expr):
@@ -121,6 +135,9 @@ def parse_mod_text(text: str) -> Dict[str, Any]:
         "param_values": t.param_values,
         "covariance": t.covariance,
         "initval": t.initval,
+        "endval": t.endval,
+        "observables": t.observables,
+        "correlations": t.correlations,
     }
 
 

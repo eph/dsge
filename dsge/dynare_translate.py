@@ -27,21 +27,12 @@ def to_yaml_like(parsed: Dict[str, Any], name: str = "dynare_model") -> Dict[str
     covariance = parsed.get("covariance", {})
     correlations = parsed.get("correlations", [])
     covariance = _apply_correlations(covariance, correlations)
-    initval = parsed.get("initval", {})
-    endval = parsed.get("endval", {})
-    varexo_det = parsed.get("varexo_det", [])
-    predetermined = parsed.get("predetermined", [])
+    # Currently not used by core YAML schema; kept for future mapping if needed
+    # initval = parsed.get("initval", {})
+    # endval = parsed.get("endval", {})
+    # varexo_det = parsed.get("varexo_det", [])
+    # predetermined = parsed.get("predetermined", [])
     observables = parsed.get("observables", [])
-
-    external: Dict[str, Any] = {}
-    if initval:
-        external["initval"] = initval
-    if endval:
-        external["endval"] = endval
-    if varexo_det:
-        external["varexo_det"] = varexo_det
-    if predetermined:
-        external["predetermined_variables"] = predetermined
 
     model_yaml: Dict[str, Any] = {
         "declarations": {
@@ -50,12 +41,13 @@ def to_yaml_like(parsed: Dict[str, Any], name: str = "dynare_model") -> Dict[str
             "variables": variables,
             "parameters": parameters,
             "shocks": shocks,
-            # Keep extras under external so schema accepts it
             **({"observables": observables} if observables else {}),
-            **({"external": external} if external else {}),
         },
         "equations": {
             "model": [eq if ("=" in eq) else f"{eq} = 0" for eq in equations],
+            **({
+                "observables": {v: v for v in observables}
+            } if observables else {}),
         },
         "calibration": {
             "parameters": param_values,
