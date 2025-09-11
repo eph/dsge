@@ -8,8 +8,6 @@ from dsge.DSGE import DSGE
 
 from dsge import parse_yaml
 
-import pkg_resources
-
 # class TestSV(TestCase):
 
 #     # startup

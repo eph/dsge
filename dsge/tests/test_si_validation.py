@@ -14,6 +14,7 @@ from unittest.mock import patch, MagicMock
 from dsge.parse_yaml import read_yaml
 from dsge.symbols import Variable, Shock, Parameter, Equation, EXP
 from dsge.validation import validate_si_model
+from dsge.SIDSGE import read_si
 
 
 class TestSIValidation(unittest.TestCase):
@@ -52,7 +53,7 @@ declarations:
   variables: [pi, x, i]
   shocks: [e_pi, e_x]
   parameters: [beta, kappa, alpha]
-  index: [j]
+  index: j
 
 equations:
   model:
@@ -82,7 +83,7 @@ declarations:
   variables: [pi, x, i]
   shocks: [e_pi, e_x]
   parameters: [beta, kappa, alpha]
-  index: [j]
+  index: j
 
 equations:
   model:
@@ -149,17 +150,48 @@ calibration:
         self.assertEqual(len(errors), 1)
         self.assertIn("Index variable j not found", errors[0])
 
-    # Focus on testing the validation functions directly rather than through the model parser
-    def test_parse_yaml_without_validation(self):
-        """Test that we can parse YAML files without triggering validation."""
-        # We'll just verify we can parse the YAML, not that the model is valid
-        yaml_dict = yaml.safe_load(self.valid_yaml)
-        self.assertIsNotNone(yaml_dict)
-        self.assertEqual(yaml_dict['declarations']['name'], 'test_si')
+    def test_si_valid_mock(self):
+        """Test validation function directly rather than through model loading."""
+        # Create a mock equation with an index variable
+        class MockEquation:
+            def atoms(self, cls=None):
+                # Just pretend a Variable 'j' exists in this equation
+                return [Variable('j')]
+            
+        # This should pass validation
+        errors = validate_si_model(
+            {
+                'equations': [MockEquation()],
+                'variables': self.variables,
+                'index': self.index_var
+            },
+            self.index_var
+        )
         
-        yaml_dict = yaml.safe_load(self.missing_index_yaml)
-        self.assertIsNotNone(yaml_dict)
-        self.assertEqual(yaml_dict['declarations']['name'], 'test_si_no_index')
+        # Should not have any errors
+        self.assertEqual(len(errors), 0)
+    
+    def test_si_missing_index_mock(self):
+        """Test validation function directly for missing index."""
+        # Create a mock equation without index variable
+        class MockEquation:
+            def atoms(self, cls=None):
+                # Return empty list - no 'j' variable present
+                return []
+            
+        # This should fail validation
+        errors = validate_si_model(
+            {
+                'equations': [MockEquation()],
+                'variables': self.variables,
+                'index': self.index_var
+            },
+            self.index_var
+        )
+        
+        # Should have an error about missing index
+        self.assertEqual(len(errors), 1)
+        self.assertIn("Index variable j not found", errors[0])
 
 
 if __name__ == '__main__':

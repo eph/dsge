@@ -4,20 +4,18 @@ from numpy.testing import assert_equal, assert_array_almost_equal
 from unittest import TestCase
 
 from dsge import read_yaml
-
-import pkg_resources
+try:
+    from importlib.resources import files, as_file
+except Exception:  # pragma: no cover
+    from importlib_resources import files, as_file  # type: ignore
 
 
 class TestGensys(TestCase):
 
 
     def test_pc(self):
-        relative_loc = ('examples/schorf_phillips_curve/'
-                        'schorf_phillips_curve.yaml')
-        model_file = pkg_resources.resource_filename('dsge', relative_loc)
-
-
-        pc = read_yaml(model_file)
+        with as_file(files('dsge') / 'examples' / 'schorf_phillips_curve' / 'schorf_phillips_curve.yaml') as p:
+            pc = read_yaml(str(p))
         p0 = pc.p0()
         model = pc.compile_model()
 
@@ -36,9 +34,8 @@ class TestGensys(TestCase):
 
     def test_nkmp(self):
 
-        relative_loc = 'examples/nkmp/dsge1.yaml'
-        model_file = pkg_resources.resource_filename('dsge', relative_loc)
-        dsge1 = read_yaml(model_file)
+        with as_file(files('dsge') / 'examples' / 'nkmp' / 'dsge1.yaml') as p:
+            dsge1 = read_yaml(str(p))
         nkmp = dsge1.compile_model()
 
         p0 = np.array([ 1.62398783,  0.47671893,  1.51729311,  0.4416236 ,  0.43724069,

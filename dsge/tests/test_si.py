@@ -8,15 +8,18 @@ from unittest import TestCase
 from dsge import read_yaml
 from dsge.symbols import Variable, Parameter, Shock, EXP
 from dsge.parsing_tools import construct_equation_list
-import pkg_resources
+try:
+    from importlib.resources import files, as_file
+except Exception:  # pragma: no cover
+    from importlib_resources import files, as_file  # type: ignore
 
 import sympy
 
 class TestSI(TestCase):
 
     def setUp(self):
-        model_file = pkg_resources.resource_filename('dsge', 'examples/si/mankiw-reis.yaml')
-        self.model = read_yaml(model_file)
+        with as_file(files('dsge') / 'examples' / 'si' / 'mankiw-reis.yaml') as p:
+            self.model = read_yaml(str(p))
 
     def test_easy_parse(self):
      

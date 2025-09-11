@@ -6,8 +6,10 @@ from numpy.testing import assert_equal, assert_allclose
 from unittest import TestCase
 
 from dsge import read_yaml
-
-import pkg_resources
+try:
+    from importlib.resources import files, as_file
+except Exception:  # pragma: no cover
+    from importlib_resources import files, as_file  # type: ignore
 
 class TestFilter(TestCase):
 
@@ -22,11 +24,10 @@ class TestFilter(TestCase):
         self.assertAlmostEqual(-829.7412615500879, lik0, places=6)
 
     def test_ar1(self):
-        relative_loc = 'examples/ar1/'
-        model_file = pkg_resources.resource_filename('dsge', relative_loc+'ar1.yaml')
-        data_file = pkg_resources.resource_filename('dsge', relative_loc+'arma23_sim200.txt')
-        ar1 = read_yaml(model_file)
-        ar1['__data__']['estimation']['data'] = data_file
+        with as_file(files('dsge') / 'examples' / 'ar1' / 'ar1.yaml') as mf, \
+             as_file(files('dsge') / 'examples' / 'ar1' / 'arma23_sim200.txt') as df:
+            ar1 = read_yaml(str(mf))
+            ar1['__data__']['estimation']['data'] = str(df)
 
         ar1 = ar1.compile_model()
 
@@ -50,11 +51,10 @@ class TestFilter(TestCase):
 
 
     def test_missing(self):
-        relative_loc = 'examples/ar1/'
-        model_file = pkg_resources.resource_filename('dsge', relative_loc+'ar1.yaml')
-        data_file = pkg_resources.resource_filename('dsge', relative_loc+'arma23_sim200.txt')
-        ar1 = read_yaml(model_file)
-        ar1['__data__']['estimation']['data'] = data_file
+        with as_file(files('dsge') / 'examples' / 'ar1' / 'ar1.yaml') as mf, \
+             as_file(files('dsge') / 'examples' / 'ar1' / 'arma23_sim200.txt') as df:
+            ar1 = read_yaml(str(mf))
+            ar1['__data__']['estimation']['data'] = str(df)
 
         rho, sigma = ar1.p0()
 
@@ -97,11 +97,10 @@ class TestFilter(TestCase):
 
 
     def test_pred(self):
-        relative_loc = 'examples/ar1/'
-        model_file = pkg_resources.resource_filename('dsge', relative_loc+'ar1.yaml')
-        data_file = pkg_resources.resource_filename('dsge', relative_loc+'arma23_sim200.txt')
-        ar1 = read_yaml(model_file)
-        ar1['__data__']['estimation']['data'] = data_file
+        with as_file(files('dsge') / 'examples' / 'ar1' / 'ar1.yaml') as mf, \
+             as_file(files('dsge') / 'examples' / 'ar1' / 'arma23_sim200.txt') as df:
+            ar1 = read_yaml(str(mf))
+            ar1['__data__']['estimation']['data'] = str(df)
 
         rho, sigma = ar1.p0()
 

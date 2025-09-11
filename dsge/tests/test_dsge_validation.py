@@ -14,6 +14,7 @@ from unittest.mock import patch
 from dsge.parse_yaml import read_yaml
 from dsge.symbols import Variable, Shock, Parameter, Equation
 from dsge.validation import validate_dsge_leads_lags
+from dsge.DSGE import DSGE
 
 
 class TestDSGEValidation(unittest.TestCase):
@@ -170,22 +171,38 @@ calibration:
         )
         self.assertEqual(len(errors), 0)
 
-    # Focus on testing the validation functions directly rather than through the model parser
-    # These tests will need to be updated when we integrate the validation into the DSGE class
-    def test_parse_yaml_without_validation(self):
-        """Test that we can parse a YAML file without triggering validation."""
-        # We'll just verify we can parse the YAML, not that the model is valid
-        yaml_dict = yaml.safe_load(self.valid_yaml)
-        self.assertIsNotNone(yaml_dict)
-        self.assertEqual(yaml_dict['declarations']['name'], 'test_dsge')
-        
-        yaml_dict = yaml.safe_load(self.excessive_lag_yaml)
-        self.assertIsNotNone(yaml_dict)
-        self.assertEqual(yaml_dict['declarations']['name'], 'test_dsge_lag')
-        
-        yaml_dict = yaml.safe_load(self.excessive_lead_yaml)
-        self.assertIsNotNone(yaml_dict)
-        self.assertEqual(yaml_dict['declarations']['name'], 'test_dsge_lead')
+    def test_valid_dsge_model(self):
+        """Test that a valid DSGE model passes validation."""
+        # This test simply verifies that a valid model can be created without validation errors
+        # Suppress print output with a patch
+        with patch('builtins.print'):  
+            # This should not raise an exception
+            model = read_yaml(io.StringIO(self.valid_yaml))
+            
+            # Check that we got a model back
+            self.assertIsNotNone(model)
+                
+    def test_excessive_lag_dsge_model(self):
+        """Test that a DSGE model with excessive lags is caught."""
+        # Test without mocking - our implementation should catch this directly
+        with patch('builtins.print'):  # Suppress print output
+            with self.assertRaises(ValueError) as context:
+                read_yaml(io.StringIO(self.excessive_lag_yaml))
+            
+            # Check the error message
+            error_msg = str(context.exception)
+            self.assertIn("exceeds maximum lag", error_msg)
+            
+    def test_excessive_lead_dsge_model(self):
+        """Test that a DSGE model with excessive leads is caught."""
+        # Test without mocking - our implementation should catch this directly
+        with patch('builtins.print'):  # Suppress print output
+            with self.assertRaises(ValueError) as context:
+                read_yaml(io.StringIO(self.excessive_lead_yaml))
+            
+            # Check the error message
+            error_msg = str(context.exception)
+            self.assertIn("exceeds maximum lead", error_msg)
 
 
 if __name__ == '__main__':

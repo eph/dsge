@@ -9,8 +9,6 @@ from dsge import DSGE
 
 from dsge.examples import sw
 
-import pkg_resources
-
 class TestOtherPara(TestCase):
 
     def test_simple(self):

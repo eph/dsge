@@ -8,8 +8,6 @@ from unittest import TestCase
 
 from dsge import read_yaml
 
-import pkg_resources
-
 from dsge.MarkovSwitching import MarkovSwitchingModel
 
 class TestMarkovSwitching(TestCase):
@@ -106,4 +104,3 @@ calibration:
 
         sim = ms.simulate(para1);
         print(sim)
-
