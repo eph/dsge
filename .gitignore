@@ -14,3 +14,53 @@
 .aider*
 # MkDocs build output
 /site/
+ 
+# Python caches and build artifacts
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.eggs/
+*.egg-info/
+*.egg
+*.pyd
+*.pyo
+.coverage
+.coverage.*
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+.env
+.envrc
+.python-version
+
+# Tooling (prefer uv; allow Poetry without committing lockfile)
+poetry.lock
+
+# Temporary and large binary artifacts
+*.pickle
+*.log
+*.bak
+
+# Project-specific temporary/export folders
+_tmp_cpp_export/
+_improved_cpp_export/
+_fortress_tmp/
+_fortress_tmp_cpp/
+_fortress_tmp_working/
+__fortress_tmp/
+
+# Node / frontend artifacts
+node_modules/
+
+# OS / IDE files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+.spyproject/
+.ropeproject/
+.cache/

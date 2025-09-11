@@ -10,8 +10,32 @@ documentation might be lacking in some (many) places.
 
 Installation
 ------------
-- Editable (dev): `uv pip install -e .`
-- Quick import check: `uv run python -c "import dsge; print(dsge.__file__)"`
+
+- From PyPI (if published):
+  - `pip install dsge`
+  - `uv pip install dsge`
+  - `poetry add dsge`
+
+- From source (this repository):
+  - Using uv (recommended for dev): `uv pip install -e .`
+  - Using pip: `pip install -e .`
+  - Using Poetry (no Poetry metadata required):
+    - `poetry shell` then `pip install -e '.[test]'` (installs package + test extras), or
+    - `poetry run pip install -e '.[test]'`
+
+Tests
+-----
+
+- Using uv (pytest): `uv run -m pytest -q dsge/tests`
+- Using uv (unittest): `uv run python -m unittest discover -s dsge/tests -p 'test_*\.py'`
+- Using Poetry (ensure test deps are installed first, e.g., `poetry run pip install -e '.[test]'`):
+  - Pytest: `poetry run pytest -q dsge/tests`
+  - Unittest: `poetry run python -m unittest discover -s dsge/tests -p 'test_*\.py'`
+
+Quick Check
+-----------
+
+- Import check: `uv run python -c "import dsge; print(dsge.__file__)"`
 
 Bugs and Questions
 ------------------
