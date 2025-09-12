@@ -69,7 +69,7 @@ calibration:
     sharei: delta*alpha*beta/(1-beta*(1-delta))
     sharec: 1-sharei-shareg
 
-  covariances:
+  covariance:
     epr: stdre**2
     epmu: stdmu**2
     epchi: stdchi**2
