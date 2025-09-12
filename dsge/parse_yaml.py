@@ -93,10 +93,20 @@ def include_constructor(loader, node):
     fragment_path = parts[1:] if len(parts) > 1 else None
 
     # Construct the full path to the included file
-    included_file_path = os.path.join(directory, file_name)
+    included_file_path = os.path.join(directory, file_name) if directory else file_name
 
-    with open(included_file_path, 'r') as f:
-        data = yaml.safe_load(f)
+    data = None
+    # Try filesystem-relative include first
+    if included_file_path and os.path.exists(included_file_path):
+        with open(included_file_path, 'r') as f:
+            data = yaml.safe_load(f)
+    else:
+        # Fallback: load include from packaged resources (e.g., dsge.schema/common.yaml)
+        try:
+            pkg_text = (ir_files('dsge.schema') / file_name).read_text(encoding='utf-8')
+            data = yaml.safe_load(pkg_text)
+        except Exception as _:
+            raise FileNotFoundError(f"Included file not found: {included_file_path}")
 
     # Navigate the fragment path if specified
     if fragment_path:
@@ -107,16 +117,17 @@ def include_constructor(loader, node):
 yaml.SafeLoader.add_constructor('!include', include_constructor)
 
 from cerberus import Validator
-import importlib.resources as pkg_resources
+# Use modern importlib.resources.files API with fallback for older Python
+try:
+    from importlib.resources import files as ir_files
+except ImportError:  # pragma: no cover - fallback for Python <3.9
+    from importlib_resources import files as ir_files
 
 def load_schema(schema_name):
-    # Use the package name and the relative path to the schema file
-    resource_path = f'{schema_name}.yaml'
-
-    # Open the resource within the package context
-    with pkg_resources.open_text('dsge.schema', resource_path) as f:
-        schema = yaml.safe_load(f)
-    return schema
+    """Load a schema YAML by name from the packaged dsge/schema directory."""
+    resource_path = f"{schema_name}.yaml"
+    schema_text = (ir_files('dsge.schema') / resource_path).read_text(encoding='utf-8')
+    return yaml.safe_load(schema_text)
 
 # Example usage
 validators = {model: Validator(load_schema(model)) for model in ['fhp','lre','si']}

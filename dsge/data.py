@@ -39,16 +39,28 @@ def read_data_file(datafile, obs_names):
             first_line = f.readline()
             second_line = f.readline()
             if "," in second_line:
-                delim_whitespace=False
+                sep = ","
+                engine = None
             else:
-                delim_whitespace=True
+                # Use regex for arbitrary whitespace between columns
+                sep = r"\s+"
+                engine = "python"  # regex separator requires python engine
 
         # First, we'll try to load it with a header
-        data = pd.read_csv(datafile, delim_whitespace=delim_whitespace, names=obs_names)
+        data = pd.read_csv(
+            datafile,
+            sep=sep,
+            names=obs_names,
+            engine=engine if sep != "," else None,
+        )
         # If the first row isn't numeric (excluding nan), we know it's the header.
         # If not, we load again without a header
         if data.iloc[0].fillna(0.).apply(lambda x: pd.to_numeric(x, errors='coerce')).isna().any():
-            data = pd.read_csv(datafile, delim_whitespace=delim_whitespace)
+            data = pd.read_csv(
+                datafile,
+                sep=sep,
+                engine=engine if sep != "," else None,
+            )
     except Exception as e:
 
         warnings.warn(f"{datafile} could not be opened. Error: {e}")
