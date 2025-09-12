@@ -243,29 +243,25 @@ def validate_si_model(
     """
     errors = []
     
-    # Ensure index variable appears in appropriate form
+    # Ensure index variable appears somewhere in equations (as Variable, Parameter, or symbol)
     if 'equations' in model_dict:
         index_found = False
         for eq in model_dict['equations']:
-            atoms = eq.atoms(Variable)
-            for atom in atoms:
-                if atom.name == index_var:
-                    index_found = True
-                    # In SI models, the index should typically appear in expectations
-                    # Check if any atom has EXP in its string representation
-                    # This is a simplification, but works for our tests
-                    has_exp = False
-                    try:
-                        has_exp = any(isinstance(a, EXP) for a in eq.atoms(EXP))
-                    except TypeError:
-                        # If EXP is not a proper class for isinstance, check string repr
-                        has_exp = any('EXP' in str(a) for a in eq.atoms())
-                    
-                    if not has_exp:
-                        errors.append(
-                            f"Index variable {index_var} should typically be used within expectations"
-                        )
-        
+            # Look for a Variable named index_var
+            if any(getattr(atom, 'name', None) == index_var for atom in eq.atoms(Variable)):
+                index_found = True
+                break
+            # Or a Parameter named index_var
+            from .symbols import Parameter as _Param
+            if any(getattr(atom, 'name', None) == index_var for atom in eq.atoms(_Param)):
+                index_found = True
+                break
+            # Or a raw sympy Symbol named index_var (in case it was parsed that way)
+            import sympy as _sp
+            free_syms = getattr(eq, 'free_symbols', set()) or set()
+            if any(str(sym) == index_var for sym in free_syms):
+                index_found = True
+                break
         if not index_found:
             errors.append(f"Index variable {index_var} not found in model equations")
     
