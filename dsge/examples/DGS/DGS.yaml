@@ -388,7 +388,8 @@ calibration:
     epitarg : sigpitarg^2
 
 estimation:
-  data: '/home/eherbst/Dropbox/code/dsge/dsge/examples/DGS/yy.txt'
+  # Use a relative path to in-repo data
+  data: 'dsge/examples/DGS/yy.txt'
 
   prior:
     ctrend : [normal, 0.40, 0.10]
@@ -434,4 +435,3 @@ estimation:
     crhoz: [beta, 0.5, 0.2]
     sigz : [inv_gamma, 0.1, 2]
     sigpitarg : [inv_gamma, 0.03, 6.00]
-

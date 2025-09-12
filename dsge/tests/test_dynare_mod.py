@@ -95,6 +95,8 @@ def test_translate_covariance_with_corr():
         p = Path(td) / "adv.mod"
         p.write_text(ADVANCED_MOD, encoding="utf-8")
         m = read_mod(p)
+        # prepare matrices so QQ is available
+        m.python_sims_matrices()
         p0 = m.p0()
         # evaluate covariance numeric
         QQ = m.QQ(p0)

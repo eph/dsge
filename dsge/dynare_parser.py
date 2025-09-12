@@ -6,12 +6,16 @@ from typing import Any, Dict, List, Tuple
 from lark import Lark, Transformer, v_args
 
 GRAMMAR_PATH = Path(__file__).with_name("dynare.lark")
+_PARSER: Lark | None = None
 
 
 def _load_parser() -> Lark:
-    with open(GRAMMAR_PATH, "r", encoding="utf-8") as f:
-        grammar = f.read()
-    return Lark(grammar, start="start", parser="lalr")
+    global _PARSER
+    if _PARSER is None:
+        with open(GRAMMAR_PATH, "r", encoding="utf-8") as f:
+            grammar = f.read()
+        _PARSER = Lark(grammar, start="start", parser="lalr")
+    return _PARSER
 
 
 @v_args(inline=True)

@@ -79,7 +79,8 @@ calibration:
     
     
 estimation:
-  data: '/mq/home/m1eph00/projects/dsge-book/code/models/dsge1/us.txt'
+  # Use a small in-repo CSV to avoid absolute paths in tests/examples
+  data: 'dsge/tests/data/test_with_header.csv'
 
   prior: 
     tau : [gamma, 2.00, 0.5]

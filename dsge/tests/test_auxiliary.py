@@ -2,12 +2,14 @@
 from unittest import TestCase
 
 from dsge import read_yaml
+from pathlib import Path
 
 class TestAuxiliary(TestCase):
 
     def test_simple(self):
         from io import StringIO
-        simple_dsge = StringIO("""
+        ext_path = Path(__file__).with_name("external.py")
+        simple_dsge = StringIO(f"""
 declarations:
   name: univariate
   variables: [x, y]
@@ -16,7 +18,7 @@ declarations:
   shocks: [e]
   external:
         names: [half_rho]
-        file: /home/eherbst/Dropbox/code/dsge/dsge/tests/external.py
+        file: {ext_path}
         
 equations:
   - x = gamma*x(-1) + e

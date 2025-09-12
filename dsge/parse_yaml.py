@@ -129,10 +129,16 @@ def load_schema(schema_name):
     schema_text = (ir_files('dsge.schema') / resource_path).read_text(encoding='utf-8')
     return yaml.safe_load(schema_text)
 
-# Example usage
-validators = {model: Validator(load_schema(model)) for model in ['fhp','lre','si']}
-validators['dsge'] = validators['lre']
-validators['sticky-information'] = validators['si']
+_VALIDATORS = None
+
+def get_validators():
+    global _VALIDATORS
+    if _VALIDATORS is None:
+        vals = {model: Validator(load_schema(model)) for model in ['fhp','lre','si']}
+        vals['dsge'] = vals['lre']
+        vals['sticky-information'] = vals['si']
+        _VALIDATORS = vals
+    return _VALIDATORS
 
 def read_yaml(yaml_file: Union[str,IO[str]],
                sub_list : List[tuple]=[('^', '**'), (';','')]):
@@ -180,7 +186,7 @@ def read_yaml(yaml_file: Union[str,IO[str]],
     # Schema validation
     try:
         logger.debug("Performing schema validation")
-        validate_data(yaml_dict, validators[kind])
+        validate_data(yaml_dict, get_validators()[kind])
     except ValidationError as e:
         logger.error(f"Schema validation failed: {e}")
         raise
