@@ -400,18 +400,4 @@ def compile_discretion(model, loss_string, policy_instruments, policy_shocks=Non
             return None, None, None
     linmod.solve_LRE = solve
     return linmod
-# turn this in
-if __name__ == '__main__':
-    from symbols import Variable, Parameter
-    endog = [Variable('x'), Variable('y')]
-    exog = [Variable('z')]
-    params = [Parameter('a'), Parameter('b')]
-
-    loss = 'a*x**2 + b*y**2 + z**2 + x*y'
-    W, Q = parse_loss(loss, endog, exog, params)
-    # print('W:', W.subs({params[0]: 1, params[1]: 1}))
-    # print('Q:', Q)
-               
-    from dsge import read_yaml
-    f = read_yaml('/home/eherbst/tmp/dsge_example.yaml')
-    
+# Example previously under __main__ is covered by dsge/tests/test_oc.py
