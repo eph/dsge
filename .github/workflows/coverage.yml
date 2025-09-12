@@ -1,0 +1,43 @@
+name: Coverage
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install dependencies (uv)
+        run: |
+          uv pip install -e .
+          uv pip install pytest pytest-cov coverage-badge
+
+      - name: Run tests with coverage (uv)
+        run: |
+          uv run -m pytest -q dsge/tests --cov=dsge --cov-report=xml --cov-report=term
+
+      - name: Generate coverage badge (uv)
+        run: |
+          mkdir -p badges
+          uv run coverage-badge -o badges/coverage.svg -f
+
+      - name: Commit coverage badge
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore(ci): update coverage badge"
+          file_pattern: badges/coverage.svg
