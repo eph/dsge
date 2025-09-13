@@ -194,7 +194,12 @@ def read_yaml(yaml_file: Union[str,IO[str]],
     # Model-specific parsing and validation
     try:
         # Create appropriate model based on type
-        if kind == 'fhp':
+        if 'regimes' in yaml_dict:
+            # Occasionally-binding constraint model
+            from .obc import read_obc
+            logger.debug("Creating OBC (OccBin) model with regimes/constraints")
+            return read_obc(yaml_dict)
+        elif kind == 'fhp':
             logger.debug("Creating FHP Representative Agent model")
             return FHPRepAgent.read(yaml_dict)
         elif kind == 'si' or kind == 'sticky-information':

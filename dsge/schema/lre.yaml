@@ -51,6 +51,49 @@ equations:
         valuesrules:
           type: string
   - type: list
+
+# Optional occasionally-binding constraint support via regimes/constraints
+regimes:
+  type: dict
+  valuesrules:
+    type: dict
+    schema:
+      equations:
+        oneof:
+        - type: dict
+          schema:
+            model:
+              type: list
+              required: true
+              schema:
+                type: string
+            observables:
+              type: dict
+              required: false
+              valuesrules:
+                type: string
+        - type: list
+
+constraints:
+  type: list
+  schema:
+    type: dict
+    schema:
+      name:
+        type: string
+        required: true
+      when:
+        type: string
+        required: true
+      binding_regime:
+        type: string
+        required: true
+      normal_regime:
+        type: string
+        required: true
+      horizon:
+        type: integer
+        required: false
     
 calibration: !include common.yaml#calibration
 
