@@ -1,17 +1,71 @@
 import sympy as sp
-from typing import List, Dict, Union, Any
+from typing import List, Dict, Union, Any, Iterable, Optional
 from .symbols import Equation, Parameter, Shock, Variable
+from .symbols import EXP
 import itertools
 
-def parse_expression(expr: str, context: Dict[str, Union[Parameter, Variable, Shock]]) -> sp.Expr:
+def build_symbolic_context(
+    symbols: Optional[Iterable[Union[Parameter, Variable, Shock]]] = None,
+    extras: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Build a safe, consistent context for parsing model expressions.
 
-    expr = sp.sympify(expr, locals=context)
+    Includes model symbols, common SymPy math functions, and DSL helpers.
+    """
+    ctx: Dict[str, Any] = {}
+    if symbols:
+        ctx.update({s.name: s for s in symbols})
 
-    symbols_in_expr = expr.atoms(Parameter) | expr.atoms(Variable) | expr.atoms(Shock)
+    # Common math and constants
+    ctx.update({
+        'exp': sp.exp,
+        'log': sp.log,
+        'sin': sp.sin,
+        'cos': sp.cos,
+        'tan': sp.tan,
+        'asin': sp.asin,
+        'acos': sp.acos,
+        'atan': sp.atan,
+        'sinh': sp.sinh,
+        'cosh': sp.cosh,
+        'tanh': sp.tanh,
+        'sqrt': sp.sqrt,
+        'Abs': sp.Abs,
+        'sign': sp.sign,
+        'oo': sp.oo,
+    })
+
+    # DSL helpers
+    ctx['EXP'] = EXP
+    ctx['SUM'] = sp.Sum
+
+    # User extras
+    if extras:
+        ctx.update(extras)
+
+    return ctx
+
+
+def parse_expression(expr: str, context: Dict[str, Any]) -> sp.Expr:
+    """Parse a string expression into a SymPy expression using a safe context.
+
+    Uses SymPy's sympify with a whitelisted local context. Validates that
+    all model symbols used in the expression are present in the context.
+    """
+    expr_obj = sp.sympify(expr, locals=context)
+
+    symbols_in_expr = expr_obj.atoms(Parameter) | expr_obj.atoms(Variable) | expr_obj.atoms(Shock)
     for symbol in symbols_in_expr:
         if symbol.name not in context:
-            raise ValueError(f"In expression {expr}, symbol {symbol} is not in the context {context}")
-    return expr
+            raise ValueError(
+                f"In expression {expr}, symbol {symbol} is not in the provided context"
+            )
+
+    # Also ensure no bare SymPy symbols slipped in that aren't known in context
+    unknown_free = [s for s in expr_obj.free_symbols if s.name not in context]
+    if unknown_free:
+        raise ValueError(f"Unknown symbols in expression {expr}: {unknown_free}")
+    return expr_obj
 
 def from_dict_to_mat(dictionary: Dict[str, str], element_array: List[str], context: Dict[str, Any], is_symmetric: bool =True) -> sp.Matrix:
     """

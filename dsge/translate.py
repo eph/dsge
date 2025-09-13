@@ -403,17 +403,19 @@ def write_model_file(model, output_dir, language="fortran", nobs=None):
     from FCodePrinter import fcode_double as wf
     from sympy import MatrixSymbol as MS
 
+    mats = [("GAM0", GAM0), ("GAM1", GAM1), ("PSI", PSI), ("PPI", PPI)]
     sims_mat = "\n\n".join(
         [
-            wf(eval(mat), MS(mat, *eval(mat).shape), source_format="free", standard=95)
-            for mat in ["GAM0", "GAM1", "PSI", "PPI"]
+            wf(m, MS(n, *m.shape), source_format="free", standard=95)
+            for n, m in mats
         ]
     )
 
+    ss_mats = [("QQ", QQ), ("DD", DD), ("ZZ", ZZ), ("HH", HH)]
     ss_mat = "\n\n".join(
         [
-            wf(eval(mat), MS(mat, *eval(mat).shape), source_format="free", standard=95)
-            for mat in ["QQ", "DD", "ZZ", "HH"]
+            wf(m, MS(n, *m.shape), source_format="free", standard=95)
+            for n, m in ss_mats
         ]
     )
 

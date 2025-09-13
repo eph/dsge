@@ -1,7 +1,7 @@
 .PHONY: docs-install docs-serve docs-build
 
 docs-install:
-	uv pip install mkdocs mkdocs-material "mkdocstrings[python]"
+	uv pip install mkdocs mkdocs-material mkdocs-macros-plugin "mkdocstrings[python]"
 
 docs-serve:
 	uv run mkdocs serve

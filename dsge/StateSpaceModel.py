@@ -1,11 +1,13 @@
 """
-A module for Linear Gaussian State Space models.
+Linear Gaussian State Space models and a DSGE-specialized subclass.
 
-
-Classes
--------
-StateSpaceModel
-LinearDSGEModel
+This module provides:
+- StateSpaceModel: a light wrapper around linear Gaussian state-space models,
+  with likelihood, filtering/smoothing, impulse responses, simulation, and
+  helper utilities.
+- LinearDSGEModel: a subclass that binds the canonical DSGE linear form
+  (GAM0/GAM1/PSI/PPI) and solves it via `gensys` to produce state-space
+  matrices consumable by `StateSpaceModel` APIs.
 """
 import numpy as np
 import pandas as p
@@ -21,49 +23,35 @@ filt_choices = {"chand_recursion": chand_recursion,
 
 class StateSpaceModel(object):
     r"""
-    Object for holding state space model
+    Linear Gaussian state‑space model
+
+    The model is specified by the following system (parameterized by θ):
 
     .. math::
 
-    s_t &=& T(\theta) s_{t-1} + R(\theta) \epsilon_t,
-    \quad \epsilon_t \sim N(0,Q(\theta)) \\
+        s_t &= T(\theta) s_{t-1} + R(\theta)\, \epsilon_t,\quad \epsilon_t \sim \mathcal{N}(0, Q(\theta)) \\
+        y_t &= D(\theta) + Z(\theta) s_t + \eta_t,\quad\ \eta_t \sim \mathcal{N}(0, H(\theta))
 
-    y_t &=& D(\theta) + Z(\theta) s_{t} + \eta_t,
-    \quad \eta_t  \sim N(0, H(\theta))
+    This class expects callables `CC, TT, RR, QQ, DD, ZZ, HH` that map a
+    parameter vector to the corresponding arrays (with shapes documented
+    below). Most users will work through `LinearDSGEModel`, which constructs
+    these for you from a linearized DSGE system.
 
     Attributes
     ----------
     yy : array_like or pandas.DataFrame
-        Dataset containing the observables of the model.
+        Dataset of observables (shape T x nobs). A 1D input is promoted to 2D.
+    t0 : int
+        Number of initial observations to condition on for likelihood.
+    shock_names, state_names, obs_names : list[str] or None
+        Optional labels for shocks, states, and observables.
 
-    t0 : int, optional
-        Number of initial observations to condition on for
-        likelihood evaluation. The default is 0.
-
-    shock_names : list or None, optional
-        Names of the shocks.
-
-    state_names : list or None, optional
-        Names of the states.
-
-    obs_names : list or None, optional
-        Names of observables.
-
-    Methods
-    -------
-    CC(para), TT(para), RR(para), QQ(para)
-        Define the state transition matrices as function of a parameter vector.
-    DD(para), ZZ(para), HH(para)
-        Define the observable transition matrices as function of a parameter vector.
-    log_lik(para)
-        Computes the likelihood of the model at parameter value para.
-    impulse_response(para, h=20)
-        Computes the impulse response function at parameter value para.
-    pred(para, h=20, shocks=True, append=False)
-        Simulates a draw from the predictive distribution at parameter
-        value para.
-    kf_everything(para)
-        Generates the filtered and smoothed posterior means of the state vector.
+    Notes
+    -----
+    - `fast_filter` selects the default filter for complete data
+      ("chand_recursion"). If missing values are present, Kalman filter is used.
+    - Set `use_cache=True` to reuse matrices from the most recent call to
+      `system_matrices`, avoiding recomputation when scanning nearby params.
     """
 
     fast_filter = "chand_recursion"
@@ -107,7 +95,7 @@ class StateSpaceModel(object):
 
     def log_lik(self, para, use_cache=False, *args, **kwargs):
         """
-        Computes the log likelihood of the model.
+        Compute the Gaussian log-likelihood at parameters `para`.
 
         Parameters
         ----------
@@ -116,8 +104,8 @@ class StateSpaceModel(object):
         t0 : int, optional
             Number of initial observations to condition on. 
         y : 2d array-like, optional
-            Dataset of observables (T x nobs). The default is the observable set pass during
-            class instantiation.
+            Dataset of observables (T x nobs). Defaults to the dataset passed
+            during class instantiation.
         P0 : 2d array-like or string, optional
             [ns x ns] initial covariance matrix of states, or `unconditional` to use the one
             associated with the invariant distribution.  The default is `unconditional.`
@@ -126,7 +114,7 @@ class StateSpaceModel(object):
         Returns
         -------
         lik : float
-            The log likelihood.
+            The log-likelihood value.
 
 
         See Also
@@ -177,7 +165,7 @@ class StateSpaceModel(object):
 
     def kf_everything(self, para, use_cache=False, *args, **kwargs):
         """
-        Runs the kalman filter and returns objects of interest.
+        Run Kalman filtering and smoothing, return common outputs.
 
         Parameters
         ----------
@@ -186,8 +174,8 @@ class StateSpaceModel(object):
         t0 : int, optional
             Number of initial observations to condition on. 
         y : 2d array-like, optional
-            Dataset of observables (T x nobs). The default is the observable set pass during
-            class instantiation.
+            Dataset of observables (T x nobs). Defaults to the dataset passed
+            during class instantiation.
         P0 : 2d arry-like or string, optional
             [ns x ns] initial covariance matrix of states, or `unconditional` to use the one
             associated with the invariant distribution.  The default is `unconditional.`
@@ -197,14 +185,11 @@ class StateSpaceModel(object):
 
         Returns
         -------
-        results : dict of p.DataFrames with
-             `log_lik` -- the sequence of log likelihoods
-             `filtered_means' -- the filtered means of the states 
-             `filtered_std' -- the filtered stds of the states
-             `forecast_means' -- the forecasted means of the states 
-             `forecast_std' -- the forecasted stds of the states
-             `smoothed_means' -- the smoothed means of the model
-             `smoothed_stds' -- the smoothed stds of the model 
+        results : dict of p.DataFrames
+            Keys include `log_lik`, `filtered_means`, `filtered_stds`,
+            `forecast_means`, `forecast_stds`, `smoothed_means`, `smoothed_stds`.
+            Raw covariances are also included under `filtered_cov`, `forecast_cov`,
+            and `smoothed_cov`.
 
         Notes
         -----
@@ -289,7 +274,7 @@ class StateSpaceModel(object):
 
     def pred(self, para, h=20, shocks=True, append=False, return_states=False, filt_para=None, use_cache=False, *args, **kwargs):
         """
-        Draws from the predictive distribution $p(Y_{t+1:t+h}|Y_{1:T}, \theta)$.
+        Draw from the predictive distribution :math:`p(Y_{t+1:t+h}|Y_{1:T}, \theta)`.
 
 
         Parameters
@@ -299,15 +284,15 @@ class StateSpaceModel(object):
         h : int, optional
             The horizon of the distribution.
         y : 2d array-like, optional
-            Dataset of observables (T x nobs). The default is the observable set pass during
-            class instantiation.
+            Dataset of observables (T x nobs). Defaults to the dataset passed
+            during class instantiation.
         append : bool, optional
             Return the draw appended to yy (default = FALSE).
 
         Returns
         -------
-        ysim : pandas.DataFrame
-            A dataframe containing the draw from the predictive distribution.
+        ysim : pandas.DataFrame (and optionally states)
+            Simulated observables (and optionally states if `return_states=True`).
 
         """
         if filt_para is None:
@@ -339,10 +324,10 @@ class StateSpaceModel(object):
         ysim = p.DataFrame(ysim, columns=self.obs_names, index=index)
         asim = p.DataFrame(asim, columns=self.state_names, index=index)
         if append:
-            yhat = yy.copy()
-            ysim = yhat.append(ysim)
+            yhat = p.DataFrame(yy).copy()
+            ysim = p.concat([yhat, ysim])
             r = res['smoothed_means'].copy()
-            asim = r.append(asim)
+            asim = p.concat([r, asim])
 
         if return_states:
             return ysim, asim
@@ -351,7 +336,7 @@ class StateSpaceModel(object):
 
     def system_matrices(self, para, *args, **kwargs):
         """
-        Returns the system matrices of the state space model.
+        Evaluate CC, TT, RR, QQ, DD, ZZ, HH at `para`.
 
         Parameters
         ----------
@@ -370,9 +355,6 @@ class StateSpaceModel(object):
         HH : np.array (ny x ny)
 
 
-        Notes
-        -----
-        
         """
         CC = np.atleast_1d(self.CC(para, *args, **kwargs))
         TT = np.atleast_2d(self.TT(para, *args, **kwargs))
@@ -389,7 +371,8 @@ class StateSpaceModel(object):
 
     def abcd_representation(self, para, *args, **kwargs):
         """
-        Returns ABCD representation of state space system.
+        Return ABCD representation of the system, with
+        A = TT, B = RR, C = ZZ @ TT, D = ZZ @ RR.
 
         Parameters
         ----------
@@ -420,7 +403,7 @@ class StateSpaceModel(object):
 
     def impulse_response(self, para, h=20, use_cache=False, *args, **kwargs):
         """
-        Computes impulse response functions of model.
+        State-variable impulse responses to 1‑s.d. shocks.
 
         Parameters
         ----------
@@ -433,14 +416,14 @@ class StateSpaceModel(object):
 
         Returns
         -------
-        irf : pandas.Panel (nshocks x h x nvariables)
+        irf : dict[str, pandas.DataFrame]
+            For each shock, an (h+1) x nstates DataFrame with row 0 as impact.
 
 
         Notes
         -----
-        These are of the model state variables impulse responses to
-        1 standard deviation shocks.  The method does not return IRFs in terms
-        of the model observables.
+        Responses are for states; to obtain observable responses, combine with
+        ZZ and DD as needed.
         """
         if use_cache:
             CC, TT, RR, QQ, DD, ZZ, HH = self.cached_system_matrices

@@ -30,7 +30,8 @@ from .logging_config import get_logger
 from .parsing_tools import (parse_expression,
                             from_dict_to_mat,
                             construct_equation_list,
-                            find_max_lead_lag)
+                            find_max_lead_lag,
+                            build_symbolic_context)
 from .Base import Base
 
 # Get module logger
@@ -57,8 +58,9 @@ class EquationList(list):
         if isinstance(value, str):
             lhs, rhs = value.split("=")
 
-            lhs = eval(lhs, self.context)
-            rhs = eval(rhs, self.context)
+            # Use safe parser instead of eval
+            lhs = parse_expression(lhs, self.context)
+            rhs = parse_expression(rhs, self.context)
 
             value = Equation(lhs, rhs)
 
@@ -528,9 +530,7 @@ Equations:
         steady_state = [0]
         init_values = [0]
 
-        context = {s.name: s
-                   for s in var_ordering + par_ordering + shk_ordering + other_para}
-        context.update(symbolic_context)
+        context = build_symbolic_context(var_ordering + par_ordering + shk_ordering + other_para)
 
         if "model" in model_yaml["equations"]:
             raw_equations = model_yaml["equations"]["model"]
@@ -629,7 +629,8 @@ Equations:
         context["sum"] = np.sum
         context["range"] = range
         for obs in obs_equations.items():
-            obs_equations[obs[0]] = eval(obs[1], context)
+            # Parse observable equations safely
+            obs_equations[obs[0]] = parse_expression(obs[1], context)
 
         me_dict = {}
         if 'measurement_errors' in model_yaml['calibration']:

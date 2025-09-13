@@ -21,7 +21,7 @@ from .symbols import (Variable,
 from .Prior import construct_prior
 from .data import read_data_file
 from .StateSpaceModel import LinearDSGEModel
-from .parsing_tools import from_dict_to_mat, construct_equation_list
+from .parsing_tools import from_dict_to_mat, construct_equation_list, parse_expression, build_symbolic_context
 from .validation import check_for_future_shocks
 from .logging_config import get_logger
 
@@ -294,17 +294,11 @@ class FHPRepAgent(Base):
         fortran_subs[400] = 400.0
         fortran_subs[4] = 4.0
      
-        context_tuple = ([(p.name, p) for p in self['parameters']]
-        + [(p.name, p) for p in self["auxiliary_parameters"].keys()])
-     
-     
-        context = dict(context_tuple)
-        context["exp"] = sympy.exp
-        context["log"] = sympy.log
+        context = build_symbolic_context(list(self['parameters']) + list(self['auxiliary_parameters'].keys()))
      
         to_replace = {}
         for op, expr in self["auxiliary_parameters"].items():
-            to_replace[op] = sympify(expr, context)
+            to_replace[op] = parse_expression(str(expr), context)
      
         to_replace = list(to_replace.items())
      
@@ -342,16 +336,26 @@ class FHPRepAgent(Base):
 
         # get templates/fhp.f90 via importlib.resources (zip-safe)
         from importlib.resources import files
+        from .template_utils import render_template, build_fhp_placeholders
         template_res = files("dsge") / "templates" / "fhp.f90"
         with template_res.open("r", encoding="utf-8") as f:
             fortran_template = f.read()
             
-        # turn template in f-string
-        model = self
-        p0 = ''
-        system = sims_mat
-        template = eval(f'f"""{fortran_template}"""')
-        return template
+        # Safely render template by explicit placeholder replacement
+        placeholders = build_fhp_placeholders(
+            nobs=cmodel.yy.shape[1],
+            T=cmodel.yy.shape[0],
+            nvar=len(self['variables']),
+            nval=len(self['values']),
+            nshock=len(self['shocks']),
+            npara=len(self['parameters']),
+            neps=len(self['innovations']),
+            k=k,
+            t0=0,
+            system=sims_mat,
+        )
+
+        return render_template(fortran_template, placeholders, strict=True)
 
 
 
@@ -414,11 +418,7 @@ class FHPRepAgent(Base):
             measurement_errors = None
 
         # Create parsing context with all symbols
-        context = {s.name: s
-                   for s in (variables +
-                             values + value_updates +
-                             shocks + innovations +
-                             parameters + list(other_para.keys()))}
+        context = build_symbolic_context(variables + values + value_updates + shocks + innovations + parameters + list(other_para.keys()))
 
         # Process observables
         if "observables" in dec:
@@ -428,7 +428,7 @@ class FHPRepAgent(Base):
             # Create observables equations
             try:
                 obs_equations = {
-                    o: sympify(model_yaml["model"]["observables"][str(o)], context)
+                    o: parse_expression(model_yaml["model"]["observables"][str(o)], context)
                     for o in observables
                 }
             except KeyError as e:

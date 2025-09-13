@@ -42,3 +42,25 @@ Bugs and Questions
 For bug reports and questions, send me an email at
 ed.herbst@gmail.com.  If there is enough interest,
 I'll mirror the source on github.
+
+Documentation
+--------------
+
+Build and serve the MkDocs site locally using uv:
+
+- Install docs tooling (one-time):
+  - `uv pip install mkdocs mkdocs-material mkdocs-macros-plugin "mkdocstrings[python]"`
+  - or `make docs-install`
+
+- Serve with live reload:
+  - `uv run mkdocs serve`
+  - or `make docs-serve`
+
+- Build static site (outputs to `site/`):
+  - `uv run mkdocs build --strict`
+  - or `make docs-build`
+
+Docs entry points:
+- Overview: `docs/index.md`
+- Parsing DSL: `docs/parsing.md`
+- Config: `mkdocs.yml`

@@ -18,7 +18,9 @@ from .logging_config import get_logger
 
 from .parsing_tools import (from_dict_to_mat,
                             construct_equation_list,
-                            find_max_lead_lag)
+                            find_max_lead_lag,
+                            parse_expression,
+                            build_symbolic_context)
 
 from .StateSpaceModel import StateSpaceModel
 
@@ -408,10 +410,10 @@ class SIDSGE(Base):
             ee = e.lhs - e.rhs
             j = self.index
      
-            get_order = re.search('E\[([a-zA-Z0-9 -]+)\]', ee.__str__())
+            get_order = re.search(r'E\[([a-zA-Z0-9 -]+)\]', ee.__str__())
 
             if get_order is not None:
-                e_order = eval(get_order.groups(0)[0], {j.name:j})
+                e_order = sympy.sympify(get_order.groups(0)[0], locals={j.name: j})
                 gap = e_order + j
                 d = ee.diff(EXP(e_order)(v(order))).subs({j:j+gap})
                 # if d is not sympy.S.Zero:
@@ -586,12 +588,6 @@ class SIDSGE(Base):
                 context['Sum'] = sympy.Sum
                 context['oo'] = sympy.oo
                 context['Abs'] = sympy.Abs
-
-                                              
-                ad = eval(ad.__str__(), context)
-                bd = eval(bd.__str__(), context)
-                
-                cd = eval(cd.__str__(), context)
                 Ainf[ii, jj] = Ainf[ii, jj] + ad
                 Binf[ii, jj] = Binf[ii, jj] + bd
                 Cinf[ii, jj] = Cinf[ii, jj] + cd
@@ -711,7 +707,7 @@ class SIDSGE(Base):
 
         to_replace = {}
         for p in self['auxiliary_parameters'].keys():
-            to_replace[p] = eval(str(self["auxiliary_parameters"][p]), context)
+            to_replace[p] = parse_expression(str(self["auxiliary_parameters"][p]), context)
 
         to_replace = list(to_replace.items())
         from itertools import permutations
@@ -894,17 +890,13 @@ def read_si(model_yaml: Dict[str, Any]) -> SIDSGE:
     index = [Parameter(j) for j in dec['index']]
     logger.debug(f"Index variable: {dec['index']}")
     
-    context = {s.name:s for s in
-               (var_ordering + par_ordering + index + shk_ordering + other_para)}
-
-    context['EXP'] = EXP
-    context['inf'] = sympy.oo
-    context['SUM'] = sympy.Sum
+    context = build_symbolic_context(var_ordering + par_ordering + index + shk_ordering + other_para,
+                                     extras={'inf': sympy.oo})
     rcontext = context.copy()
     rcontext['SUM'] = lambda x, d: x
 
     for obs in obs_equations.items():
-        obs_equations[obs[0]] = eval(obs[1], context)
+        obs_equations[obs[0]] = parse_expression(obs[1], context)
 
     if "model" in model_yaml["equations"]:
         raw_equations = model_yaml["equations"]["model"]
@@ -1032,7 +1024,3 @@ def read_si(model_yaml: Dict[str, Any]) -> SIDSGE:
     logger.info(f"SI model {name} creation complete with {len(var_ordering)} variables")
     model = SIDSGE(**model_dict)
     return model
-
-
-
-

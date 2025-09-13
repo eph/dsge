@@ -17,3 +17,5 @@ CC, TT, RR, QQ, DD, ZZ, HH = lin.system_matrices(m.p0())
 ```
 
 Use the left navigation to explore guides and the API reference.
+
+- See Parsing DSL: `docs/parsing.md` for supported syntax in YAML equations.
