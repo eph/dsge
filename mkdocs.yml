@@ -1,0 +1,40 @@
+site_name: DSGE
+site_description: Python tools for Dynamic Stochastic General Equilibrium (DSGE) models
+site_url: 
+
+theme:
+  name: material
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - content.code.copy
+copyright: "DSGE v{{ config.extra.version }}"
+
+plugins:
+  - search
+  - macros
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            docstring_style: google
+            show_source: false
+            show_signature: true
+
+markdown_extensions:
+  - admonition
+  - codehilite
+  - toc:
+      permalink: true
+
+nav:
+  - Overview: index.md
+  - Getting Started: getting-started.md
+  - Quickstart: quickstart.md
+  - State-Space: state-space.md
+  - Usage: usage.md
+  - Parsing DSL: parsing.md
+  - OBC (ZLB): obc.md
+  - Models: models.md
+  - API Reference: api.md
+  - Contributing: contributing.md
