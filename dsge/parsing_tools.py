@@ -147,8 +147,13 @@ def find_max_lead_lag(equations, shocks_or_variables):
     all_shocks = [list(eq.atoms(type_of_array)) for eq in equations]
 
     for s in shocks_or_variables:
-        max_lead[s] = max([i.date for i in it(all_shocks) if i.name == s.name])
-        max_lag[s] = min([i.date for i in it(all_shocks) if i.name == s.name])
+        dates = [i.date for i in it(all_shocks) if i.name == s.name]
+        if dates:
+            max_lead[s] = max(dates)
+            max_lag[s] = min(dates)
+        else:
+            max_lead[s] = 0
+            max_lag[s] = 0
 
     return max_lead, max_lag
 
