@@ -60,6 +60,10 @@ res = m.irf_obc(p0, h=20)
 # res = { 'irf': {shock->DataFrame}, 'binding': array[(h+1), bool] }
 ```
 
+Example files:
+- YAML: `dsge/examples/nk_zlb/nk_zlb.yaml`
+- Notebook: `docs/notebooks/nk_zlb.ipynb`
+
 ## Notes
 
 - Variable/shock sets must match across regimes.
@@ -67,4 +71,3 @@ res = m.irf_obc(p0, h=20)
 - Filtering/estimation under OBC is out of scope for the initial version.
 
 Further iterations will add a full OccBin path solver, observable IRFs, and examples.
-

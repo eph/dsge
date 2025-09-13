@@ -101,6 +101,8 @@ class OccBinModel:
         bind = np.zeros((H,), dtype=bool)
 
         max_iter = 50
+        prev_bind = None
+        prev2_bind = None
         for _ in range(max_iter):
             # Simulate given current bind flags (block lower-triangular solve)
             states = np.zeros((H, ns), dtype=float)
@@ -119,6 +121,12 @@ class OccBinModel:
             new_bind = self._evaluate_when_over_path(states, state_names)
             if np.array_equal(new_bind, bind):
                 break
+            # Anti-oscillation: if we detect a 2-cycle, prefer the union (more binding)
+            if prev2_bind is not None and np.array_equal(new_bind, prev2_bind) and not np.array_equal(new_bind, bind):
+                bind = np.logical_or(new_bind, bind)
+                break
+            prev2_bind = prev_bind
+            prev_bind = bind.copy()
             bind = new_bind
 
         # Build a simple IRF dict (states only) keyed by shock names for convenience
