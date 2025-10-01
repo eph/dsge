@@ -62,9 +62,26 @@ class invgamma_zellner_gen(rv_continuous):
         return (nu + 1)/2 * np.log(2) + (nu + 1) * np.log(s) - np.log(gammaln(nu/2)) + (1 - nu)/2 * np.log(nu) + gammaln(nu/2)
 
     def _rvs(self, s, nu, size=None, random_state=None):
-        shape = np.prod(size) if size else 1
-        rn = self._random_state.standard_normal(size=(shape, int(nu)))
-        return np.sqrt(nu * s**2 / np.sum(rn**2, axis=-1))
+        if size is None:
+            shape = 1
+        else:
+            shape = int(np.prod(size))
+
+        if random_state is None:
+            rng = self._random_state
+        elif isinstance(random_state, np.random.Generator):
+            rng = random_state
+        elif isinstance(random_state, np.random.RandomState):
+            rng = random_state
+        else:
+            rng = np.random.default_rng(random_state)
+
+        rn = rng.standard_normal(size=(shape, int(nu)))
+
+        draws = np.sqrt(nu * s**2 / np.sum(rn**2, axis=-1))
+        if size is None:
+            return float(draws.reshape(-1)[0])
+        return draws.reshape(size)
 
 # Create an instance of the custom distribution
 invgamma_zellner = invgamma_zellner_gen(a=0.0, name='invgamma_zellner')

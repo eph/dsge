@@ -1,5 +1,8 @@
 import numpy as np
 
+from typing import Optional, Union
+
+from numpy.random import Generator, RandomState
 from scipy.stats import beta, norm, uniform, gamma
 from .OtherPriors import invgamma_zellner
 
@@ -62,13 +65,42 @@ class Prior(object):
             ldens = -100000000000.0
         return ldens
 
-    def rvs(self, size=None):
+    def rvs(self, size: Optional[int] = None, random_state: Optional[Union[int, Generator, RandomState]] = None):
         if self.priors is None:
             return None
-        if size == None:
-            return np.array([x.rvs() for x in self.priors])
+
+        if size is not None and not isinstance(size, int):
+            raise TypeError("size must be an integer or None")
+
+        rng: Optional[Union[int, Generator, RandomState]]
+        if isinstance(random_state, Generator) or isinstance(random_state, RandomState):
+            rng = random_state
+        elif random_state is None:
+            rng = np.random.default_rng()
         else:
-            return np.array([[x.rvs() for x in self.priors] for _ in range(size)])
+            rng = np.random.default_rng(random_state)
+
+        def _draw(dist, draw_size: Optional[int]):
+            sample = dist.rvs(size=draw_size, random_state=rng)
+            arr = np.asarray(sample)
+            if draw_size is None:
+                if arr.ndim == 0:
+                    return float(arr)
+                if arr.size == 1:
+                    return float(arr.reshape(-1)[0])
+                raise ValueError(
+                    f"Prior draw for distribution '{getattr(dist, 'name', type(dist).__name__)}' "
+                    f"returned shape {arr.shape}, expected scalar."
+                )
+            return arr.reshape(draw_size)
+
+        if size is None:
+            return np.array([_draw(dist, None) for dist in self.priors], dtype=float)
+
+        draws = np.empty((size, len(self.priors)), dtype=float)
+        for idx, dist in enumerate(self.priors):
+            draws[:, idx] = _draw(dist, size)
+        return draws
 
     def fortran_prior(self):
         def return_stats(dist):
