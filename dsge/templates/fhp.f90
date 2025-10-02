@@ -55,25 +55,49 @@ contains
 
     integer, intent(out) :: error
 
-    double precision :: alpha0_cycle(self%nvar, self%nvar), alpha1_cycle(self%nvar, self%nvar), beta0_cycle(self%nvar, self%nshock)
-    double precision :: alphaC_cycle(self%nvar, self%nvar), alphaF_cycle(self%nvar, self%nvar), alphaB_cycle(self%nvar, self%nvar), betaS_cycle(self%nvar, self%nshock)
-    double precision :: alpha0_trend(self%nvar, self%nvar), alpha1_trend(self%nvar, self%nvar), betaV_trend(self%nvar, self%nval)
-    double precision :: alphaC_trend(self%nvar, self%nvar), alphaF_trend(self%nvar, self%nvar), alphaB_trend(self%nvar, self%nvar)
-    double precision :: value_gammaC(self%nval, self%nval), value_gamma(self%nval, self%nval),value_Cx(self%nval, self%nvar), value_Cs(self%nval, self%nshock)
-    double precision :: P(self%nshock, self%nshock), R(self%nshock, self%neps)
-    double precision :: DD2(self%nobs,1)
+    ! Declare dimensions first so they can be used in array bounds
+    integer :: k, nvar, nval, nshock, nobs, neps
     integer :: info
-
-    integer :: k, nvar, nval, nshock
-    double precision :: A_cycle(self%nvar, self%nvar), B_cycle(self%nvar, self%nshock)
-    double precision :: A_cycle_new(self%nvar, self%nvar), B_cycle_new(self%nvar, self%nshock)
-    double precision :: A_trend(self%nvar, self%nvar), B_trend(self%nvar, self%nval)
-    double precision :: A_trend_new(self%nvar, self%nvar), B_trend_new(self%nvar, self%nval)
-    double precision :: temp1(self%nvar, self%nvar)
-    integer, dimension(self%nvar) :: ipiv
-    real(8), allocatable :: work(:)
     integer :: lwork
-    lwork = self%nvar * self%nvar
+    integer, dimension(:), allocatable :: ipiv
+    real(8), allocatable :: work(:)
+
+    ! Now use the dimension variables in array declarations
+    double precision, allocatable :: alpha0_cycle(:,:), alpha1_cycle(:,:), beta0_cycle(:,:)
+    double precision, allocatable :: alphaC_cycle(:,:), alphaF_cycle(:,:), alphaB_cycle(:,:), betaS_cycle(:,:)
+    double precision, allocatable :: alpha0_trend(:,:), alpha1_trend(:,:), betaV_trend(:,:)
+    double precision, allocatable :: alphaC_trend(:,:), alphaF_trend(:,:), alphaB_trend(:,:)
+    double precision, allocatable :: value_gammaC(:,:), value_gamma(:,:), value_Cx(:,:), value_Cs(:,:)
+    double precision, allocatable :: P(:,:), R(:,:)
+    double precision, allocatable :: DD2(:,:)
+    double precision, allocatable :: A_cycle(:,:), B_cycle(:,:)
+    double precision, allocatable :: A_cycle_new(:,:), B_cycle_new(:,:)
+    double precision, allocatable :: A_trend(:,:), B_trend(:,:)
+    double precision, allocatable :: A_trend_new(:,:), B_trend_new(:,:)
+    double precision, allocatable :: temp1(:,:)
+
+    ! Set dimensions from self
+    nvar = self%nvar
+    nval = self%nval
+    nshock = self%nshock
+    nobs = self%nobs
+    neps = self%neps
+    lwork = nvar * nvar
+
+    ! Allocate all arrays
+    allocate(alpha0_cycle(nvar, nvar), alpha1_cycle(nvar, nvar), beta0_cycle(nvar, nshock))
+    allocate(alphaC_cycle(nvar, nvar), alphaF_cycle(nvar, nvar), alphaB_cycle(nvar, nvar), betaS_cycle(nvar, nshock))
+    allocate(alpha0_trend(nvar, nvar), alpha1_trend(nvar, nvar), betaV_trend(nvar, nval))
+    allocate(alphaC_trend(nvar, nvar), alphaF_trend(nvar, nvar), alphaB_trend(nvar, nvar))
+    allocate(value_gammaC(nval, nval), value_gamma(nval, nval), value_Cx(nval, nvar), value_Cs(nval, nshock))
+    allocate(P(nshock, nshock), R(nshock, neps))
+    allocate(DD2(nobs, 1))
+    allocate(A_cycle(nvar, nvar), B_cycle(nvar, nshock))
+    allocate(A_cycle_new(nvar, nvar), B_cycle_new(nvar, nshock))
+    allocate(A_trend(nvar, nvar), B_trend(nvar, nval))
+    allocate(A_trend_new(nvar, nvar), B_trend_new(nvar, nval))
+    allocate(temp1(nvar, nvar))
+    allocate(ipiv(nvar))
     allocate(work(lwork))
 
     error = 0
@@ -87,25 +111,25 @@ contains
     {system}
 
     ! Initial calculations for A_cycle, B_cycle, A_trend, B_trend using LAPACK
-    call dgetrf(self%nvar, self%nvar, alpha0_cycle, self%nvar, ipiv, info)
-    call dgetri(self%nvar, alpha0_cycle, self%nvar, ipiv, work, lwork, info)
-    call dgemm('N', 'N', self%nvar, self%nvar, self%nvar, 1.0d0, alpha0_cycle, self%nvar, alpha1_cycle, self%nvar, 0.0d0, A_cycle, self%nvar)
-    call dgemm('N', 'N', self%nvar, self%nshock, self%nvar, 1.0d0, alpha0_cycle, self%nvar, beta0_cycle, self%nvar, 0.0d0, B_cycle, self%nvar)
+    call dgetrf(nvar, nvar, alpha0_cycle, nvar, ipiv, info)
+    call dgetri(nvar, alpha0_cycle, nvar, ipiv, work, lwork, info)
+    call dgemm('N', 'N', nvar, nvar, nvar, 1.0d0, alpha0_cycle, nvar, alpha1_cycle, nvar, 0.0d0, A_cycle, nvar)
+    call dgemm('N', 'N', nvar, nshock, nvar, 1.0d0, alpha0_cycle, nvar, beta0_cycle, nvar, 0.0d0, B_cycle, nvar)
 
-    call dgetrf(self%nvar, self%nvar, alpha0_trend, self%nvar, ipiv, info)
-    call dgetri(self%nvar, alpha0_trend, self%nvar, ipiv, work, lwork, info)
-    call dgemm('N', 'N', self%nvar, self%nvar, self%nvar, 1.0d0, alpha0_trend, self%nvar, alpha1_trend, self%nvar, 0.0d0, A_trend, self%nvar)
-    call dgemm('N', 'N', self%nvar, self%nval, self%nvar, 1.0d0, alpha0_trend, self%nvar, betaV_trend, self%nvar, 0.0d0, B_trend, self%nvar)
+    call dgetrf(nvar, nvar, alpha0_trend, nvar, ipiv, info)
+    call dgetri(nvar, alpha0_trend, nvar, ipiv, work, lwork, info)
+    call dgemm('N', 'N', nvar, nvar, nvar, 1.0d0, alpha0_trend, nvar, alpha1_trend, nvar, 0.0d0, A_trend, nvar)
+    call dgemm('N', 'N', nvar, nval, nvar, 1.0d0, alpha0_trend, nvar, betaV_trend, nvar, 0.0d0, B_trend, nvar)
 
     ! ! Main loop for k
     do k = 1, {k}
     !     ! Calculations for A_cycle_new
          temp1 = 0.0d0
-         call dgemm('N', 'N', self%nvar, self%nvar, self%nvar, -1.0d0, alphaF_cycle, self%nvar, A_cycle, self%nvar, 1.0d0, temp1, self%nvar)
+         call dgemm('N', 'N', nvar, nvar, nvar, -1.0d0, alphaF_cycle, nvar, A_cycle, nvar, 1.0d0, temp1, nvar)
          temp1 = temp1 + alphaC_cycle
-         call dgetrf(self%nvar, self%nvar, temp1, self%nvar, ipiv, info)
-         call dgetri(self%nvar, temp1, self%nvar, ipiv, work, lwork, info)
-         call dgemm('N', 'N', self%nvar, self%nvar, self%nvar, 1.0d0, temp1, self%nvar, alphaB_cycle, self%nvar, 0.0d0, A_cycle_new, self%nvar)
+         call dgetrf(nvar, nvar, temp1, nvar, ipiv, info)
+         call dgetri(nvar, temp1, nvar, ipiv, work, lwork, info)
+         call dgemm('N', 'N', nvar, nvar, nvar, 1.0d0, temp1, nvar, alphaB_cycle, nvar, 0.0d0, A_cycle_new, nvar)
     !
     !     ! ... (continue with all other calculations)
          ! Calculations for B_cycle_new
@@ -114,11 +138,11 @@ contains
 
          ! Calculations for A_trend_new
          temp1 = 0.0d0
-         call dgemm('N', 'N', self%nvar, self%nvar, self%nvar, -1.0d0, alphaF_trend, self%nvar, A_trend, self%nvar, 1.0d0, temp1, self%nvar)
+         call dgemm('N', 'N', nvar, nvar, nvar, -1.0d0, alphaF_trend, nvar, A_trend, nvar, 1.0d0, temp1, nvar)
          temp1 = temp1 + alphaC_trend
-         call dgetrf(self%nvar, self%nvar, temp1, self%nvar, ipiv, info)
-         call dgetri(self%nvar, temp1, self%nvar, ipiv, work, lwork, info)
-         call dgemm('N', 'N', self%nvar, self%nvar, self%nvar, 1.0d0, temp1, self%nvar, alphaB_trend, self%nvar, 0.0d0, A_trend_new, self%nvar)
+         call dgetrf(nvar, nvar, temp1, nvar, ipiv, info)
+         call dgetri(nvar, temp1, nvar, ipiv, work, lwork, info)
+         call dgemm('N', 'N', nvar, nvar, nvar, 1.0d0, temp1, nvar, alphaB_trend, nvar, 0.0d0, A_trend_new, nvar)
          B_trend_new = matmul(temp1, matmul(alphaF_trend, B_trend))
 
          ! Updating variables
@@ -172,10 +196,10 @@ self%TT((3*nvar+nval+1):(3*nvar+nval+nshock), (3*nvar+nval+1):(3*nvar+nval+nshoc
 ! nvar, nshock, neps are already defined
 
 ! First block
-self%RR(1:nvar, 1:self%neps) = matmul(B_cycle, R)
+self%RR(1:nvar, 1:neps) = matmul(B_cycle, R)
 
 ! Second block
-self%RR(nvar+1:2*nvar, 1:self%neps) = matmul(B_cycle, R)
+self%RR(nvar+1:2*nvar, 1:neps) = matmul(B_cycle, R)
 
 ! Third block
 ! Already initialized to zero, so no operation needed for zeroS
@@ -184,7 +208,7 @@ self%RR(nvar+1:2*nvar, 1:self%neps) = matmul(B_cycle, R)
 ! zeroV.T @ zeroS will be zero, so no operation needed here either
 
 ! Fifth block
-self%RR(3*nvar+nval+1:3*nvar+nval+nshock, 1:self%neps) = R
+self%RR(3*nvar+nval+1:3*nvar+nval+nshock, 1:neps) = R
 
 !call write_array_to_file('TT.txt',self%TT)
 !call write_array_to_file('RR.txt',self%RR)
