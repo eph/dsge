@@ -409,17 +409,17 @@ Equations:
             self["observables"] = self["variables"].copy()
             self["obs_equations"] = dict(self["observables"], self["observables"])
 
-        if "data" in self["__data__"]["estimation"]:
+        if "data" in self["estimation"]:
             data = read_data_file(
-                self["__data__"]["estimation"]["data"], self["observables"]
+                self["estimation"]["data"], self["observables"]
             )
         else:
             data = np.nan * np.ones((100, len(self["observables"])))
 
         prior = None
-        if "prior" in self["__data__"]["estimation"]:
+        if "prior" in self["estimation"]:
             prior = construct_prior(
-                self["__data__"]["estimation"]["prior"], self.parameters
+                self["estimation"]["prior"], self.parameters
             )
 
         from .Prior import Prior as pri
@@ -468,14 +468,6 @@ Equations:
             dsge.psi = self.psi
 
             return dsge
-
-    def update_data_file(self, file_path, start_date=None):
-        if start_date is None:
-            self['__data__']['estimation']['data'] = file_path
-        else:
-            self['__data__']['estimation']['data'] = {'file': file_path, 'start': start_date}
-
-        return None
 
     def solve_model(self, p0):
 
@@ -673,6 +665,7 @@ Equations:
             "meas_ordering": measurement_errors,
             "info": dict(),
             "make_log": make_log,
+            "estimation": model_yaml['estimation'],
             "__data__": model_yaml,
             "name": dec["name"],
             "observables": observables,

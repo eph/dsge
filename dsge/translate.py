@@ -17,7 +17,7 @@ pdict = {"gamma": 1, "beta": 2, "norm": 3, "invgamma_zellner": 4, "uniform": 5}
 fortran_model = """
 module model_t
   use, intrinsic :: iso_fortran_env, only: wp => real64
-
+  use, intrinsic :: ieee_arithmetic
   use gensys, only: do_gensys
   use fortress, only : fortress_lgss_model
   use fortress_prior_t, only: fortress_abstract_prior
@@ -25,6 +25,8 @@ module model_t
   use fortress_random_t, only: fortress_random
 
   implicit none
+
+  real(wp), parameter :: nan_wp = ieee_quiet_nan(0.0_wp)
 
   type, public, extends(fortress_lgss_model) :: model
      integer :: neta
@@ -392,20 +394,21 @@ def generate_hardcoded_data_fortran(yy_data):
 
     # Format the data values
     # Break into chunks of 5 values per line for readability
-    values_per_line = 5
+    values_per_line = nobs
     lines = []
     for i in range(0, len(flat_data), values_per_line):
         chunk = flat_data[i:i+values_per_line]
-        formatted = ', '.join(f'{val}_wp' for val in chunk)
+        formatted = ', '.join(f'{val}_wp' for val in chunk )
         lines.append(f'      {formatted}')
-
+        
     # Join with commas and line continuations
     data_init = ', &\n'.join(lines)
-
+    missing_data = 'self%MISSING_DATA = .true.' if np.isnan(flat_data).any() else ''
     return f"""
   ! Hardcoded data array (nobs={nobs}, T={T})
   self%yy = reshape([{data_init}], &
                     [{nobs}, {T}])
+  {missing_data}  
 """
 
 

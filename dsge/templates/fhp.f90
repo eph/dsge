@@ -28,7 +28,7 @@ module model_t
 
     character(len=144) :: name
     integer :: nobs, T, ns, npara, neps
-
+    real(wp) :: nan_wp
     name = 'fhp'
 
     nobs = {cmodel.yy.shape[1]}
@@ -48,10 +48,11 @@ module model_t
     call self%construct_lgss_model_noprior_nodata(name, npara, nobs, T, ns, neps)
 
     ! Allocate and initialize hardcoded data array
-    allocate(self%yy(T, nobs))
-{data}
+    allocate(self%yy(nobs, T))
+    nan_wp = ieee_value(0.0_wp, ieee_quiet_nan)
 
-!    self%p0 = {p0}
+
+    {data}
 
     self%t0 = {t0}
   end function new_model

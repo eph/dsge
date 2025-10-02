@@ -335,26 +335,16 @@ class FHPRepAgent(Base):
         sims_mat = "\n\n".join(fmats)
 
         # Generate Fortran code for data matrix
+        # Note: fortress expects yy as (nobs, T) not (T, nobs)
         import numpy as np
         import pandas as pd
-        # If yy is a DataFrame, get just the numeric values, selecting only numeric columns
-        if isinstance(cmodel.yy, pd.DataFrame):
-            yy_array = cmodel.yy.select_dtypes(include=[np.number]).values.astype(np.float64)
-        else:
-            yy_array = np.asarray(cmodel.yy, dtype=np.float64)
-        data_lines = []
-        for t in range(yy_array.shape[0]):
-            for obs in range(yy_array.shape[1]):
-                val = yy_array[t, obs]
-                if np.isnan(val):
-                    # Use Fortran NaN representation
-                    data_lines.append(f"    self%yy({t+1}, {obs+1}) = ieee_value(0.0d0, ieee_quiet_nan)")
-                else:
-                    data_lines.append(f"    self%yy({t+1}, {obs+1}) = {val:23.16e}d0")
-        data_fortran = "\n".join(data_lines)
 
         # Generate custom prior code using the same approach as regular DSGE models
-        from .translate import generate_custom_prior_fortran
+        from .translate import generate_custom_prior_fortran, generate_hardcoded_data_fortran
+
+
+        data_fortran = generate_hardcoded_data_fortran(cmodel.yy)
+
         custom_prior_code = generate_custom_prior_fortran(cmodel.prior) if cmodel.prior is not None else ""
 
         # get templates/fhp.f90 via importlib.resources (zip-safe)
@@ -366,8 +356,8 @@ class FHPRepAgent(Base):
 
         # Safely render template by explicit placeholder replacement
         placeholders = build_fhp_placeholders(
-            nobs=yy_array.shape[1],
-            T=yy_array.shape[0],
+            nobs=cmodel.yy.shape[1],
+            T=cmodel.yy.shape[0],
             nvar=len(self['variables']),
             nval=len(self['values']),
             nshock=len(self['shocks']),
