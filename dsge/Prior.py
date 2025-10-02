@@ -104,17 +104,20 @@ class Prior(object):
 
     def fortran_prior(self):
         def return_stats(dist):
-            if dist.name == "uniform":
+            # Get distribution name from either .name or .dist.name (for frozen distributions)
+            dist_name = getattr(dist, 'name', getattr(dist.dist, 'name', None)) if hasattr(dist, 'dist') else getattr(dist, 'name', None)
+
+            if dist_name == "uniform":
                 return (
-                    pdict[dist.name],
+                    pdict[dist_name],
                     dist.kwds["loc"],
                     dist.kwds["loc"] + dist.kwds["scale"],
                     0,
                     0,
                  )
-            elif dist.name == "invgamma_zellner":
-                return pdict[dist.name], dist.a, dist.b, 0, 0
+            elif dist_name == "invgamma_zellner":
+                return pdict[dist_name], dist.a, dist.b, 0, 0
             else:
-                return pdict[dist.name], dist.stats()[0], np.sqrt(dist.stats()[1]), 0, 0
+                return pdict[dist_name], dist.stats()[0], np.sqrt(dist.stats()[1]), 0, 0
 
         return np.array([return_stats(x) for x in self.priors])

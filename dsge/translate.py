@@ -265,8 +265,8 @@ def generate_custom_prior_fortran(prior):
         idx = i + 1  # Fortran is 1-indexed
 
         if name == "uniform":
-            lower = dist.kwds["loc"]
-            upper = dist.kwds["loc"] + dist.kwds["scale"]
+            lower = float(dist.kwds["loc"])
+            upper = float(dist.kwds["loc"] + dist.kwds["scale"])
             prior_code_lines.append(
                 f"    lpdf = lpdf + uniform_logpdf(para({idx}), {lower}_wp, {upper}_wp)"
             )

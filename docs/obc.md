@@ -50,14 +50,21 @@ constraints:
 
 The solver compiles a linear DSGE for each regime, then iterates over a candidate time path, switching regimes when the constraint condition `when` holds, until the regime sequence converges (no more flips). In this initial release, a placeholder IRF uses the normal regime.
 
-## API (preview)
+## API
 
 ```python
 from dsge import read_yaml
 m = read_yaml('path/to/your_obc_model.yaml')  # returns OccBinModel
+compiled = m.compile_model()
 p0 = m.p0()
-res = m.irf_obc(p0, h=20)
-# res = { 'irf': {shock->DataFrame}, 'binding': array[(h+1), bool] }
+
+# Standardized IRF interfaces
+states_irfs = compiled.impulse_response_states(p0, h=20)        # dict shock->DataFrame
+obs_irfs    = compiled.impulse_response_observables(p0, h=20)   # dict shock->DataFrame
+
+# Full OBC metadata (binding flags and regimes) for a specific shock
+res_full = compiled.impulse_response(p0, h=20, shock_name='e_d')
+# res_full has: 'states', 'observables', 'binding', 'regimes', and DataFrames if pandas is installed
 ```
 
 Example files:
@@ -69,5 +76,6 @@ Example files:
 - Variable/shock sets must match across regimes.
 - Observables are shared unless overridden per regime.
 - Filtering/estimation under OBC is out of scope for the initial version.
+- Multiple constraints are supported if all map to the same (normal, binding) regime pair. Otherwise, a NotImplemented error is raised.
 
 Further iterations will add a full OccBin path solver, observable IRFs, and examples.

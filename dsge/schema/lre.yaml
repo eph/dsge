@@ -94,6 +94,13 @@ constraints:
       horizon:
         type: integer
         required: false
+
+# Optional mapping for multiple simultaneous constraints -> composite regime
+regime_map:
+  type: dict
+  required: false
+  valuesrules:
+    type: string
     
 calibration: !include common.yaml#calibration
 

@@ -24,13 +24,13 @@ regimes:
   zlb:
     equations:
       model:
-        - r = 0
+        - r = -0.2
         - y = y(1) - (r - pi(1)) + e_d
         - pi = beta*pi(1) + kappa*y + e_p
 
 constraints:
   - name: zlb
-    when: "r < 0"
+    when: "r < -0.2"
     binding_regime: zlb
     normal_regime: normal
     horizon: 40

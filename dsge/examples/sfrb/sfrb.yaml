@@ -1,0 +1,7 @@
+equations:
+  model:
+    - R = 0.85*R(-1) + (1-0.85)*(rstar - picx4 + 0.5*(picx4-pitarg) + xgap2) + epsR
+
+    - y_gr = lxgdp - lxgdp(-1)
+
+    -

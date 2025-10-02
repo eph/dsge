@@ -29,8 +29,8 @@ class StateSpaceModel(object):
 
     .. math::
 
-        s_t &= T(\theta) s_{t-1} + R(\theta)\, \epsilon_t,\quad \epsilon_t \sim \mathcal{N}(0, Q(\theta)) \\
-        y_t &= D(\theta) + Z(\theta) s_t + \eta_t,\quad\ \eta_t \sim \mathcal{N}(0, H(\theta))
+        s_t &= C(𝜃) + T(𝜃) s_{t-1} + R(𝜃)\, \epsilon_t,\quad \epsilon_t \sim \mathcal{N}(0, Q(𝜃)) \\
+        y_t &= D(𝜃) + Z(𝜃) s_t + \eta_t,\quad\ \eta_t \sim \mathcal{N}(0, H(𝜃))
 
     This class expects callables `CC, TT, RR, QQ, DD, ZZ, HH` that map a
     parameter vector to the corresponding arrays (with shapes documented
@@ -377,7 +377,7 @@ class StateSpaceModel(object):
         Parameters
         ----------
         para : array-like
-            An npara length vector of parameter values that defines the system matrices.
+           An npara length vector of parameter values that defines the system matrices.
         
 
         Returns 
@@ -392,7 +392,7 @@ class StateSpaceModel(object):
         """
 
         CC, TT, RR, QQ, DD, ZZ, HH = self.system_matrices(para, *args, **kwargs)
-
+        
         A = TT
         B = RR
 

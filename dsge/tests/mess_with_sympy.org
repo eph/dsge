@@ -1,0 +1,217 @@
+#+begin_src jupyter-python
+  import sympy as sp
+  x = sp.symbols('x')
+#+end_src
+
+#+begin_src jupyter-python :session ff
+    import sympy as sp
+
+    # Define the symbols
+    alpha, beta, gamma = sp.symbols('alpha beta gamma')
+
+    # Define matrices as functions of these symbols
+    GAM0 = sp.Matrix([[alpha, 2*beta], [gamma, alpha + beta]])
+    GAM1 = sp.Matrix([[beta + gamma, alpha], [2*gamma, beta]])
+
+    from sympy.utilities.codegen import codegen
+
+    G0 = sp.MatrixSymbol('GAM0', 2, 2)
+
+    # Function to generate code, specifying output matrices explicitly
+    def generate_code():
+        code_res = codegen(
+            [("compute_GAM", sp.Equality(G0, GAM0)),
+             ("compute_GAM1", sp.Equality(G0, GAM1))],
+            header=False,
+            language="F95",
+            project="MyMatrixProject")
+
+
+        return code_res
+
+    # Get the code
+    code = generate_code()
+
+    # Print the generated code
+    for filename, contents in code:
+        print(f"Filename: {filename}")
+        print(contents)
+#+end_src
+
+#+RESULTS:
+#+begin_example
+  Filename: compute_GAM.f90
+
+  subroutine compute_GAM(alpha, beta, gamma, GAM0)
+  implicit none
+  REAL*8, intent(in) :: alpha
+  REAL*8, intent(in) :: beta
+  REAL*8, intent(in) :: gamma
+  REAL*8, intent(out), dimension(1:2, 1:2) :: GAM0
+
+  GAM0(1, 1) = alpha
+  GAM0(2, 1) = gamma
+  GAM0(1, 2) = 2*beta
+  GAM0(2, 2) = alpha + beta
+
+  end subroutine
+
+  subroutine compute_GAM1(alpha, beta, gamma, GAM0)
+  implicit none
+  REAL*8, intent(in) :: alpha
+  REAL*8, intent(in) :: beta
+  REAL*8, intent(in) :: gamma
+  REAL*8, intent(out), dimension(1:2, 1:2) :: GAM0
+
+  GAM0(1, 1) = beta + gamma
+  GAM0(2, 1) = 2*gamma
+  GAM0(1, 2) = alpha
+  GAM0(2, 2) = beta
+
+  end subroutine
+
+  Filename: compute_GAM.h
+
+  interface
+  subroutine compute_GAM(alpha, beta, gamma, GAM0)
+  implicit none
+  REAL*8, intent(in) :: alpha
+  REAL*8, intent(in) :: beta
+  REAL*8, intent(in) :: gamma
+  REAL*8, intent(out), dimension(1:2, 1:2) :: GAM0
+  end subroutine
+  end interface
+  interface
+  subroutine compute_GAM1(alpha, beta, gamma, GAM0)
+  implicit none
+  REAL*8, intent(in) :: alpha
+  REAL*8, intent(in) :: beta
+  REAL*8, intent(in) :: gamma
+  REAL*8, intent(out), dimension(1:2, 1:2) :: GAM0
+  end subroutine
+  end interface
+#+end_example
+
+#+begin_src jupyter-python :session ff
+from sympy.utilities.codegen import codegen
+
+# Generate code for each element in the matrix
+def generate_element_code():
+    routines = []
+    for i in range(GAM0.shape[0]):  # For each row
+        for j in range(GAM0.shape[1]):  # For each column
+            func_name = f"compute_GAM0_{i+1}{j+1}"  # Naming functions as compute_GAM0_11, compute_GAM0_12, etc.
+            expr = GAM0[i, j]
+            routines.append((func_name, expr))
+    
+    # Generate Fortran code
+    result = codegen(
+        routines,
+        language="F95",
+        project="MatrixElementProject",
+        argument_sequence=[alpha, beta, gamma]
+    )
+    return result
+
+# Retrieve and print the code
+code = generate_element_code()
+for filename, contents in code:
+    print(f"Filename: {filename}")
+    print(contents)
+#+end_src
+
+#+RESULTS:
+#+begin_example
+  Filename: compute_GAM0_11.f90
+  !******************************************************************************
+  !*                       Code generated with SymPy 1.12                       *
+  !*                                                                            *
+  !*              See http://www.sympy.org/ for more information.               *
+  !*                                                                            *
+  !*                This file is part of 'MatrixElementProject'                 *
+  !******************************************************************************
+
+  REAL*8 function compute_GAM0_11(alpha, beta, gamma)
+  implicit none
+  REAL*8, intent(in) :: alpha
+  REAL*8, intent(in) :: beta
+  REAL*8, intent(in) :: gamma
+
+  compute_GAM0_11 = alpha
+
+  end function
+
+  REAL*8 function compute_GAM0_12(alpha, beta, gamma)
+  implicit none
+  REAL*8, intent(in) :: alpha
+  REAL*8, intent(in) :: beta
+  REAL*8, intent(in) :: gamma
+
+  compute_GAM0_12 = 2*beta
+
+  end function
+
+  REAL*8 function compute_GAM0_21(alpha, beta, gamma)
+  implicit none
+  REAL*8, intent(in) :: alpha
+  REAL*8, intent(in) :: beta
+  REAL*8, intent(in) :: gamma
+
+  compute_GAM0_21 = gamma
+
+  end function
+
+  REAL*8 function compute_GAM0_22(alpha, beta, gamma)
+  implicit none
+  REAL*8, intent(in) :: alpha
+  REAL*8, intent(in) :: beta
+  REAL*8, intent(in) :: gamma
+
+  compute_GAM0_22 = alpha + beta
+
+  end function
+
+  Filename: compute_GAM0_11.h
+  !******************************************************************************
+  !*                       Code generated with SymPy 1.12                       *
+  !*                                                                            *
+  !*              See http://www.sympy.org/ for more information.               *
+  !*                                                                            *
+  !*                This file is part of 'MatrixElementProject'                 *
+  !******************************************************************************
+
+
+  interface
+  REAL*8 function compute_GAM0_11(alpha, beta, gamma)
+  implicit none
+  REAL*8, intent(in) :: alpha
+  REAL*8, intent(in) :: beta
+  REAL*8, intent(in) :: gamma
+  end function
+  end interface
+  interface
+  REAL*8 function compute_GAM0_12(alpha, beta, gamma)
+  implicit none
+  REAL*8, intent(in) :: alpha
+  REAL*8, intent(in) :: beta
+  REAL*8, intent(in) :: gamma
+  end function
+  end interface
+  interface
+  REAL*8 function compute_GAM0_21(alpha, beta, gamma)
+  implicit none
+  REAL*8, intent(in) :: alpha
+  REAL*8, intent(in) :: beta
+  REAL*8, intent(in) :: gamma
+  end function
+  end interface
+  interface
+  REAL*8 function compute_GAM0_22(alpha, beta, gamma)
+  implicit none
+  REAL*8, intent(in) :: alpha
+  REAL*8, intent(in) :: beta
+  REAL*8, intent(in) :: gamma
+  end function
+  end interface
+#+end_example
+

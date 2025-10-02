@@ -1,9 +1,12 @@
 module model_t
   use, intrinsic :: iso_fortran_env, only: wp => real64
+  use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
 
   use gensys, only: do_gensys
   use fortress, only : fortress_lgss_model
-  use fortress_prior_t, only: model_prior => prior
+  use fortress_prior_t, only: fortress_abstract_prior
+  use fortress_prior_distributions
+  use fortress_random_t, only: fortress_random
 
   implicit none
 
@@ -19,17 +22,14 @@ module model_t
      module procedure new_model
   end interface model
 
-
-contains
+{custom_prior_code}
 
   type(model) function new_model() result(self)
 
-    character(len=144) :: name, datafile, priorfile
+    character(len=144) :: name
     integer :: nobs, T, ns, npara, neps
 
     name = 'fhp'
-    datafile = 'data.txt'
-    priorfile = 'prior.txt'
 
     nobs = {cmodel.yy.shape[1]}
     T = {cmodel.yy.shape[0]}
@@ -41,7 +41,15 @@ contains
     npara = {len(model['parameters'])}
     neps = {len(model['innovations'])}
 
-    call self%construct_model(name, datafile, priorfile, npara, nobs, T, ns, neps)
+    ! Allocate custom prior with hardcoded parameters
+    allocate(self%prior, source=model_custom_prior())
+
+    ! Initialize model structure (no datafile or priorfile needed)
+    call self%construct_lgss_model_noprior_nodata(name, npara, nobs, T, ns, neps)
+
+    ! Allocate and initialize hardcoded data array
+    allocate(self%yy(T, nobs))
+{data}
 
 !    self%p0 = {p0}
 

@@ -80,7 +80,7 @@ calibration:
     
 estimation:
   # Use a small in-repo CSV to avoid absolute paths in tests/examples
-  data: 'dsge/tests/data/test_with_header.csv'
+  data: '/home/eherbst/Dropbox/code/dsge/dsge/examples/nkmp/us.txt'
 
   prior: 
     tau : [gamma, 2.00, 0.5]

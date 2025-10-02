@@ -334,17 +334,40 @@ class FHPRepAgent(Base):
         ]
         sims_mat = "\n\n".join(fmats)
 
+        # Generate Fortran code for data matrix
+        import numpy as np
+        import pandas as pd
+        # If yy is a DataFrame, get just the numeric values, selecting only numeric columns
+        if isinstance(cmodel.yy, pd.DataFrame):
+            yy_array = cmodel.yy.select_dtypes(include=[np.number]).values.astype(np.float64)
+        else:
+            yy_array = np.asarray(cmodel.yy, dtype=np.float64)
+        data_lines = []
+        for t in range(yy_array.shape[0]):
+            for obs in range(yy_array.shape[1]):
+                val = yy_array[t, obs]
+                if np.isnan(val):
+                    # Use Fortran NaN representation
+                    data_lines.append(f"    self%yy({t+1}, {obs+1}) = ieee_value(0.0d0, ieee_quiet_nan)")
+                else:
+                    data_lines.append(f"    self%yy({t+1}, {obs+1}) = {val:23.16e}d0")
+        data_fortran = "\n".join(data_lines)
+
+        # Generate custom prior code using the same approach as regular DSGE models
+        from .translate import generate_custom_prior_fortran
+        custom_prior_code = generate_custom_prior_fortran(cmodel.prior) if cmodel.prior is not None else ""
+
         # get templates/fhp.f90 via importlib.resources (zip-safe)
         from importlib.resources import files
         from .template_utils import render_template, build_fhp_placeholders
         template_res = files("dsge") / "templates" / "fhp.f90"
         with template_res.open("r", encoding="utf-8") as f:
             fortran_template = f.read()
-            
+
         # Safely render template by explicit placeholder replacement
         placeholders = build_fhp_placeholders(
-            nobs=cmodel.yy.shape[1],
-            T=cmodel.yy.shape[0],
+            nobs=yy_array.shape[1],
+            T=yy_array.shape[0],
             nvar=len(self['variables']),
             nval=len(self['values']),
             nshock=len(self['shocks']),
@@ -353,6 +376,8 @@ class FHPRepAgent(Base):
             k=k,
             t0=0,
             system=sims_mat,
+            data=data_fortran,
+            custom_prior_code=custom_prior_code,
         )
 
         return render_template(fortran_template, placeholders, strict=True)

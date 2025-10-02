@@ -1,0 +1,103 @@
+declarations:
+  name: small_scale
+  variables: [y, c, pinf, R, mc, g, z, ztilde, ylag]
+  shocks: [eps_R, eps_g, eps_z]
+  parameters: [sigma_c, xi_p, r_star, iota_p, nu_l, rho_R, psi_1, psi_2, sigma_R, rho_g, sigma_g, rho_z, sigma_z, varphi, gamma, pi_star, rho_z_sv, rho_g_sv, rho_R_sv, sigma_z_sv, sigma_g_sv, sigma_R_sv]
+  observables: [per_capita_quarterly_real_gdp_growth,
+                inflation, FFR]
+  para_func: [beta]
+  type: sv
+equations:
+  model:
+    - c = c(+1) + z(+1) - 1/sigma_c*(R - pinf(+1))
+    - mc = c + nu_l * y
+    - pinf = (1-xi_p*beta)*(1-xi_p)/((1+iota_p*beta)*xi_p)*mc + beta/(1+iota_p*beta)*pinf(+1) + iota_p/(1+iota_p*beta)*pinf(-1)
+    - R = rho_R*R(-1) + (1-rho_R)*(psi_1*pinf + psi_2*(y-y(-1)+z)) + sigma_R*eps_R
+    - y = c + g
+    - g = rho_g*g(-1) + sigma_g*eps_g
+    - ztilde = rho_z*(1-varphi)*ztilde(-1) + varphi*ztilde(-2) + sigma_z*eps_z
+    - z = (rho_z-1)*(1-varphi)*ztilde(-1) + varphi*(ztilde(-1) - ztilde(-2)) + sigma_z*eps_z
+    - ylag = y(-1)
+  observables:
+    per_capita_quarterly_real_gdp_growth : gamma + 100*(y - ylag + z)
+    inflation : pi_star + 100*pinf
+    FFR : r_star + 100*R
+  sv:
+    storage: innovations
+    transition:
+      eps_z: rho_z_sv
+      eps_g: rho_g_sv
+      eps_R: rho_R_sv
+    covariance:
+      eps_z: sigma_z_sv**2
+      eps_g: sigma_g_sv**2
+      eps_R: sigma_R_sv**2
+    initial_covariance:
+      eps_z: 5
+      eps_g: 5
+      eps_R: 5
+
+
+calibration:
+  parafunc:
+    beta: 1/(1 + r_star/100)
+  parameters:
+    sigma_c: 1.0
+    xi_p: 0.5
+    beta: 0.99
+    iota_p: 1.0
+    nu_l: 0.5
+    rho_R: 0.5
+    psi_1: 1.5
+    psi_2: 0.5
+    sigma_R: 0.5
+    rho_g: 0.5
+    sigma_g: 0.5
+    sigma_z: 0.5
+    rho_z: 0.5
+    varphi: 0.5
+    gamma: 0.0
+    pi_star: 2.0
+    r_star: 1
+    rho_g_sv: 0.5
+    rho_z_sv: 0.5
+    rho_R_sv: 0.5
+    sigma_g_sv: 0
+    sigma_R_sv: 0
+    sigma_z_sv: 0
+
+
+  covariances:
+    eps_R: 1.0
+    eps_g: 1.0
+    eps_z: 1.0
+
+estimation:
+  data:
+    file: data/small_scale_data.csv
+    start: 1964Q1
+
+  prior:
+    sigma_c: [normal, 1.50, 0.37]
+    xi_p: [beta, 0.5, 0.1]
+    iota_p: [beta, 0.5, 0.15]
+    nu_l: [normal, 2.0, 0.75]
+    rho_R: [beta, 0.5, 0.2]
+    psi_1: [normal, 1.5, 0.25]
+    psi_2: [normal, 0.12, 0.05]
+    sigma_R: [inv_gamma, 0.1, 2.0]
+    rho_g: [beta, 0.5, 0.2]
+    sigma_g: [inv_gamma, 0.1, 2.0]
+    rho_z: [beta, 0.5, 0.2]
+    sigma_z: [inv_gamma, 0.1, 2.0]
+    varphi: [uniform, 0.0, 1.0]
+    gamma: [normal, 0.4, 0.1]
+    pi_star: [gamma, 0.62, 0.1]
+    r_star: [gamma, 0.25, 0.1]
+    rho_g_sv: [beta, 0.95, 0.03]
+    rho_z_sv: [beta, 0.95, 0.03]
+    rho_R_sv: [beta, 0.95, 0.03]
+
+    sigma_g_sv: [inv_gamma, 0.0001, 2.0]
+    sigma_R_sv: [inv_gamma, 0.0001, 2.0]
+    sigma_z_sv: [inv_gamma, 0.0001, 2.0]
