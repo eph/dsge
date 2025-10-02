@@ -38,4 +38,5 @@ def create_fortran_smc(
 
     if other_files is None:
         other_files = {}
-    return _make_smc(model_file, output_directory, other_files, **kwargs)
+    # Pass all arguments as keyword arguments to match make_smc's keyword-only API
+    return _make_smc(model_file, output_directory=output_directory, other_files=other_files, **kwargs)
