@@ -92,6 +92,14 @@ class Base(dict, ABC):
     def p0(self):
         return list(map(lambda x: self["calibration"]['parameters'][str(x)], self['parameters']))
 
+    def update_data_file(self, file_path, start_date=None):
+        if start_date is None:
+            self['estimation']['data'] = file_path
+        else:
+            self['estimation']['data'] = {'file': file_path, 'start': start_date}
+
+        return None
+
 
     # only use create fortran model if fortress is available
 
