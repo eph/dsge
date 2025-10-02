@@ -20,7 +20,9 @@ module model_t
 
   use gensys, only: do_gensys
   use fortress, only : fortress_lgss_model
-  use fortress_prior_t, only: model_prior => prior
+  use fortress_prior_t, only: fortress_abstract_prior
+  use fortress_prior_distributions
+  use fortress_random_t, only: fortress_random
 
   implicit none
 
@@ -35,20 +37,17 @@ module model_t
   interface model
      module procedure new_model
   end interface model
-  
-  
-contains
+
+{custom_prior_code}
 
   {extra_code}
 
   type(model) function new_model() result(self)
 
-    character(len=144) :: name, datafile, priorfile
+    character(len=144) :: name
     integer :: nobs, T, ns, npara, neps
-    
+
     name = '{model[name]}'
-    datafile = 'data.txt'
-    priorfile = 'prior.txt'
 
     nobs = {yy.shape[1]}
     T = {yy.shape[0]}
@@ -56,8 +55,16 @@ contains
     ns = {model.neq_fort}
     npara = {model.npara}
     neps = {model.neps}
-    
-    call self%construct_model(name, datafile, priorfile, npara, nobs, T, ns, neps)
+
+    ! Allocate custom prior with hardcoded parameters
+    allocate(self%prior, source=model_custom_prior())
+
+    ! Initialize model structure (no datafile or priorfile needed)
+    call self%construct_lgss_model_noprior_nodata(name, npara, nobs, T, ns, neps)
+
+    ! Allocate and initialize hardcoded data array
+    allocate(self%yy(nobs, T))
+{hardcoded_data}
 
 !    self%p0 = {p0}
     self%neta = {model.neta}
@@ -122,7 +129,12 @@ def smc(model, t0=0, extra_code=""):
 
     cmodel = model.compile_model()
     template = fortran_model  # open('fortran_model.f90').read()
-    write_prior_file(cmodel.prior, ".")
+
+    # Generate custom prior code instead of writing prior.txt
+    custom_prior_code = generate_custom_prior_fortran(cmodel.prior)
+
+    # Generate hardcoded data array
+    hardcoded_data = generate_hardcoded_data_fortran(cmodel.yy)
 
     system_matrices = model.python_sims_matrices(matrix_format="symbolic")
     npara = len(model.parameters)
@@ -193,7 +205,9 @@ def smc(model, t0=0, extra_code=""):
     ]
     sims_mat = "\n\n".join(fmats)
     template = template.format(
-        model=model, yy=cmodel.yy, p0="", t0=t0, sims_mat=sims_mat, extra_code=extra_code
+        model=model, yy=cmodel.yy, p0="", t0=t0, sims_mat=sims_mat,
+        extra_code=extra_code, custom_prior_code=custom_prior_code,
+        hardcoded_data=hardcoded_data
     )
 
     return template
@@ -232,6 +246,167 @@ def translate(model, output_dir=".", language="fortran"):
         raise NotImplementedError("Julia not yet implemented.")
     else:
         raise ValueError("Unsupported language.")
+
+
+def generate_custom_prior_fortran(prior):
+    """
+    Generate Fortran code for a custom prior type with hardcoded parameters.
+    This eliminates the need for external prior.txt files.
+    """
+    if prior is None or prior.npara == 0:
+        return ""
+
+    # Map scipy distribution names to Fortran function calls
+    prior_code_lines = []
+    rvs_code_lines = []
+
+    for i, dist in enumerate(prior.priors):
+        name = dist.dist.name
+        idx = i + 1  # Fortran is 1-indexed
+
+        if name == "uniform":
+            lower = dist.kwds["loc"]
+            upper = dist.kwds["loc"] + dist.kwds["scale"]
+            prior_code_lines.append(
+                f"    lpdf = lpdf + uniform_logpdf(para({idx}), {lower}_wp, {upper}_wp)"
+            )
+            rvs_code_lines.append(
+                f"    parasim({idx}, i) = uniform_rvs({lower}_wp, {upper}_wp, self%rn)"
+            )
+        elif name == "norm":
+            mean = dist.mean()
+            std = dist.std()
+            prior_code_lines.append(
+                f"    lpdf = lpdf + normal_logpdf(para({idx}), {mean}_wp, {std}_wp)"
+            )
+            rvs_code_lines.append(
+                f"    parasim({idx}, i) = normal_rvs({mean}_wp, {std}_wp, self%rn)"
+            )
+        elif name == "gamma":
+            mean = dist.mean()
+            std = dist.std()
+            prior_code_lines.append(
+                f"    lpdf = lpdf + gamma_logpdf(para({idx}), {mean}_wp, {std}_wp)"
+            )
+            rvs_code_lines.append(
+                f"    parasim({idx}, i) = gamma_rvs({mean}_wp, {std}_wp, self%rn)"
+            )
+        elif name == "beta":
+            mean = dist.mean()
+            std = dist.std()
+            prior_code_lines.append(
+                f"    lpdf = lpdf + beta_logpdf(para({idx}), {mean}_wp, {std}_wp)"
+            )
+            rvs_code_lines.append(
+                f"    parasim({idx}, i) = beta_rvs({mean}_wp, {std}_wp, self%rn)"
+            )
+        elif name == "invgamma_zellner":
+            # invgamma_zellner uses shape and scale directly
+            shape, scale = dist.args
+            prior_code_lines.append(
+                f"    lpdf = lpdf + invgamma_logpdf(para({idx}), {float(shape)}_wp, {float(scale)}_wp)"
+            )
+            rvs_code_lines.append(
+                f"    parasim({idx}, i) = invgamma_rvs({float(shape)}_wp, {float(scale)}_wp, self%rn)"
+            )
+        else:
+            raise ValueError(f"Unsupported distribution type: {name}")
+
+    # Generate the complete custom prior type
+    custom_prior_code = f"""
+  ! Custom prior type with hardcoded parameters
+  type, extends(fortress_abstract_prior) :: model_custom_prior
+    type(fortress_random) :: rn
+  contains
+    procedure :: rvs => model_prior_rvs
+    procedure :: logpdf => model_prior_logpdf
+  end type model_custom_prior
+
+  interface model_custom_prior
+    module procedure new_model_custom_prior
+  end interface model_custom_prior
+
+contains
+
+  type(model_custom_prior) function new_model_custom_prior(seed) result(self)
+    integer, optional :: seed
+
+    self%npara = {prior.npara}
+    if (present(seed)) then
+      self%rn = fortress_random(seed)
+    else
+      self%rn = fortress_random(1848)
+    end if
+  end function new_model_custom_prior
+
+  function model_prior_logpdf(self, para) result(lpdf)
+    class(model_custom_prior), intent(inout) :: self
+    real(wp), intent(in) :: para(self%npara)
+    real(wp) :: lpdf
+
+    lpdf = 0.0_wp
+{chr(10).join(prior_code_lines)}
+  end function model_prior_logpdf
+
+  function model_prior_rvs(self, nsim, seed, rng) result(parasim)
+    class(model_custom_prior), intent(inout) :: self
+    integer, intent(in) :: nsim
+    integer, optional :: seed
+    type(fortress_random), optional, intent(inout) :: rng
+    real(wp) :: parasim(self%npara, nsim)
+    integer :: i
+
+    do i = 1, nsim
+{chr(10).join(rvs_code_lines)}
+    end do
+  end function model_prior_rvs
+"""
+
+    return custom_prior_code
+
+
+def generate_hardcoded_data_fortran(yy_data):
+    """
+    Generate Fortran code to initialize a hardcoded data array.
+    This eliminates the need for external data.txt files.
+
+    Args:
+        yy_data: numpy array of shape (T, nobs) containing the observation data
+
+    Returns:
+        Fortran code string with data array initialization
+
+    Note:
+        Fortress expects yy to be shaped (nobs, T) not (T, nobs), so we transpose
+    """
+    import numpy as np
+
+    yy = np.asarray(yy_data)
+    T, nobs = yy.shape
+
+    # Transpose to match fortress convention: (nobs, T) not (T, nobs)
+    yy_transposed = yy.T
+
+    # Flatten the array in Fortran order (column-major)
+    flat_data = yy_transposed.flatten(order='F')
+
+    # Format the data values
+    # Break into chunks of 5 values per line for readability
+    values_per_line = 5
+    lines = []
+    for i in range(0, len(flat_data), values_per_line):
+        chunk = flat_data[i:i+values_per_line]
+        formatted = ', '.join(f'{val}_wp' for val in chunk)
+        lines.append(f'      {formatted}')
+
+    # Join with commas and line continuations
+    data_init = ', &\n'.join(lines)
+
+    return f"""
+  ! Hardcoded data array (nobs={nobs}, T={T})
+  self%yy = reshape([{data_init}], &
+                    [{nobs}, {T}])
+"""
 
 
 def write_prior_file(prior, output_dir):
