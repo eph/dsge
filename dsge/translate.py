@@ -26,7 +26,6 @@ module model_t
 
   implicit none
 
-  real(wp), parameter :: nan_wp = ieee_quiet_nan(0.0_wp)
 
   type, public, extends(fortress_lgss_model) :: model
      integer :: neta
