@@ -7,7 +7,7 @@ name = "dsge"
 dynamic = ["version"]
 description = "A simple Python package for DSGE models."
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 authors = [
   { name = "Ed Herbst", email = "ed.herbst@gmail.com" },
 ]
