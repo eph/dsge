@@ -131,7 +131,7 @@ def construct_equation_list(raw_equations, context):
             lhs = parse_expression(lhs, context)
             rhs = parse_expression(rhs, context)
         except TypeError as e:
-            print("While parsing %s, got this error: %s" % (eq, repr(e)))
+            raise ValueError(f"While parsing equation {eq!r}, got error: {e!r}") from e
 
         equations.append(Equation(lhs,rhs))
 

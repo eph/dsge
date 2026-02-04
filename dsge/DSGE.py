@@ -18,12 +18,11 @@ from .symbols import (Variable,
                      Shock,
                      Parameter,
                      TSymbol,
-                     reserved_names,
-                     symbolic_context)
+                     reserved_names)
 
 from .Prior import construct_prior
 from .data import read_data_file
-from .StateSpaceModel import LinearDSGEModel, LinearDSGEModelwithSV
+from .StateSpaceModel import LinearDSGEModel
 from .validation import validate_dsge_leads_lags, validate_model_consistency
 from .logging_config import get_logger
 
@@ -43,7 +42,11 @@ class EquationList(list):
     Inherits the list class and includes additional argument fields for context.
     """
 
-    def __init__(self, args: List[Equation], context: Dict[str, Union[int, float, TSymbol]] = {}):
+    def __init__(
+        self,
+        args: List[Equation],
+        context: Dict[str, Union[int, float, TSymbol]] | None = None,
+    ):
         """
         Initialize an instance of the EquationList class.
 
@@ -51,7 +54,7 @@ class EquationList(list):
             args (list): A list of Equation objects.
             context (dict, optional): A dictionary containing the context for the equations. Defaults to {}.
         """
-        self.context = context
+        self.context = {} if context is None else context
         return super(EquationList, self).__init__(args)
 
     def __setitem__(self, key: int, value: Union[str, Equation]):
@@ -132,10 +135,12 @@ class DSGE(Base):
             eq_lvars = [v for v in eq.atoms(TSymbol) if v.date < 0]
 
             for f in eq_fvars:
-                if f not in fvars: fvars.append(f)
+                if f not in fvars:
+                    fvars.append(f)
 
-            for l in eq_lvars:
-                if l not in lvars: lvars.append(l)
+            for lagged_var in eq_lvars:
+                if lagged_var not in lvars:
+                    lvars.append(lagged_var)
         
         logger.debug(f"Found {len(fvars)} forward-looking variables and {len(lvars)} backward-looking variables")
         
@@ -193,9 +198,6 @@ class DSGE(Base):
         # context = dict(context)
         # context['log'] = sympy.log
         # context['exp'] = sympy.exp
-        context = {}
-        # self['pertub_eq'] = EquationList(self['perturb_eq'], context)
-
         return
 
     def __repr__(self):
@@ -474,50 +476,27 @@ Equations:
 
         from .Prior import Prior as pri
 
-        if 1==0:#self['__data__']['declarations']['type'] == 'sv':
+        dsge = LinearDSGEModel(
+            data,
+            GAM0,
+            GAM1,
+            PSI,
+            PPI,
+            QQ,
+            DD,
+            ZZ,
+            HH,
+            t0=0,
+            shock_names=list(map(str, self.shocks)),
+            state_names=list(map(str, self.variables + self["fvars"])),
+            obs_names=list(map(str, self["observables"])),
+            prior=pri(prior),
+            parameter_names=self.parameters,
+        )
 
-            dsge = LinearDSGEModelwithSV(
-                  data,
-                  GAM0,
-                  GAM1,
-                  PSI,
-                  PPI,
-                  QQ,
-                  DD,
-                  ZZ,
-                  HH,
-                self.Lambda,
-                self.Omega,
-                self.Omega0,
-                  t0=0,
-                  shock_names=list(map(str, self.shocks)),
-                  state_names=list(map(str, self.variables + self["fvars"])),
-                  obs_names=list(map(str, self["observables"])),
-                  prior=pri(prior),
-                  parameter_names=self.parameters
-              )
-        else:
-            dsge = LinearDSGEModel(
-                  data,
-                  GAM0,
-                  GAM1,
-                  PSI,
-                  PPI,
-                  QQ,
-                  DD,
-                  ZZ,
-                  HH,
-                  t0=0,
-                  shock_names=list(map(str, self.shocks)),
-                  state_names=list(map(str, self.variables + self["fvars"])),
-                  obs_names=list(map(str, self["observables"])),
-                  prior=pri(prior),
-                  parameter_names=self.parameters
-              )
+        dsge.psi = self.psi
 
-            dsge.psi = self.psi
-
-            return dsge
+        return dsge
 
     def solve_model(self, p0):
 
@@ -555,7 +534,6 @@ Equations:
     def read(cls, model_yaml):
 
         dec, cal = model_yaml["declarations"], model_yaml["calibration"]
-        name = dec["name"]
 
         var_ordering = [Variable(v) for v in dec["variables"]]
         par_ordering = [Parameter(v) for v in dec["parameters"]]
@@ -673,10 +651,10 @@ Equations:
             # still need to do leads
 
         equations = [eq.subs(subs_dict) for eq in equations]
-        if 'covariance' in cal:
-            QQ = from_dict_to_mat(cal['covariance'], shk_ordering, context)
+        if "covariance" in cal:
+            QQ = from_dict_to_mat(cal["covariance"], shk_ordering, context)
         else:
-            print('No covariance matrix provided. Assuming identity matrix.')
+            logger.warning("No covariance matrix provided. Assuming identity matrix.")
             QQ = sympy.eye(len(shk_ordering))
 
         #------------------------------------------------------------------

@@ -31,7 +31,14 @@ class Base(dict, ABC):
         return lambdified
         
 
-    def lambdify(self, expr_or_matrix: Union[Expr, sympy.Matrix], with_auxiliary=False, context={}) -> Callable:
+    def lambdify(
+        self,
+        expr_or_matrix: Union[Expr, sympy.Matrix],
+        with_auxiliary: bool = False,
+        context: dict | None = None,
+    ) -> Callable:
+        if context is None:
+            context = {}
         all_parameters = [self['parameters'] + list(self['auxiliary_parameters'].keys())]
         expanded_numeric = lambdify(all_parameters, expr_or_matrix,
                                     modules=[{'ImmutableDenseMatrix': np.array, **context}, 'numpy', 'scipy'])
@@ -54,6 +61,7 @@ class Base(dict, ABC):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.lambdify_auxiliary = None
         self.create_string_attributes(['parameters', 'auxiliary_parameters'])
 
     def create_string_attributes(self, attributes: List[str]):
