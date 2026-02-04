@@ -635,6 +635,8 @@ class LinearDSGEModel(StateSpaceModel):
         self.cached_lre_matrices = None
 
     def solve_LRE(self, para, anticipated_h=0, use_cache=False, *args, **kwargs):
+        qz_criterium = float(kwargs.pop("qz_criterium", 1 + 1e-6))
+        return_diagnostics = bool(kwargs.pop("return_diagnostics", False))
 
         if use_cache:
             G0, G1, PSI, PPI = self.cached_lre_matrices
@@ -677,8 +679,12 @@ class LinearDSGEModel(StateSpaceModel):
         nf = PPI.shape[1]
 
         if nf > 0:
-            TT, RR, RC = gensys(G0, G1, PSI, PPI, C0)
-            RC = RC[0] * RC[1]
+            if return_diagnostics:
+                TT, RR, RC, diag = gensys(G0, G1, PSI, PPI, C0=C0, DIV=qz_criterium, return_diagnostics=True)
+                self.last_gensys_diagnostics = diag
+            else:
+                TT, RR, RC = gensys(G0, G1, PSI, PPI, C0=C0, DIV=qz_criterium)
+            RC = int(RC[0] * RC[1])
             # TT, CC, RR, fmat, fwt, ywt, gev, RC, loose = gensysw.gensys.call_gensys(G0, G1, C0, PSI, PPI, 1.00000000001)
         else:
             TT = np.linalg.inv(G0).dot(G1)

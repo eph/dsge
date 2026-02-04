@@ -13,5 +13,7 @@ class TestLinver(TestCase):
         PI = np.loadtxt('dsge/tests/linver/PI.txt')
 
         TT, RR, RC = gensys(G0, G1, PSI, PI)
+        assert RC[0] == 1
+        assert RC[1] == 1
 
         
