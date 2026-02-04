@@ -34,8 +34,9 @@ test = [
   "matplotlib",
 ]
 codegen = [
-  # Fortress is hosted on GitHub and provides `fortress.make_smc` used by codegen
-  "fortress @ file:////home/eherbst/Dropbox/code/fortress/", #git+https://github.com/eph/fortress.git",
+  # Fortress is hosted on GitHub and provides `fortress.make_smc` used by codegen.
+  # For local development, prefer installing your checkout separately (e.g. `uv pip install -e ../fortress`).
+  "fortress @ git+https://github.com/eph/fortress.git",
 ]
 
 [tool.setuptools]
