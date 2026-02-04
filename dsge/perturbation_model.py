@@ -37,6 +37,14 @@ def _logpdf_mvnormal(resid: np.ndarray, inv_cov: np.ndarray, logdet_cov: float) 
     return -0.5 * (quad + logdet_cov + n_obs * np.log(2.0 * np.pi))
 
 
+def _logsumexp_1d(logx: np.ndarray) -> float:
+    logx = np.asarray(logx, dtype=float).reshape(-1)
+    m = float(np.max(logx))
+    if not np.isfinite(m):
+        return -np.inf
+    return m + float(np.log(np.sum(np.exp(logx - m))))
+
+
 def _ensure_cov_matrix(hh, jitter: float = 1e-12) -> np.ndarray:
     hh = np.asarray(hh, dtype=float)
     if hh.ndim == 0:
@@ -270,6 +278,7 @@ class PerturbationDSGEModel:
         cholQQ = np.linalg.cholesky(QQ)
 
         loglik = 0.0
+        logw = np.full(nparticles, -np.log(nparticles), dtype=float)
 
         for t in range(t0, yy.shape[0]):
             y_t = np.asarray(yy[t]).reshape(-1)
@@ -311,24 +320,32 @@ class PerturbationDSGEModel:
                 continue
 
             resid = y_t[mask][None, :] - yhat[:, mask]
-            invHH_t = invHH[np.ix_(mask, mask)]
-            logdet_t = np.linalg.slogdet(HH[np.ix_(mask, mask)])[1]
-            logw = _logpdf_mvnormal(resid, invHH_t, logdet_t)
+            if np.all(mask):
+                invHH_t = invHH
+                logdet_t = logdet
+            else:
+                HH_t = HH[np.ix_(mask, mask)]
+                sign_t, logdet_t = np.linalg.slogdet(HH_t)
+                if sign_t <= 0:
+                    raise ValueError("Measurement error covariance submatrix must be positive definite.")
+                invHH_t = np.linalg.inv(HH_t)
 
-            maxlogw = float(np.max(logw))
-            w = np.exp(logw - maxlogw)
-            meanw = float(np.mean(w))
-            if not np.isfinite(meanw) or meanw <= 0.0:
+            logp = _logpdf_mvnormal(resid, invHH_t, float(logdet_t))
+            logw = logw + logp
+            inc = _logsumexp_1d(logw)
+            if not np.isfinite(inc):
                 return -np.inf
-            loglik += maxlogw + np.log(meanw)
+            loglik += inc
+            logw = logw - inc  # normalize
 
-            w = w / np.sum(w)
-            ess = 1.0 / np.sum(w * w)
+            w = np.exp(logw)
+            ess = 1.0 / float(np.sum(w * w))
 
             if ess < resample_threshold * nparticles:
                 idx = _systematic_resample(w, rng)
                 x1 = x1_next[idx]
                 x2 = x2_next[idx]
+                logw.fill(-np.log(nparticles))
             else:
                 x1, x2 = x1_next, x2_next
 
@@ -441,4 +458,3 @@ class PerturbationDSGEModel:
         sim = self.perfect_foresight(para, eps, include_observables=True)["observables"].values
         sim = sim + meas
         return sim[burn:, :]
-
