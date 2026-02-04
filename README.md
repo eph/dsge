@@ -37,6 +37,30 @@ Quick Check
 
 - Import check: `uv run python -c "import dsge; print(dsge.__file__)"`
 
+Second-Order Perturbation (Experimental)
+---------------------------------------
+
+For standard LRE DSGE models, you can compute a second-order perturbation solution:
+
+- Example:
+  - `uv run python -c "from dsge.parse_yaml import read_yaml; m = read_yaml('dsge/examples/nkmp/nkmp.yaml'); sol = m.solve_second_order(m.p0()); print(sol.gx.shape, sol.gxx.shape)"`
+
+`solve_second_order()` returns a `SecondOrderSolution` with first- and second-order decision-rule coefficients
+and a small `as_dynare_like()` export helper for comparing arrays against Dynare outputs after reordering.
+
+Dynare Cross-Checks (Optional)
+------------------------------
+
+This repo includes a basic YAML→Dynare `.mod` exporter (`dsge.dynare_export.to_dynare_mod`) so you can run Dynare
+locally and compare results. Dynare itself is not bundled.
+
+There is also an (opt-in) integration test that runs Dynare and compares second-order decision-rule arrays:
+
+- `DSGE_RUN_DYNARE=1 uv run -m pytest -q dsge/tests/test_dynare_integration_second_order.py`
+
+If your `dynare` wrapper can’t locate Dynare’s MATLAB/Octave files, set `DYNARE_ROOT` to the Dynare source root
+(the directory containing `matlab/dynare.m`).
+
 Bugs and Questions
 ------------------
 For bug reports and questions, send me an email at

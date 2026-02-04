@@ -487,6 +487,20 @@ Equations:
 
         return TT, RR, RC
 
+    def solve_second_order(self, p0=None, **kwargs):
+        """
+        Compute a second-order perturbation solution for the model (LRE only).
+
+        Returns
+        -------
+        dsge.second_order.SecondOrderSolution
+        """
+        if p0 is None:
+            p0 = self.p0()
+        from .second_order import solve_second_order
+
+        return solve_second_order(self, p0, **kwargs)
+
     @classmethod
     def read(cls, model_yaml):
 
