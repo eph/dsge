@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Sequence, Tuple
+from typing import Callable, Dict, Iterable, List, Sequence, Tuple
 
 import numpy as np
 import sympy
@@ -114,6 +114,114 @@ def _numeric_context_for_model(model) -> Dict[str, object]:
     return context_f
 
 
+@dataclass
+class _SecondOrderCompiled:
+    x0: List[Variable]
+    y0: List[Variable]
+    shocks: List[Shock]
+    nx: int
+    ny: int
+    nu: int
+    n: int
+    tensor_entries: int
+    v: List[object]
+    eval_F1: Callable[[Sequence[float]], np.ndarray]
+    eval_F0: Callable[[Sequence[float]], np.ndarray]
+    eval_Fu: Callable[[Sequence[float]], np.ndarray]
+    eval_Hi: List[Callable[[Sequence[float]], np.ndarray]]
+    eval_QQ: Callable[[Sequence[float]], np.ndarray]
+
+
+def _compile_second_order(model) -> _SecondOrderCompiled:
+    """
+    Compile symbolic derivatives needed for second-order perturbation once per model.
+
+    The compiled object is parameterized only by the model's parameter vector `p`.
+    """
+    context_f = _numeric_context_for_model(model)
+
+    base_vars = list(model["var_ordering"])
+    shocks = list(model["shk_ordering"])
+    equations = list(model["perturb_eq"])
+
+    var_ordering, eqs, state_vars = _eliminate_lagged_endogenous(base_vars, equations)
+
+    x0 = list(state_vars)
+    y0 = [v for v in var_ordering if v not in state_vars]
+
+    nx = len(x0)
+    ny = len(y0)
+    nu = len(shocks)
+    n = nx + ny
+
+    if n == 0:
+        raise ValueError("Model has no endogenous variables.")
+    if len(eqs) != n:
+        raise ValueError(f"Expected {n} equations after lag elimination, got {len(eqs)}.")
+    if nx == 0:
+        raise NotImplementedError(
+            "Second-order solver currently requires at least one lagged endogenous (a non-empty state)."
+        )
+
+    xp = [v(1) for v in x0]
+    yp = [v(1) for v in y0]
+
+    # Steady-state point: all endogenous and shocks at 0.
+    subs_ss: Dict[object, object] = {}
+    for v in var_ordering:
+        subs_ss[v] = 0
+        subs_ss[v(1)] = 0
+    for s in shocks:
+        subs_ss[s] = 0
+
+    res = sympy.Matrix([eq.set_eq_zero for eq in eqs])
+
+    F1_sym = res.jacobian(xp + yp).subs(subs_ss)
+    F0_sym = res.jacobian(x0 + y0).subs(subs_ss)
+    Fu_sym = res.jacobian(shocks).subs(subs_ss)
+
+    eval_F1 = model.lambdify(F1_sym, context=context_f)
+    eval_F0 = model.lambdify(F0_sym, context=context_f)
+    eval_Fu = model.lambdify(Fu_sym, context=context_f)
+
+    # Hessian tensor wrt v = [x', y', x, y, u]
+    v = xp + yp + x0 + y0 + shocks
+    nv = len(v)
+    tensor_entries = n * nv * nv
+
+    eval_Hi = []
+    for i in range(n):
+        Hi_sym = sympy.hessian(res[i], v).subs(subs_ss)
+        eval_Hi.append(model.lambdify(Hi_sym, context=context_f))
+
+    eval_QQ = model.lambdify(model["covariance"], context=context_f)
+
+    return _SecondOrderCompiled(
+        x0=x0,
+        y0=y0,
+        shocks=shocks,
+        nx=nx,
+        ny=ny,
+        nu=nu,
+        n=n,
+        tensor_entries=tensor_entries,
+        v=v,
+        eval_F1=eval_F1,
+        eval_F0=eval_F0,
+        eval_Fu=eval_Fu,
+        eval_Hi=eval_Hi,
+        eval_QQ=eval_QQ,
+    )
+
+
+def _get_second_order_compiled(model) -> _SecondOrderCompiled:
+    compiled = getattr(model, "_second_order_compiled", None)
+    if compiled is None:
+        compiled = _compile_second_order(model)
+        setattr(model, "_second_order_compiled", compiled)
+    return compiled
+
+
 def _eliminate_lagged_endogenous(
     var_ordering: Sequence[Variable],
     equations: Sequence[Equation],
@@ -174,51 +282,24 @@ def solve_second_order(
       variable v_LAG1 and adding the linking identity v_LAG1(+1) = v.
     - Only intended for standard LRE models (not SI/FHP/OBC).
     """
-    context_f = _numeric_context_for_model(model)
-
-    base_vars = list(model["var_ordering"])
-    shocks = list(model["shk_ordering"])
-    equations = list(model["perturb_eq"])
-
-    var_ordering, eqs, state_vars = _eliminate_lagged_endogenous(base_vars, equations)
-
-    x0 = list(state_vars)
-    y0 = [v for v in var_ordering if v not in state_vars]
-
-    nx = len(x0)
-    ny = len(y0)
-    nu = len(shocks)
-    n = nx + ny
-
-    if n == 0:
-        raise ValueError("Model has no endogenous variables.")
-    if len(eqs) != n:
-        raise ValueError(f"Expected {n} equations after lag elimination, got {len(eqs)}.")
-    if nx == 0:
-        raise NotImplementedError(
-            "Second-order solver currently requires at least one lagged endogenous (a non-empty state)."
+    compiled = _get_second_order_compiled(model)
+    if compiled.tensor_entries > max_tensor_entries:
+        raise ValueError(
+            f"Second-order tensor too large ({compiled.tensor_entries} entries). "
+            f"Reduce model size or increase max_tensor_entries."
         )
 
-    xp = [v(1) for v in x0]
-    yp = [v(1) for v in y0]
+    x0 = compiled.x0
+    y0 = compiled.y0
+    shocks = compiled.shocks
+    nx = compiled.nx
+    ny = compiled.ny
+    nu = compiled.nu
+    n = compiled.n
 
-    # Steady-state point: all endogenous and shocks at 0.
-    subs_ss: Dict[object, object] = {}
-    for v in var_ordering:
-        subs_ss[v] = 0
-        subs_ss[v(1)] = 0
-    for s in shocks:
-        subs_ss[s] = 0
-
-    res = sympy.Matrix([eq.set_eq_zero for eq in eqs])
-
-    F1_sym = res.jacobian(xp + yp).subs(subs_ss)
-    F0_sym = res.jacobian(x0 + y0).subs(subs_ss)
-    Fu_sym = res.jacobian(shocks).subs(subs_ss)
-
-    F1 = np.asarray(model.lambdify(F1_sym, context=context_f)(p0), dtype=float)
-    F0 = np.asarray(model.lambdify(F0_sym, context=context_f)(p0), dtype=float)
-    Fu = np.asarray(model.lambdify(Fu_sym, context=context_f)(p0), dtype=float)
+    F1 = np.asarray(compiled.eval_F1(p0), dtype=float)
+    F0 = np.asarray(compiled.eval_F0(p0), dtype=float)
+    Fu = np.asarray(compiled.eval_Fu(p0), dtype=float)
 
     f1 = F1[:, :nx]
     f2 = F1[:, nx:]
@@ -258,20 +339,10 @@ def solve_second_order(
     hu = X[:nx, :]
     gu = X[nx:, :]
 
-    # Hessian tensor wrt v = [x', y', x, y, u]
-    v = xp + yp + x0 + y0 + shocks
-    nv = len(v)
-    tensor_entries = n * nv * nv
-    if tensor_entries > max_tensor_entries:
-        raise ValueError(
-            f"Second-order tensor too large ({tensor_entries} entries). "
-            f"Reduce model size or increase max_tensor_entries."
-        )
-
+    nv = len(compiled.v)
     H = np.zeros((n, nv, nv), dtype=float)
-    for i in range(n):
-        Hi_sym = sympy.hessian(res[i], v).subs(subs_ss)
-        H[i] = np.asarray(model.lambdify(Hi_sym, context=context_f)(p0), dtype=float)
+    for i, eval_hi in enumerate(compiled.eval_Hi):
+        H[i] = np.asarray(eval_hi(p0), dtype=float)
 
     # Build derivative maps v_x and v_u
     v_x = np.vstack(
@@ -356,8 +427,7 @@ def solve_second_order(
     guu = 0.5 * (guu + np.swapaxes(guu, 1, 2))
 
     # Constant (risk) terms using shock covariance
-    model.python_sims_matrices()
-    QQ = np.asarray(model.QQ(p0), dtype=float)
+    QQ = np.asarray(compiled.eval_QQ(p0), dtype=float)
     if QQ.shape != (nu, nu):
         raise ValueError(f"Shock covariance has shape {QQ.shape}, expected {(nu, nu)}.")
 
