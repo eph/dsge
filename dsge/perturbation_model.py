@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Iterable, Optional, Sequence
+from typing import Dict, Optional, Sequence
 
 import numpy as np
 import pandas as p
 
 from .logging_config import get_logger
+from .symbols import Variable
 
 logger = get_logger("dsge.perturbation")
 
@@ -155,18 +156,17 @@ class PerturbationDSGEModel:
         endo_vars = list(self.dsge_model["var_ordering"])
         obs_eqs = self.dsge_model.get("obs_equations", {})
         offenders = []
+        import sympy
+
         for obs in self.dsge_model["observables"]:
             expr = obs_eqs.get(obs.name, None)
             if expr is None:
                 continue
-            dated = [v for v in expr.atoms() if getattr(v, "date", 0) != 0]
+            dated = [v for v in expr.atoms(Variable) if getattr(v, "date", 0) != 0]
             if dated:
                 offenders.append((obs.name, "dated vars", [str(v) for v in dated]))
                 continue
             try:
-                poly = np  # sentinel
-                import sympy
-
                 poly = sympy.Poly(expr, *endo_vars, domain="EX")
                 if poly.total_degree() > 1:
                     offenders.append((obs.name, "nonlinear", str(expr)))
@@ -174,7 +174,10 @@ class PerturbationDSGEModel:
                 offenders.append((obs.name, "non-polynomial", str(expr)))
 
         if offenders:
-            msg = "Observable equations must be affine in current endogenous variables for order=2.\n"
+            msg = (
+                "For order=2 models, observable equations must be affine in current (date=0) endogenous "
+                "variables. Nonlinear or dated observables are not yet supported.\n"
+            )
             for name, kind, detail in offenders:
                 msg += f"- {name}: {kind}: {detail}\n"
             raise ValueError(msg.rstrip())
@@ -271,6 +274,10 @@ class PerturbationDSGEModel:
         if sign <= 0:
             raise ValueError("Measurement error covariance must be positive definite (or near).")
 
+        cov_cache: Dict[bytes, tuple[np.ndarray, float]] = {}
+        full_mask_key = np.ones(nobs, dtype=bool).tobytes()
+        cov_cache[full_mask_key] = (invHH, float(logdet))
+
         # Initialize particles at steady state (deviations = 0), in pruned components.
         x1 = np.zeros((nparticles, nstate))
         x2 = np.zeros((nparticles, nstate))
@@ -320,15 +327,16 @@ class PerturbationDSGEModel:
                 continue
 
             resid = y_t[mask][None, :] - yhat[:, mask]
-            if np.all(mask):
-                invHH_t = invHH
-                logdet_t = logdet
-            else:
+            mask_key = mask.tobytes()
+            cached = cov_cache.get(mask_key)
+            if cached is None:
                 HH_t = HH[np.ix_(mask, mask)]
                 sign_t, logdet_t = np.linalg.slogdet(HH_t)
                 if sign_t <= 0:
                     raise ValueError("Measurement error covariance submatrix must be positive definite.")
-                invHH_t = np.linalg.inv(HH_t)
+                cached = (np.linalg.inv(HH_t), float(logdet_t))
+                cov_cache[mask_key] = cached
+            invHH_t, logdet_t = cached
 
             logp = _logpdf_mvnormal(resid, invHH_t, float(logdet_t))
             logw = logw + logp
@@ -359,7 +367,6 @@ class PerturbationDSGEModel:
         _, ZZ, _, QQ = self._measurement_matrices(para, use_cache=use_cache)
 
         nshocks = QQ.shape[0]
-        nendo = pol.gx.shape[0]
 
         shock_names = self.shock_names or [f"shock_{i}" for i in range(nshocks)]
         endo_names = pol.control_names
@@ -440,7 +447,6 @@ class PerturbationDSGEModel:
         """
         Simulate observables using the pruned decision rule with Gaussian shocks and measurement errors.
         """
-        pol = self._policy(para, use_cache=False)
         DD, ZZ, HH, QQ = self._measurement_matrices(para, use_cache=False)
 
         rng = np.random.default_rng(seed)
