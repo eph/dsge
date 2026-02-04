@@ -48,6 +48,11 @@ For standard LRE DSGE models, you can compute a second-order perturbation soluti
 `solve_second_order()` returns a `SecondOrderSolution` with first- and second-order decision-rule coefficients
 and a small `as_dynare_like()` export helper for comparing arrays against Dynare outputs after reordering.
 
+You can also compile an order-2 model with the same high-level API as the linear model:
+
+- `c = m.compile_model(order=2)` (uses pruned order-2 decision rules + particle filter likelihood)
+- `c.log_lik(p0, nparticles=2000, seed=0)` (PF tuning lives on the likelihood call)
+
 Dynare Cross-Checks (Optional)
 ------------------------------
 

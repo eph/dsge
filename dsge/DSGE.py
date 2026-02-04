@@ -392,7 +392,57 @@ Equations:
 
         return GAM0, GAM1, PSI, PPI
 
-    def compile_model(self):
+    def compile_model(self, order=1, pruning=True):
+        """
+        Compile the DSGE model into an object with likelihood/simulation APIs.
+
+        Parameters
+        ----------
+        order : int
+            Perturbation order. `order=1` returns the existing linear-Gaussian
+            state-space object (Kalman filter). `order=2` returns an order-2
+            pruned perturbation model (particle filter likelihood).
+        pruning : bool
+            For `order=2`, use Dynare-style pruning for simulation/filtering.
+        """
+        if order == 2:
+            from .perturbation_model import PerturbationDSGEModel
+
+            if "observables" not in self:
+                self["observables"] = self["variables"].copy()
+                self["obs_equations"] = dict(self["observables"], self["observables"])
+
+            if "data" in self["estimation"]:
+                data = read_data_file(
+                    self["estimation"]["data"], self["observables"]
+                )
+            else:
+                data = np.nan * np.ones((100, len(self["observables"])))
+
+            prior = None
+            if "prior" in self["estimation"]:
+                prior = construct_prior(
+                    self["estimation"]["prior"], self.parameters
+                )
+
+            from .Prior import Prior as pri
+
+            return PerturbationDSGEModel(
+                dsge_model=self,
+                yy=data,
+                t0=0,
+                shock_names=list(map(str, self.shocks)),
+                state_names=None,
+                obs_names=list(map(str, self["observables"])),
+                prior=pri(prior),
+                parameter_names=self.parameters,
+                order=2,
+                pruning=pruning,
+            )
+
+        if order != 1:
+            raise ValueError(f"Unsupported perturbation order: {order}. Use order=1 or order=2.")
+
         self.python_sims_matrices()
 
         GAM0 = self.GAM0
