@@ -193,8 +193,8 @@ def validate_model_consistency(model_dict: Dict[str, Any]) -> List[str]:
 def validate_dsge_leads_lags(
     equations: List[Equation], 
     variables: List[Variable],
-    max_lead: int = 1, 
-    max_lag: int = 1
+    max_lead: Optional[int] = 1,
+    max_lag: Optional[int] = 1,
 ) -> List[str]:
     """
     Validate that variables in DSGE models respect maximum lead and lag constraints.
@@ -202,8 +202,8 @@ def validate_dsge_leads_lags(
     Args:
         equations: List of model equations to check
         variables: List of model variables
-        max_lead: Maximum allowed lead (default: 1)
-        max_lag: Maximum allowed lag (default: 1, should be positive)
+        max_lead: Maximum allowed lead (default: 1). Use None for no limit.
+        max_lag: Maximum allowed lag (default: 1, should be positive). Use None for no limit.
         
     Returns:
         List of validation error messages (empty if no errors)
@@ -215,11 +215,11 @@ def validate_dsge_leads_lags(
         # Check for variables with leads/lags beyond limits
         for atom in eq.atoms(Variable):
             if atom.name in var_by_name:
-                if atom.date > max_lead:
+                if max_lead is not None and atom.date > max_lead:
                     errors.append(
                         f"Variable {atom.name}({atom.date}) in equation {i+1} exceeds maximum lead of {max_lead}"
                     )
-                elif atom.date < -max_lag:
+                elif max_lag is not None and atom.date < -max_lag:
                     errors.append(
                         f"Variable {atom.name}({atom.date}) in equation {i+1} exceeds maximum lag of {max_lag}"
                     )

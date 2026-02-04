@@ -264,18 +264,37 @@ Equations:
         return list(map(lambda x: self["calibration"][x], self.parameters))
 
     def python_sims_matrices(self, matrix_format="numeric"):
+        if matrix_format != "symbolic":
+            already = (
+                callable(getattr(self, "GAM0", None))
+                and callable(getattr(self, "GAM1", None))
+                and callable(getattr(self, "PSI", None))
+                and callable(getattr(self, "PPI", None))
+                and callable(getattr(self, "QQ", None))
+                and callable(getattr(self, "HH", None))
+                and callable(getattr(self, "DD", None))
+                and callable(getattr(self, "ZZ", None))
+            )
+            if already:
+                return None
 
         vlist = self["var_ordering"] + self["fvars"]
         llist = [var(-1) for var in self["var_ordering"]] + self["fvars_lagged"]
         slist = self["shk_ordering"]
 
-        subs_dict = dict()
         eq_cond = self["perturb_eq"] + self["re_errors_eq"]
 
-        sub_var = self["var_ordering"]
-        subs_dict.update({v: 0 for v in sub_var})
-        subs_dict.update({v(1): 0 for v in sub_var})
-        subs_dict.update({v(-1): 0 for v in sub_var})
+        vpos = {v: i for i, v in enumerate(vlist)}
+        lpos = {v: i for i, v in enumerate(llist)}
+        spos = {s: i for i, s in enumerate(slist)}
+        rpos = {s: i for i, s in enumerate(self["re_errors"])}
+
+        def _subs_steady_state(expr):
+            """Evaluate an expression at the (zero) steady state for endo/shocks only."""
+            atoms = expr.atoms(Variable) | expr.atoms(Shock)
+            if not atoms:
+                return expr
+            return expr.subs({a: 0 for a in atoms})
 
         svar = len(vlist)
         evar = len(slist)
@@ -289,35 +308,36 @@ Equations:
 
 
         for eq_i, eq in enumerate(eq_cond):
-            curr_var = filter(lambda x: x.date >= 0, eq.atoms(Variable))
+            eq0 = eq.set_eq_zero
+            curr_var = [v for v in eq.atoms(Variable) if v.date >= 0 and v in vpos]
             #print('---------------------------------------')
             #print(f'Equation: {eq}')
             #print(f'current variables {list(curr_var)}')
             for v in curr_var:
                 #print(f'\tdifferentiating wrt to {v}')
-                v_j = vlist.index(v)
-                GAM0[eq_i, v_j] = -(eq).set_eq_zero.diff(v).subs(subs_dict)
+                v_j = vpos[v]
+                GAM0[eq_i, v_j] = -_subs_steady_state(eq0.diff(v))
 
-            past_var = filter(lambda x: x in llist, eq.atoms())
+            past_var = [v for v in eq.atoms() if v in lpos]
             #print(f'past variables: {list(past_var)}.')
             for v in past_var:
-                deq_dv = eq.set_eq_zero.diff(v).subs(subs_dict)
-                v_j = llist.index(v)
+                deq_dv = _subs_steady_state(eq0.diff(v))
+                v_j = lpos[v]
                 GAM1[eq_i, v_j] = deq_dv
 
                 #print(f'\tdifferentiating wrt to {v}')
 
             #print(f'GAM1: {GAM1[eq_i,:]}')
 
-            shocks = filter(lambda x: x, eq.atoms(Shock))
+            shocks = list(eq.atoms(Shock))
 
             for s in shocks:
                 if s not in self["re_errors"]:
-                    s_j = slist.index(s)
-                    PSI[eq_i, s_j] = eq.set_eq_zero.diff(s).subs(subs_dict)
+                    s_j = spos[s]
+                    PSI[eq_i, s_j] = _subs_steady_state(eq0.diff(s))
                 else:
-                    s_j = self["re_errors"].index(s)
-                    PPI[eq_i, s_j] = eq.set_eq_zero.diff(s).subs(subs_dict)
+                    s_j = rpos[s]
+                    PPI[eq_i, s_j] = _subs_steady_state(eq0.diff(s))
 
 
             # print "\r Differentiating equation {0} of {1}.".format(eq_i, len(eq_cond)),
@@ -328,12 +348,12 @@ Equations:
         for obs in self["observables"]:
             eq = self["obs_equations"][obs.name]
 
-            DD[eq_i, 0] = eq.subs(subs_dict)
+            DD[eq_i, 0] = _subs_steady_state(eq)
 
-            curr_var = filter(lambda x: x.date >= 0, eq.atoms(Variable))
+            curr_var = [v for v in eq.atoms(Variable) if v.date >= 0 and v in vpos]
             for v in curr_var:
-                v_j = vlist.index(v)
-                ZZ[eq_i, v_j] = eq.diff(v).subs(subs_dict)
+                v_j = vpos[v]
+                ZZ[eq_i, v_j] = _subs_steady_state(eq.diff(v))
 
             eq_i += 1
 
@@ -577,8 +597,8 @@ Equations:
         # Validate the leads and lags in the model
         logger.info("Validating model leads and lags")
         # Get the model-defined max_lead and max_lag from class or parameters
-        max_lead = getattr(cls, 'max_lead', 1)
-        max_lag = getattr(cls, 'max_lag', 1)
+        max_lead = dec.get("max_lead", getattr(cls, "max_lead", 1))
+        max_lag = dec.get("max_lag", getattr(cls, "max_lag", 1))
         
         # Use the validation module to check for excessive leads/lags
         validation_errors = validate_dsge_leads_lags(

@@ -5,6 +5,12 @@ declarations:
     name:
       type: string
       required: true
+    max_lead:
+      type: integer
+      required: false
+    max_lag:
+      type: integer
+      required: false
     variables:
       type: list
       required: true
