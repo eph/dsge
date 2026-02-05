@@ -93,3 +93,34 @@ def test_irfoc_max_min_not_implemented():
         (1.5 * sim["pi"] + 0.1 * sim["y"] + 0.9 * sim["ilag"]).to_numpy(),
     )
     assert np.max(np.abs(sim["i"].to_numpy() - rhs)) < 1e-7
+
+
+def test_irfoc_indicator_syntax_one_parens():
+    import io
+
+    m = read_yaml(io.StringIO(_simple_nk_yaml()))
+    lin = m.compile_model()
+    p0 = m.p0()
+    baseline = lin.impulse_response(p0, h=10)["er"].loc[:, ["pi", "y", "i", "ilag"]]
+
+    irfoc = IRFOC(m, baseline, instrument_shocks="em", p0=p0, compiled_model=lin)
+
+    sim = irfoc.simulate("i = 0.002 + 0.001*1(pi < 0)", return_details=False)
+    vals = sim["i"].to_numpy()
+    # Should be close to one of the two regime levels each period.
+    dist = np.minimum(np.abs(vals - 0.002), np.abs(vals - 0.003))
+    assert float(np.max(dist)) < 1e-6
+
+
+def test_irfoc_indicator_rejects_bilinear():
+    import io
+
+    m = read_yaml(io.StringIO(_simple_nk_yaml()))
+    lin = m.compile_model()
+    p0 = m.p0()
+    baseline = lin.impulse_response(p0, h=10)["er"].loc[:, ["pi", "y", "i", "ilag"]]
+
+    irfoc = IRFOC(m, baseline, instrument_shocks="em", p0=p0, compiled_model=lin)
+
+    with pytest.raises(ValueError, match="scalar \\* affine"):
+        irfoc.simulate("i = 1(pi < 0)*pi")

@@ -5,13 +5,17 @@ from typing import Iterable, Sequence
 
 import numpy as np
 import pandas as pd
+import re
 import sympy
+from sympy.core.relational import Relational
 from scipy.optimize import Bounds, LinearConstraint, milp
 
 from .logging_config import get_logger
 from .symbols import Equation, Variable
 
 logger = get_logger("dsge.irfoc")
+
+INDICATOR_FN = sympy.Function("indicator")
 
 
 @dataclass(frozen=True)
@@ -49,6 +53,21 @@ def _sympify_with_context(expr: str, context: dict[str, object]) -> sympy.Expr:
     return sympy.sympify(expr, locals=context)
 
 
+_INDICATOR_PATTERN = re.compile(r"(^|[^0-9A-Za-z_\.])1\s*\(")
+
+
+def _preprocess_indicator_syntax(s: str) -> str:
+    """
+    Allow Matlab-ish indicator syntax `1(cond)` by rewriting it to `indicator(cond)`.
+
+    Notes
+    -----
+    - We intentionally do *not* try to support every possible ambiguous case; this is meant for
+      policy-rule strings like `i = max(ibar, istar) + 0.01*1(pi<0)`.
+    """
+    return _INDICATOR_PATTERN.sub(r"\1indicator(", s)
+
+
 def parse_policy_rules(
     rules: str | Sequence[str],
     *,
@@ -74,10 +93,13 @@ def parse_policy_rules(
 
     context = dict(variable_context)
     context.update({"max": sympy.Max, "min": sympy.Min})
+    context.update({"indicator": INDICATOR_FN})
 
     eqs: list[Equation] = []
     for r in rule_list:
         lhs_s, rhs_s = _split_equation(str(r))
+        lhs_s = _preprocess_indicator_syntax(lhs_s)
+        rhs_s = _preprocess_indicator_syntax(rhs_s)
         lhs = _sympify_with_context(lhs_s, context)
         rhs = _sympify_with_context(rhs_s, context)
         eqs.append(Equation(lhs, rhs))
@@ -85,7 +107,7 @@ def parse_policy_rules(
     if not allow_piecewise:
         # Quick sanity: disallow piecewise max/min rules.
         for eq in eqs:
-            if eq.set_eq_zero.has(sympy.Max, sympy.Min, sympy.Piecewise):
+            if eq.set_eq_zero.has(sympy.Max, sympy.Min, sympy.Piecewise, INDICATOR_FN):
                 raise NotImplementedError(
                     "IRFOC currently supports only affine (linear/constant) policy rules. "
                     "Rules with max/min/Piecewise are available via `IRFOC.simulate_piecewise()`."
@@ -235,7 +257,9 @@ class IRFOC:
         except Exception:
             eqs_pw = None
 
-        if eqs_pw is not None and any(eq.set_eq_zero.has(sympy.Max, sympy.Min, sympy.Piecewise) for eq in eqs_pw):
+        if eqs_pw is not None and any(
+            eq.set_eq_zero.has(sympy.Max, sympy.Min, sympy.Piecewise, INDICATOR_FN) for eq in eqs_pw
+        ):
             return self.simulate_piecewise(rules, return_details=return_details)
 
         A, b, eqs = self._affine_A_b(rules)
@@ -289,9 +313,16 @@ class IRFOC:
         return self.simulate(rule, return_details=False)
 
     class _LinExpr:
-        def __init__(self, a_u: np.ndarray, a_w: dict[int, float] | None = None, c: float = 0.0):
+        def __init__(
+            self,
+            a_u: np.ndarray,
+            a_w: dict[int, float] | None = None,
+            a_z: dict[int, float] | None = None,
+            c: float = 0.0,
+        ):
             self.a_u = np.asarray(a_u, dtype=float).reshape(-1)
             self.a_w = {} if a_w is None else dict(a_w)
+            self.a_z = {} if a_z is None else dict(a_z)
             self.c = float(c)
 
         def add(self, other: "IRFOC._LinExpr") -> "IRFOC._LinExpr":
@@ -299,22 +330,34 @@ class IRFOC:
             a_w = dict(self.a_w)
             for k, v in other.a_w.items():
                 a_w[k] = a_w.get(k, 0.0) + float(v)
-            return IRFOC._LinExpr(a_u, a_w, self.c + other.c)
+            a_z = dict(self.a_z)
+            for k, v in other.a_z.items():
+                a_z[k] = a_z.get(k, 0.0) + float(v)
+            return IRFOC._LinExpr(a_u, a_w, a_z, self.c + other.c)
 
         def scale(self, s: float) -> "IRFOC._LinExpr":
             s = float(s)
             a_u = s * self.a_u
             a_w = {k: s * v for k, v in self.a_w.items()}
-            return IRFOC._LinExpr(a_u, a_w, s * self.c)
+            a_z = {k: s * v for k, v in self.a_z.items()}
+            return IRFOC._LinExpr(a_u, a_w, a_z, s * self.c)
 
-        def to_continuous_vector(self, nu: int, nw: int) -> np.ndarray:
-            out = np.zeros(nu + nw, dtype=float)
+        def to_continuous_vector(self, nu: int, nw: int, nz: int) -> np.ndarray:
+            out = np.zeros(nu + nw + nz, dtype=float)
             out[:nu] = self.a_u
             for k, v in self.a_w.items():
                 out[nu + k] += float(v)
+            for k, v in self.a_z.items():
+                out[nu + nw + k] += float(v)
             return out
 
-        def bounds(self, u_lb: np.ndarray, u_ub: np.ndarray, w_bounds: list[tuple[float, float]]) -> tuple[float, float]:
+        def bounds(
+            self,
+            u_lb: np.ndarray,
+            u_ub: np.ndarray,
+            w_bounds: list[tuple[float, float]],
+            z_bounds: list[tuple[float, float]] | None = None,
+        ) -> tuple[float, float]:
             lo = self.c + float(np.sum(np.where(self.a_u >= 0, self.a_u * u_lb, self.a_u * u_ub)))
             hi = self.c + float(np.sum(np.where(self.a_u >= 0, self.a_u * u_ub, self.a_u * u_lb)))
             for k, v in self.a_w.items():
@@ -325,6 +368,16 @@ class IRFOC:
                 else:
                     lo += v * wu
                     hi += v * wl
+            if z_bounds is None:
+                z_bounds = []
+            for k, v in self.a_z.items():
+                zl, zu = z_bounds[k] if k < len(z_bounds) else (0.0, 1.0)
+                if v >= 0:
+                    lo += v * zl
+                    hi += v * zu
+                else:
+                    lo += v * zu
+                    hi += v * zl
             return float(lo), float(hi)
 
     def simulate_piecewise(
@@ -359,8 +412,11 @@ class IRFOC:
         if str(objective).lower() not in {"feasible", "min_l1_shocks", "min_l1", "l1"}:
             raise ValueError("objective must be 'feasible' or 'min_l1_shocks'.")
 
-        # Max-node records: (w_idx, left_expr, right_expr)
-        max_nodes: list[tuple[int, IRFOC._LinExpr, IRFOC._LinExpr]] = []
+        # Max-node records: (w_idx, z_idx, left_expr, right_expr)
+        max_nodes: list[tuple[int, int, IRFOC._LinExpr, IRFOC._LinExpr]] = []
+        # Indicator-node records: (z_idx, g_expr, eps) where z=1 iff g <= 0.
+        ind_nodes: list[tuple[int, IRFOC._LinExpr, float]] = []
+        next_z = 0
 
         def baseline_var_expr(var: sympy.Expr, t: int) -> "IRFOC._LinExpr":
             j = self._baseline_variables.index(var)
@@ -372,6 +428,7 @@ class IRFOC:
             return IRFOC._LinExpr(a_u=np.zeros(nu, dtype=float), c=float(x))
 
         def compile_lin(expr: sympy.Expr, t: int) -> "IRFOC._LinExpr":
+            nonlocal next_z
             if expr.is_number:
                 return const_expr(float(expr))
             if expr in self._baseline_variables:
@@ -420,8 +477,34 @@ class IRFOC:
                 left = compile_lin(args[0], t)
                 right = compile_lin(args[1], t)
                 w_idx = len(max_nodes)
-                max_nodes.append((w_idx, left, right))
+                z_idx = next_z
+                next_z += 1
+                max_nodes.append((w_idx, z_idx, left, right))
                 return IRFOC._LinExpr(a_u=np.zeros(nu, dtype=float), a_w={w_idx: 1.0}, c=0.0)
+
+            if expr.func is INDICATOR_FN:
+                if len(expr.args) != 1:
+                    raise ValueError("indicator(cond) takes exactly one argument.")
+                cond = expr.args[0]
+                if isinstance(cond, bool):
+                    return const_expr(1.0 if cond else 0.0)
+                if not isinstance(cond, Relational):
+                    raise ValueError("indicator(cond) requires a relational condition, e.g. indicator(pi<0).")
+
+                lhs = compile_lin(cond.lhs, t)
+                rhs = compile_lin(cond.rhs, t)
+                if lhs.a_z or rhs.a_z:
+                    raise ValueError("indicator conditions may not depend on other indicators.")
+                g = lhs.add(rhs.scale(-1.0))
+
+                eps = 1e-9 if cond.rel_op in {"<", ">"} else 1e-12
+                if cond.rel_op in {">", ">="}:
+                    g = g.scale(-1.0)  # g <= 0 encodes lhs >= rhs
+
+                z_idx = next_z
+                next_z += 1
+                ind_nodes.append((z_idx, g, eps))
+                return IRFOC._LinExpr(a_u=np.zeros(nu, dtype=float), a_z={z_idx: 1.0}, c=0.0)
 
             raise ValueError(f"Unsupported function in piecewise rule: {expr.func}")
 
@@ -434,7 +517,7 @@ class IRFOC:
                 eq_forms.append(lhs.add(rhs.scale(-1.0)))
 
         nw = len(max_nodes)
-        nb = nw
+        nb = next_z
         ns = nu if use_l1 else 0
         offset_u = 0
         offset_s = nu
@@ -444,7 +527,7 @@ class IRFOC:
 
         w_bounds: list[tuple[float, float]] = []
         # Compute bounds for each w node in creation order (postorder by construction).
-        for w_idx, left, right in max_nodes:
+        for w_idx, _z_idx, left, right in max_nodes:
             aL, aU = left.bounds(u_lb, u_ub, w_bounds)
             bL, bU = right.bounds(u_lb, u_ub, w_bounds)
             w_bounds.append((max(aL, bL), max(aU, bU)))
@@ -454,10 +537,12 @@ class IRFOC:
         # Equality constraints for the rule(s): form == 0.
         for form in eq_forms:
             A = np.zeros((1, nvar), dtype=float)
-            cont = form.to_continuous_vector(nu, nw)
+            cont = form.to_continuous_vector(nu, nw, nb)
             A[0, offset_u : offset_u + nu] = cont[:nu]
             if nw:
-                A[0, offset_w : offset_w + nw] = cont[nu:]
+                A[0, offset_w : offset_w + nw] = cont[nu : nu + nw]
+            if nb:
+                A[0, offset_z : offset_z + nb] = cont[nu + nw :]
             constraints.append(LinearConstraint(A, lb=[-form.c], ub=[-form.c]))
 
         # L1 objective constraints: s >= u and s >= -u.
@@ -473,17 +558,18 @@ class IRFOC:
             constraints.append(LinearConstraint(A2, lb=np.zeros(nu), ub=np.inf * np.ones(nu)))
 
         # Max node constraints (Big-M).
-        for w_idx, left, right in max_nodes:
-            z_idx = w_idx
+        for w_idx, z_idx, left, right in max_nodes:
 
             # w - left >= 0, w - right >= 0
             for operand in (left, right):
                 A = np.zeros((1, nvar), dtype=float)
-                cont = operand.to_continuous_vector(nu, nw)
+                cont = operand.to_continuous_vector(nu, nw, nb)
                 A[0, offset_w + w_idx] = 1.0
                 A[0, offset_u : offset_u + nu] = -cont[:nu]
                 if nw:
-                    A[0, offset_w : offset_w + nw] += -cont[nu:]
+                    A[0, offset_w : offset_w + nw] += -cont[nu : nu + nw]
+                if nb:
+                    A[0, offset_z : offset_z + nb] += -cont[nu + nw :]
                 constraints.append(LinearConstraint(A, lb=[operand.c], ub=[np.inf]))
 
             aL, aU = left.bounds(u_lb, u_ub, w_bounds)
@@ -493,23 +579,64 @@ class IRFOC:
 
             # w - left <= M1*(1-z)  -> w - left + M1*z <= left.c + M1
             A = np.zeros((1, nvar), dtype=float)
-            cont = left.to_continuous_vector(nu, nw)
+            cont = left.to_continuous_vector(nu, nw, nb)
             A[0, offset_w + w_idx] = 1.0
             A[0, offset_u : offset_u + nu] = -cont[:nu]
             if nw:
-                A[0, offset_w : offset_w + nw] += -cont[nu:]
+                A[0, offset_w : offset_w + nw] += -cont[nu : nu + nw]
+            if nb:
+                A[0, offset_z : offset_z + nb] += -cont[nu + nw :]
             A[0, offset_z + z_idx] = M1
             constraints.append(LinearConstraint(A, lb=[-np.inf], ub=[left.c + M1]))
 
             # w - right <= M2*z  -> w - right - M2*z <= right.c
             A = np.zeros((1, nvar), dtype=float)
-            cont = right.to_continuous_vector(nu, nw)
+            cont = right.to_continuous_vector(nu, nw, nb)
             A[0, offset_w + w_idx] = 1.0
             A[0, offset_u : offset_u + nu] = -cont[:nu]
             if nw:
-                A[0, offset_w : offset_w + nw] += -cont[nu:]
+                A[0, offset_w : offset_w + nw] += -cont[nu : nu + nw]
+            if nb:
+                A[0, offset_z : offset_z + nb] += -cont[nu + nw :]
             A[0, offset_z + z_idx] = -M2
             constraints.append(LinearConstraint(A, lb=[-np.inf], ub=[right.c]))
+
+        # Indicator node constraints: z=1 iff g<=0 (within epsilon).
+        z_bounds = [(0.0, 1.0) for _ in range(nb)]
+        for z_idx, g, eps in ind_nodes:
+            g_lo, g_hi = g.bounds(u_lb, u_ub, w_bounds, z_bounds=None)
+            if g_hi <= 0.0:
+                A = np.zeros((1, nvar), dtype=float)
+                A[0, offset_z + z_idx] = 1.0
+                constraints.append(LinearConstraint(A, lb=[1.0], ub=[1.0]))
+                continue
+            if g_lo >= eps:
+                A = np.zeros((1, nvar), dtype=float)
+                A[0, offset_z + z_idx] = 1.0
+                constraints.append(LinearConstraint(A, lb=[0.0], ub=[0.0]))
+                continue
+
+            M_pos = max(g_hi, 0.0) + 1e-12
+            M_neg = max(eps - g_lo, 0.0) + 1e-12
+
+            cont = g.to_continuous_vector(nu, nw, nb)
+            # g <= M_pos*(1-z)  -> g + M_pos*z <= M_pos
+            A = np.zeros((1, nvar), dtype=float)
+            A[0, offset_u : offset_u + nu] = cont[:nu]
+            if nw:
+                A[0, offset_w : offset_w + nw] = cont[nu : nu + nw]
+            A[0, offset_z : offset_z + nb] = cont[nu + nw :]
+            A[0, offset_z + z_idx] += M_pos
+            constraints.append(LinearConstraint(A, lb=[-np.inf], ub=[M_pos - g.c]))
+
+            # g >= eps - M_neg*z  -> g + M_neg*z >= eps
+            A = np.zeros((1, nvar), dtype=float)
+            A[0, offset_u : offset_u + nu] = cont[:nu]
+            if nw:
+                A[0, offset_w : offset_w + nw] = cont[nu : nu + nw]
+            A[0, offset_z : offset_z + nb] = cont[nu + nw :]
+            A[0, offset_z + z_idx] += M_neg
+            constraints.append(LinearConstraint(A, lb=[eps - g.c], ub=[np.inf]))
 
         c = np.zeros(nvar, dtype=float)
         if use_l1:
