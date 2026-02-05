@@ -638,7 +638,7 @@ class LinearDSGEModel(StateSpaceModel):
         qz_criterium = float(kwargs.pop("qz_criterium", 1 + 1e-6))
         return_diagnostics = bool(kwargs.pop("return_diagnostics", False))
 
-        if use_cache:
+        if use_cache and self.cached_lre_matrices is not None:
             G0, G1, PSI, PPI = self.cached_lre_matrices
         else:
             G0 = self.GAM0(para, *args, **kwargs)
@@ -692,6 +692,57 @@ class LinearDSGEModel(StateSpaceModel):
             RC = 1
 
         return TT, RR, RC
+
+    def determinacy_report(
+        self,
+        para,
+        qz_criteria=(1 + 1e-6,),
+        anticipated_h: int = 0,
+        use_cache: bool = False,
+        *args,
+        **kwargs,
+    ):
+        """
+        Return a lightweight determinacy report for one or more QZ thresholds.
+
+        This is a convenience wrapper around `solve_LRE(..., return_diagnostics=True)`
+        that summarizes the key `gensys` diagnostics used for existence/uniqueness.
+        """
+        if isinstance(qz_criteria, (int, float, np.floating)):
+            qz_list = [float(qz_criteria)]
+        else:
+            qz_list = [float(x) for x in qz_criteria]
+
+        reports = []
+        for div in qz_list:
+            TT, RR, RC = self.solve_LRE(
+                para,
+                anticipated_h=anticipated_h,
+                use_cache=use_cache,
+                qz_criterium=div,
+                return_diagnostics=True,
+                *args,
+                **kwargs,
+            )
+            diag = getattr(self, "last_gensys_diagnostics", None)
+
+            entry = {"qz_criterium": div, "rc": int(RC)}
+            if isinstance(diag, dict):
+                eig = np.asarray(diag.get("eig", []))
+                entry.update(
+                    {
+                        "nstable": int(diag.get("nstable", 0)),
+                        "nunstable": int(diag.get("nunstable", 0)),
+                        "coincident_zeros": bool(diag.get("coincident_zeros", False)),
+                        "min_sv_unstable": float(np.min(diag["sv_unstable"])) if np.size(diag.get("sv_unstable")) else None,
+                        "max_sv_loose": float(np.max(diag["sv_loose"])) if np.size(diag.get("sv_loose")) else None,
+                        "eig_modulus_max": float(np.max(np.abs(eig))) if eig.size else None,
+                        "eig_modulus_min": float(np.min(np.abs(eig))) if eig.size else None,
+                    }
+                )
+            reports.append(entry)
+
+        return {"by_qz": reports}
 
     def system_matrices(self, para, *args, **kwargs):
 
