@@ -265,6 +265,8 @@ class PerturbationDSGEModel:
         seed : int | None
         resample_threshold : float in (0,1]
         filter : str (must be 'particle_filter')
+        y : array-like or pandas.DataFrame
+            Override the compiled model's data for this likelihood evaluation.
         """
         t0 = kwargs.pop("t0", self.t0)
         yy = _as_2d_array(kwargs.pop("y", self.yy))

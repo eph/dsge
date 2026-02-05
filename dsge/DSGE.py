@@ -442,6 +442,11 @@ Equations:
             pruned perturbation model (particle filter likelihood).
         pruning : bool
             For `order=2`, use Dynare-style pruning for simulation/filtering.
+        nonlinear_observables : {"error", "linearize"}
+            Only used when `order=2`. If `"error"` (default), observable equations must
+            be affine in current-period endogenous variables. If `"linearize"`, allow
+            nonlinear observables and interpret them via a first-order linearization
+            at the steady state (still disallow lags/leads and shocks in observables).
         """
         if order == 2:
             from .perturbation_model import PerturbationDSGEModel
