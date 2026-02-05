@@ -1,7 +1,7 @@
 dsge
 ====
 ![Coverage](badges/coverage.svg)
-A simple Python (3+) package for Dynamic Stochastic General Equilibrium (DSGE) models.
+A simple Python (3.10+) package for Dynamic Stochastic General Equilibrium (DSGE) models.
 
 This was originally forked from Pablo Winant's (excellent) package
 dolo.  (See [https://github.com/EconForge/dolo].)  I wrote this mainly

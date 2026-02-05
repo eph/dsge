@@ -56,7 +56,9 @@ keeps the particle filter well-defined.
 If your model uses nonlinear observables (e.g. `xobs: exp(x)`), you’ll need to:
 
 - change the observable definition (preferred), or
-- compile/order=1 for now (linearized measurement), or
+- compile/order=1 (linearized measurement), or
+- compile/order=2 with `nonlinear_observables="linearize"` to interpret observables via a first-order linearization
+  at the steady state (recommended only if you understand the approximation), or
 - introduce explicit measurement-error structure and/or an auxiliary-state construction (future work).
 
 ## Determinacy and QZ Threshold
@@ -95,4 +97,3 @@ DSGE_RUN_DYNARE=1 .venv/bin/python -m pytest -q dsge/tests/test_dynare_integrati
 
 If your `dynare` wrapper can’t locate Dynare’s MATLAB/Octave files, set `DYNARE_ROOT` to the Dynare source root
 (the directory containing `matlab/dynare.m`).
-
