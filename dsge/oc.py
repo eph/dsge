@@ -36,7 +36,7 @@ def parse_loss(loss_string: str,
         raise ValueError("Leaded variables in the loss function")
     
     W = Matrix(n_endog, n_endog, lambda i, j: loss.diff(endogenous_variables[i]).diff(endogenous_variables[j]))
-    Q = Matrix(n_policy, n_policy, lambda i, j: loss.diff(policy_instruments[j]).diff(policy_instruments[j]))
+    Q = Matrix(n_policy, n_policy, lambda i, j: loss.diff(policy_instruments[i]).diff(policy_instruments[j]))
 
     return W, Q
 

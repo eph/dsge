@@ -26,6 +26,19 @@ class TestOC(TestCase):
         assert_array_almost_equal(W, np.array([[2, 1], [1, 2]]))
         assert_array_almost_equal(Q, np.array([[2]]))
 
+    def test_parse_multi_instrument_Q(self):
+        from dsge.symbols import Variable, Parameter
+
+        endog = [Variable("x"), Variable("y")]
+        policy = [Variable("z"), Variable("w")]
+        params = [Parameter("a"), Parameter("b")]
+
+        loss = "a*x**2 + b*y**2 + z**2 + 3*w**2 + z*w"
+        _, Q = parse_loss(loss, endog, policy, params)
+
+        Q = Q.subs({params[0]: 1, params[1]: 1})
+        assert_array_almost_equal(Q, np.array([[2, 1], [1, 6]]))
+
     # Note: test_A_matrices removed due to reliance on local file path; consider adding a portable fixture later.
 
     def test_interest_rate_smoothing(self):
@@ -103,28 +116,12 @@ calibration:
         irf_simple = mod_simple.impulse_response(p0)
         irf_commit = mod_commit.impulse_response(p0)
         irf_discrt = mod_discrt.impulse_response(p0)
-        
-        import matplotlib.pyplot as plt
-        fig, ax = plt.subplots(2, 3, figsize=(10, 6), sharex=True)
 
-        irf_simple['eu'][['y', 'pi', 'i']].plot(ax=ax[0], subplots=True, color='C0', legend=False)
-        irf_commit['eu'][['y', 'pi', 'i']].plot(ax=ax[0], subplots=True, color='C1', legend=False)
-        irf_discrt['eu'][['y', 'pi', 'i']].plot(ax=ax[0], subplots=True, color='C2', legend=False, linestyle='dashed')
-        ax[0,0].legend(['Taylor Rule', 'Commitment', 'Discretion'])
-        # Add super title in the middle above the first row of plots
-        fig.text(0.5, 0.95, "IRFs to Supply Shock", ha='center', va='center', fontsize=14)
-         
-        # Plot and set titles for the second row of plots
-        irf_simple['er'][['y', 'pi', 'i']].plot(ax=ax[1], subplots=True, color='C0', legend=False)
-        irf_commit['er'][['y', 'pi', 'i']].plot(ax=ax[1], subplots=True, color='C1', legend=False)
-        irf_discrt['er'][['y', 'pi', 'i']].plot(ax=ax[1], subplots=True, color='C2', legend=False, linestyle='dashed')
-         
-        [axi.set_title(t) for axi, t in zip(ax[0], ['Output Gap', 'Inflation', 'Interest Rate'])]
-        [axi.set_title(t) for axi, t in zip(ax[1], ['Output Gap', 'Inflation', 'Interest Rate'])]
-        # Add super title in the middle above the second row of plots
-        fig.text(0.5, 0.51, "IRFs to Natural Rate Shock", ha='center', va='center', fontsize=14)
-        fig.subplots_adjust(hspace=0.4)
-        plt.show()
+        for irfs in (irf_simple, irf_commit, irf_discrt):
+            self.assertIn("eu", irfs)
+            self.assertIn("er", irfs)
+            self.assertTrue(set(["y", "pi", "i"]).issubset(irfs["eu"].columns))
+            self.assertTrue(set(["y", "pi", "i"]).issubset(irfs["er"].columns))
 
 
 #    def test_compile_commitment2(self):
