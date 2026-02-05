@@ -34,6 +34,12 @@ c = m.compile_model(order=2, pruning=True)
 ll = c.log_lik(p0, nparticles=2000, seed=0)
 ```
 
+If you have nonlinear observables (measurement equations), you can opt into a linearized measurement equation:
+
+```python
+c = m.compile_model(order=2, nonlinear_observables="linearize")
+```
+
 Particle-filter tuning lives on the likelihood call:
 
 - `nparticles` (int): number of particles (default is model-dependent; typically a few thousand)

@@ -11,6 +11,17 @@ This project uses `setuptools_scm` (version comes from git tags).
 - Order-2 compile: optional `nonlinear_observables="linearize"` to allow nonlinear observables via linearization
 - Linear compilation: faster `python_sims_matrices(method="jacobian")` with safe fallback
 
+## 0.2.2 (2026-02-05)
+
+- Docs: `order=2` guide mentions `nonlinear_observables="linearize"` option
+- CI: improve docs build caching key for MkDocs dependencies
+
+## 0.2.1 (2026-02-05)
+
+- CI: align test matrix with Python >= 3.10 and install MkDocs plugin dependencies
+- Tests: add regression guard for `python_sims_matrices` cache early-return
+- Docs: clarify `compile_model(..., nonlinear_observables=...)` and order-2 `log_lik` arguments
+
 ## 0.1.1 (2026-02-05)
 
 - `oc.py`: fix loss-matrix parsing for multiple policy instruments
