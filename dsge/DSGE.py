@@ -263,7 +263,7 @@ Equations:
     def p0(self):
         return list(map(lambda x: self["calibration"][x], self.parameters))
 
-    def python_sims_matrices(self, matrix_format="numeric"):
+    def python_sims_matrices(self, matrix_format="numeric", method: str = "auto"):
         if matrix_format != "symbolic":
             already = (
                 callable(getattr(self, "GAM0", None))
@@ -307,55 +307,71 @@ Equations:
         PPI = zeros(svar, rvar)
 
 
-        for eq_i, eq in enumerate(eq_cond):
-            eq0 = eq.set_eq_zero
-            curr_var = [v for v in eq.atoms(Variable) if v.date >= 0 and v in vpos]
-            #print('---------------------------------------')
-            #print(f'Equation: {eq}')
-            #print(f'current variables {list(curr_var)}')
-            for v in curr_var:
-                #print(f'\tdifferentiating wrt to {v}')
-                v_j = vpos[v]
-                GAM0[eq_i, v_j] = -_subs_steady_state(eq0.diff(v))
+        method = str(method).lower()
+        use_jacobian = method in {"auto", "jacobian", "jac"}
 
-            past_var = [v for v in eq.atoms() if v in lpos]
-            #print(f'past variables: {list(past_var)}.')
-            for v in past_var:
-                deq_dv = _subs_steady_state(eq0.diff(v))
-                v_j = lpos[v]
-                GAM1[eq_i, v_j] = deq_dv
+        if use_jacobian:
+            try:
+                res = sympy.Matrix([eq.set_eq_zero for eq in eq_cond])
+                subs_ss = {a: 0 for a in (res.atoms(Variable) | res.atoms(Shock))}
 
-                #print(f'\tdifferentiating wrt to {v}')
+                GAM0 = (-res.jacobian(vlist)).subs(subs_ss)
+                GAM1 = (res.jacobian(llist)).subs(subs_ss)
+                PSI = (res.jacobian(slist)).subs(subs_ss) if evar else zeros(svar, 0)
+                PPI = (res.jacobian(self["re_errors"])).subs(subs_ss) if rvar else zeros(svar, 0)
+            except Exception as e:
+                if method in {"jacobian", "jac"}:
+                    raise
+                logger.warning(f"Falling back to loop differentiation in python_sims_matrices: {e}")
+                use_jacobian = False
 
-            #print(f'GAM1: {GAM1[eq_i,:]}')
+        if not use_jacobian:
+            for eq_i, eq in enumerate(eq_cond):
+                eq0 = eq.set_eq_zero
+                curr_var = [v for v in eq.atoms(Variable) if v.date >= 0 and v in vpos]
+                for v in curr_var:
+                    v_j = vpos[v]
+                    GAM0[eq_i, v_j] = -_subs_steady_state(eq0.diff(v))
 
-            shocks = list(eq.atoms(Shock))
+                past_var = [v for v in eq.atoms() if v in lpos]
+                for v in past_var:
+                    deq_dv = _subs_steady_state(eq0.diff(v))
+                    v_j = lpos[v]
+                    GAM1[eq_i, v_j] = deq_dv
 
-            for s in shocks:
-                if s not in self["re_errors"]:
-                    s_j = spos[s]
-                    PSI[eq_i, s_j] = _subs_steady_state(eq0.diff(s))
-                else:
-                    s_j = rpos[s]
-                    PPI[eq_i, s_j] = _subs_steady_state(eq0.diff(s))
+                shocks = list(eq.atoms(Shock))
 
+                for s in shocks:
+                    if s not in self["re_errors"]:
+                        s_j = spos[s]
+                        PSI[eq_i, s_j] = _subs_steady_state(eq0.diff(s))
+                    else:
+                        s_j = rpos[s]
+                        PPI[eq_i, s_j] = _subs_steady_state(eq0.diff(s))
 
-            # print "\r Differentiating equation {0} of {1}.".format(eq_i, len(eq_cond)),
+                # print "\r Differentiating equation {0} of {1}.".format(eq_i, len(eq_cond)),
         DD = zeros(ovar, 1)
         ZZ = zeros(ovar, svar)
 
-        eq_i = 0
-        for obs in self["observables"]:
-            eq = self["obs_equations"][obs.name]
+        if use_jacobian:
+            obs_exprs = [self["obs_equations"][obs.name] for obs in self["observables"]]
+            obs_res = sympy.Matrix(obs_exprs)
+            subs_ss_obs = {a: 0 for a in (obs_res.atoms(Variable) | obs_res.atoms(Shock))}
+            DD = obs_res.subs(subs_ss_obs)
+            ZZ = (obs_res.jacobian(vlist)).subs(subs_ss_obs)
+        else:
+            eq_i = 0
+            for obs in self["observables"]:
+                eq = self["obs_equations"][obs.name]
 
-            DD[eq_i, 0] = _subs_steady_state(eq)
+                DD[eq_i, 0] = _subs_steady_state(eq)
 
-            curr_var = [v for v in eq.atoms(Variable) if v.date >= 0 and v in vpos]
-            for v in curr_var:
-                v_j = vpos[v]
-                ZZ[eq_i, v_j] = _subs_steady_state(eq.diff(v))
+                curr_var = [v for v in eq.atoms(Variable) if v.date >= 0 and v in vpos]
+                for v in curr_var:
+                    v_j = vpos[v]
+                    ZZ[eq_i, v_j] = _subs_steady_state(eq.diff(v))
 
-            eq_i += 1
+                eq_i += 1
 
         if matrix_format == "symbolic":
             QQ = self["covariance"]
