@@ -3,7 +3,7 @@
 This guide shows a minimal end-to-end flow: install, load a model, compile it, and get system matrices/IRFs.
 
 Prerequisites
-- Python 3.9+
+- Python 3.10+
 - Optional: uv for fast, reproducible runs (recommended)
 
 Install (dev)
@@ -59,4 +59,13 @@ Run tests (optional)
 ```
 # Quick import check
 uv run python -c "import dsge; print(dsge.__file__)"
+```
+
+Second-order (optional / experimental)
+```python
+# Second-order solution and particle-filter likelihood
+sol = m.solve_second_order(p0)
+c2 = m.compile_model(order=2)
+ll2 = c2.log_lik(p0, nparticles=2000, seed=0)
+print("order=2 log lik:", ll2)
 ```

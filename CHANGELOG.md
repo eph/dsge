@@ -19,4 +19,3 @@ This project uses `setuptools_scm` (version comes from git tags).
 
 - Gensys determinacy robustness improvements (`qz_criterium` support + diagnostics)
 - Compilation speedups via caching for repeated matrix construction
-

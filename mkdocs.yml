@@ -32,6 +32,7 @@ nav:
   - Getting Started: getting-started.md
   - Quickstart: quickstart.md
   - State-Space: state-space.md
+  - Second Order (LRE): second-order.md
   - Usage: usage.md
   - Parsing DSL: parsing.md
   - OBC (ZLB): obc.md

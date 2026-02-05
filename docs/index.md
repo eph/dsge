@@ -6,6 +6,7 @@ Modern tools for building, validating, and working with Dynamic Stochastic Gener
 
 - YAML models → parsed and validated
 - Linearization → state‑space matrices for estimation and simulation
+- Second-order perturbation (LRE) → pruned decision rules + particle filter (experimental)
 - Utilities → priors, filtering, Markov switching, and more
 
 Quick example:
@@ -19,3 +20,4 @@ CC, TT, RR, QQ, DD, ZZ, HH = lin.system_matrices(m.p0())
 Use the left navigation to explore guides and the API reference.
 
 - See Parsing DSL: `docs/parsing.md` for supported syntax in YAML equations.
+- See Second Order (LRE): `docs/second-order.md` for `order=2` solving/likelihood.
