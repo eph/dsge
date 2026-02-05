@@ -52,8 +52,10 @@ class SecondOrderSolution:
         nu = self.gu.shape[1]
 
         ghxx = self.gxx.reshape(ny, nx * nx, order="F")
-        ghxu = self.gxu.reshape(ny, nx * nu, order="F")
-        ghuu = self.guu.reshape(ny, nu * nu, order="F")
+        # Dynare flattens `ghxu`/`ghuu` in a state-first / shock-first manner, which matches
+        # NumPy's row-major ("C") order for the trailing dimensions.
+        ghxu = self.gxu.reshape(ny, nx * nu, order="C")
+        ghuu = self.guu.reshape(ny, nu * nu, order="C")
         ghs2 = self.gss.reshape(ny, 1)
 
         return {
