@@ -7,7 +7,7 @@ import numpy as np
 import pandas as p
 
 from .logging_config import get_logger
-from .symbols import Variable
+from .symbols import Shock, Variable
 
 logger = get_logger("dsge.perturbation")
 
@@ -124,6 +124,7 @@ class PerturbationDSGEModel:
         parameter_names=None,
         order: int = 2,
         pruning: bool = True,
+        nonlinear_observables: str = "error",
     ):
         if order != 2:
             raise ValueError("PerturbationDSGEModel currently supports only order=2.")
@@ -139,6 +140,7 @@ class PerturbationDSGEModel:
 
         self.prior = prior
         self.pruning = bool(pruning)
+        self.nonlinear_observables = str(nonlinear_observables)
 
         self._nendo = len(self.dsge_model["var_ordering"])
 
@@ -150,7 +152,11 @@ class PerturbationDSGEModel:
         self._validate_linear_observables()
 
     def _validate_linear_observables(self) -> None:
-        # Enforce: observables depend only on current-period endogenous vars and are affine.
+        # Enforce: observables depend only on current-period endogenous vars.
+        #
+        # By default, we also require observables to be affine, since the order-2 likelihood currently
+        # assumes a linear measurement equation. If `nonlinear_observables='linearize'`, we allow
+        # nonlinear observables and interpret them via a first-order linearization at the steady state.
         if "observables" not in self.dsge_model:
             return
         endo_vars = list(self.dsge_model["var_ordering"])
@@ -161,6 +167,10 @@ class PerturbationDSGEModel:
         for obs in self.dsge_model["observables"]:
             expr = obs_eqs.get(obs.name, None)
             if expr is None:
+                continue
+            shocks = list(expr.atoms(Shock))
+            if shocks:
+                offenders.append((obs.name, "shocks", [str(s) for s in shocks]))
                 continue
             dated = [v for v in expr.atoms(Variable) if getattr(v, "date", 0) != 0]
             if dated:
@@ -174,6 +184,14 @@ class PerturbationDSGEModel:
                 offenders.append((obs.name, "non-polynomial", str(expr)))
 
         if offenders:
+            if self.nonlinear_observables.lower() in {"linearize", "lin", "approx"}:
+                hard = [o for o in offenders if o[1] in {"dated vars", "shocks"}]
+                if not hard:
+                    logger.warning(
+                        "Order-2 model: allowing nonlinear observables via first-order linearization at the steady "
+                        "state. Set nonlinear_observables='error' to enforce strictly affine observables."
+                    )
+                    return
             msg = (
                 "For order=2 models, observable equations must be affine in current (date=0) endogenous "
                 "variables. Nonlinear or dated observables are not yet supported.\n"

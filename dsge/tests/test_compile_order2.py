@@ -78,6 +78,39 @@ calibration:
         m.compile_model(order=2)
 
 
+def test_compile_model_order2_allows_linearized_nonlinear_observables():
+    yaml_text = """
+declarations:
+  name: order2_bad_obs_linearize
+  variables: [x]
+  shocks: [e]
+  parameters: [rho]
+  observables: [xobs]
+  measurement_errors: [me_xobs]
+
+equations:
+  model:
+    - x = rho*x(-1) + e
+  observables:
+    xobs: exp(x)
+
+calibration:
+  parameters:
+    rho: 0.9
+  covariance:
+    e: 0.01
+  measurement_errors:
+    me_xobs: 1e-4
+    """
+    m = read_yaml(io.StringIO(yaml_text))
+    p0 = m.p0()
+    c = m.compile_model(order=2, nonlinear_observables="linearize")
+
+    y = np.zeros((10, 1))
+    ll = c.log_lik(p0, y=y, nparticles=250, seed=0)
+    assert np.isfinite(ll)
+
+
 def test_compile_model_order2_particle_filter_weight_propagation():
     """
     Regression: when not resampling, particle weights must be propagated across time.

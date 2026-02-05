@@ -414,7 +414,7 @@ Equations:
 
         return GAM0, GAM1, PSI, PPI
 
-    def compile_model(self, order=1, pruning=True):
+    def compile_model(self, order=1, pruning=True, nonlinear_observables: str = "error"):
         """
         Compile the DSGE model into an object with likelihood/simulation APIs.
 
@@ -460,6 +460,7 @@ Equations:
                 parameter_names=self.parameters,
                 order=2,
                 pruning=pruning,
+                nonlinear_observables=nonlinear_observables,
             )
 
         if order != 1:
