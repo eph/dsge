@@ -25,6 +25,9 @@ from .validation import validate_model_consistency
 from .translate import translate_fortran, make_fortran_model
 from .translate_cpp import translate_cpp
 
+# IRF-based counterfactual utilities (experimental)
+from .irfoc import IRFOC, IRFBasedCounterfactual
+
 # Version information via installed metadata or SCM fallback
 try:
     from importlib.metadata import version as _pkg_version, PackageNotFoundError as _PkgNotFound

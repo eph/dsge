@@ -103,3 +103,10 @@ DSGE_RUN_DYNARE=1 .venv/bin/python -m pytest -q dsge/tests/test_dynare_integrati
 
 If your `dynare` wrapper can’t locate Dynare’s MATLAB/Octave files, set `DYNARE_ROOT` to the Dynare source root
 (the directory containing `matlab/dynare.m`).
+
+## IRFOC (IRF-Based Counterfactuals)
+
+For linear (order=1) models, you can compute counterfactual paths by choosing an “instrument shock” sequence to
+enforce an affine policy rule along a baseline path (Fabian–James style).
+
+See `dsge.irfoc.IRFOC` (experimental).
