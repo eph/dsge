@@ -6,6 +6,10 @@ This project uses `setuptools_scm` (version comes from git tags).
 
 - Add `dsge.irfoc.IRFOC` (IRF-based counterfactual simulator) with an affine policy-rule parser
 
+## 0.2.6 (2026-02-05)
+
+- IRFOC: support `max()`/`min()` (nested) piecewise-affine rules via MILP (`simulate_piecewise`)
+
 ## 0.2.2 (2026-02-05)
 
 - Docs: `order=2` guide mentions `nonlinear_observables="linearize"` option

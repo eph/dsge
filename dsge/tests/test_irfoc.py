@@ -87,5 +87,9 @@ def test_irfoc_max_min_not_implemented():
 
     irfoc = IRFOC(m, baseline, instrument_shocks="em", p0=p0, compiled_model=lin)
 
-    with pytest.raises(NotImplementedError, match="max/min"):
-        irfoc.simulate("i = max(0, 1.5*pi)")
+    sim = irfoc.simulate("i = max(0.002, 1.5*pi + 0.1*y + 0.9*ilag)", return_details=False)
+    rhs = np.maximum(
+        0.002,
+        (1.5 * sim["pi"] + 0.1 * sim["y"] + 0.9 * sim["ilag"]).to_numpy(),
+    )
+    assert np.max(np.abs(sim["i"].to_numpy() - rhs)) < 1e-7

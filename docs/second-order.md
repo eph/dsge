@@ -109,4 +109,5 @@ If your `dynare` wrapper can’t locate Dynare’s MATLAB/Octave files, set `DYN
 For linear (order=1) models, you can compute counterfactual paths by choosing an “instrument shock” sequence to
 enforce an affine policy rule along a baseline path (Fabian–James style).
 
-See `dsge.irfoc.IRFOC` (experimental).
+See `dsge.irfoc.IRFOC` (experimental). Affine rules use a fast linear solve; rules containing `max()`/`min()` are
+solved via MILP (`IRFOC.simulate_piecewise`).
