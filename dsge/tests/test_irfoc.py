@@ -77,6 +77,28 @@ def test_irfoc_rejects_nonlinear_rules():
         irfoc.simulate("i = pi**2 + y")
 
 
+def test_irfoc_affine_rule_with_lagged_variable():
+    import io
+
+    m = read_yaml(io.StringIO(_simple_nk_yaml()))
+    lin = m.compile_model()
+    p0 = m.p0()
+
+    T = 40
+    cols = ["pi", "y", "i"]
+    baseline = lin.impulse_response(p0, h=T - 1)["er"].loc[:, cols]
+
+    irfoc = IRFOC(m, baseline, instrument_shocks="em", p0=p0, compiled_model=lin)
+    sim = irfoc.simulate("i = 1.7*pi + 0.2*y + 0.9*i(-1)", return_details=False)
+
+    i = sim["i"].to_numpy()
+    pi = sim["pi"].to_numpy()
+    y = sim["y"].to_numpy()
+    i_lag = np.r_[0.0, i[:-1]]
+    resid = i - (1.7 * pi + 0.2 * y + 0.9 * i_lag)
+    assert float(np.max(np.abs(resid))) < 1e-7
+
+
 def test_irfoc_max_min_not_implemented():
     import io
 

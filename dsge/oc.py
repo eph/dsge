@@ -1,10 +1,145 @@
 from sympy import Matrix, sympify, zeros, eye
-from .symbols import Variable, Parameter, Shock 
+from .symbols import Variable, Parameter, Shock, Equation
 from typing import List, Tuple
 from .StateSpaceModel import LinearDSGEModel
 from scipy.linalg import solve_discrete_lyapunov
 
 import numpy as np
+
+def _as_list(x):
+    if x is None:
+        return []
+    if isinstance(x, (list, tuple)):
+        return list(x)
+    return [x]
+
+
+def _as_policy_tools(policy_tools) -> List[Variable]:
+    tools = _as_list(policy_tools)
+    return [Variable(pt) if isinstance(pt, str) else pt for pt in tools]
+
+
+def _as_policy_shocks(policy_shocks) -> List[Shock]:
+    shocks = _as_list(policy_shocks)
+    return [Shock(s) if isinstance(s, str) else s for s in shocks]
+
+
+def _loss_uses_variable(loss_string: str, var: Variable, context: dict) -> bool:
+    try:
+        loss_expr = sympify(loss_string, locals=context)
+    except Exception:
+        # Conservative: if we cannot parse, assume it might be used.
+        return True
+    return var in loss_expr.atoms(Variable)
+
+
+def _find_difference_variable(model, tool: Variable) -> tuple[Variable | None, Equation | None]:
+    """
+    Look for a model variable `d` defined as a first difference of `tool`:
+
+        d = tool - tool(-1)
+
+    Returns (d, eq) if found, else (None, None).
+    """
+    for eq in model["equations"]:
+        lhs = eq.lhs
+        if not isinstance(lhs, Variable) or getattr(lhs, "date", 0) != 0:
+            continue
+        d = lhs
+        try:
+            poly = eq.set_eq_zero.expand()
+            if (poly - (d - tool + tool(-1))).expand() == 0:
+                return d, eq
+        except Exception:
+            continue
+    return None, None
+
+
+def _handle_lagged_policy_tools(
+    model,
+    *,
+    equations: List[Equation],
+    endogenous: List[Variable],
+    policy_tools: List[Variable],
+    loss_string: str,
+) -> tuple[List[Equation], List[Variable], List[Variable]]:
+    """
+    Handle lagged policy instruments in remaining constraints.
+
+    Strategy
+    --------
+    - If a lagged policy tool appears only inside an unused first-difference definition (e.g. `deli = i - i(-1)`),
+      and `deli` is not referenced in the loss, we drop that variable+equation.
+    - If such a first-difference variable *is* referenced in the loss, we reparameterize policy tools from `i`
+      to `deli` and add an accumulation constraint `i = i(-1) + deli`, while dropping the original policy rule
+      equation for `i` and the definition equation for `deli`.
+
+    This preserves Dennis-form structure (no lagged controls) while supporting the common interest-rate smoothing setup.
+    """
+    context = {str(v): v for v in model.variables + model["parameters"] + list(model["auxiliary_parameters"].keys())}
+
+    lagged_tools = set()
+    for eq in equations:
+        for v in eq.atoms(Variable):
+            if v.date < 0 and any(v.name == t.name for t in policy_tools):
+                lagged_tools.add(Variable(v.name))
+
+    if not lagged_tools:
+        return equations, endogenous, policy_tools
+
+    equations_out = list(equations)
+    endogenous_out = list(endogenous)
+    policy_tools_out = list(policy_tools)
+
+    for tool0 in list(lagged_tools):
+        tool = next((t for t in policy_tools_out if t.name == tool0.name), None)
+        if tool is None:
+            continue
+
+        diff_var, _diff_eq = _find_difference_variable(model, tool)
+        if diff_var is None:
+            raise NotImplementedError(
+                f"Policy tool {tool.name!r} appears lagged in constraints, but no difference variable "
+                f"of the form d = {tool.name} - {tool.name}(-1) was found. "
+                "Either add a difference variable (recommended) or rewrite the model to avoid lagged instruments."
+            )
+
+        uses_diff = _loss_uses_variable(loss_string, diff_var, context)
+
+        if not uses_diff:
+            # Drop the difference definition if it's not needed elsewhere.
+            appears_elsewhere = any((diff_var in eq.atoms(Variable)) and (eq.lhs != diff_var) for eq in equations_out)
+            if appears_elsewhere:
+                raise NotImplementedError(
+                    f"Difference variable {diff_var.name!r} is used outside its definition, "
+                    "but the loss does not reference it. Cannot safely eliminate lagged instruments."
+                )
+            equations_out = [eq for eq in equations_out if eq.lhs != diff_var]
+            endogenous_out = [v for v in endogenous_out if v != diff_var]
+            continue
+
+        # Reparameterize: make diff_var the policy tool and make tool endogenous.
+        equations_out = [eq for eq in equations_out if eq.lhs != diff_var]
+        endogenous_out = [v for v in endogenous_out if v != diff_var]
+        if tool not in endogenous_out:
+            endogenous_out.append(tool)
+
+        # Add accumulation constraint for the policy instrument level.
+        equations_out.append(Equation(tool, tool(-1) + diff_var))
+
+        policy_tools_out = [diff_var if t.name == tool.name else t for t in policy_tools_out]
+
+    # Final check: lagged policy tools should no longer appear in constraints.
+    for eq in equations_out:
+        for v in eq.atoms(Variable):
+            if v.date < 0 and any(v.name == t.name for t in policy_tools_out):
+                raise NotImplementedError(
+                    "Lagged policy instruments remain after preprocessing. "
+                    "Rewrite the model to avoid lagged instruments, or express smoothing via a difference variable."
+                )
+
+    return equations_out, endogenous_out, policy_tools_out
+
 
 def parse_loss(loss_string: str,
                endogenous_variables: List[Variable],
@@ -41,17 +176,30 @@ def parse_loss(loss_string: str,
     return W, Q
 
 
-def write_system_in_dennis_form(model, policy_tools, shock):
+def write_system_in_dennis_form(
+    model,
+    policy_tools,
+    shock,
+    *,
+    loss_string: str | None = None,
+    return_symbols: bool = False,
+):
+    """
+    Write a model in Dennis (2007) form.
+
+    Notes
+    -----
+    Dennis-form constraints support y_{t-1} and E_t y_{t+1}, and x_t and E_t x_{t+1}, but not x_{t-1}.
+    When `loss_string` is provided, we attempt to handle common interest-rate smoothing setups where
+    a lagged policy tool enters only through a first-difference auxiliary variable (e.g. `deli = i - i(-1)`).
+    """
 
     # if policy_tool isn't a list, make it one
-    if not isinstance(policy_tools, list):
-        policy_tools = [policy_tools]
-
-    # now turn policy tools into Variable, if not already
-    policy_tools = [Variable(pt) if isinstance(pt, str) else pt for pt in policy_tools]
-
-    if not isinstance(shock, Shock):
-        shock = Shock(shock)
+    policy_tools = _as_policy_tools(policy_tools)
+    policy_shocks = _as_policy_shocks(shock)
+    if len(policy_shocks) != 1:
+        raise ValueError("Dennis-form solvers require exactly one policy shock name.")
+    shock = policy_shocks[0]
 
     # check that policy tools are in model['variables']
     # and also construct a list of non-policy tools variables
@@ -70,12 +218,17 @@ def write_system_in_dennis_form(model, policy_tools, shock):
         raise ValueError("Some policy tools are not in the model")
 
 
-    # we also need to make an equation list,
-    # omitting the equations that are associated with policy tools
+    # we also need to make an equation list, omitting the equations that are associated with policy tools
     equations = []
     for eq in model['equations']:
         if not any([v == eq.lhs for v in policy_tools]):
             equations.append(eq)
+
+    if loss_string is not None:
+        equations, endogenous, policy_tools = _handle_lagged_policy_tools(
+            model, equations=equations, endogenous=endogenous, policy_tools=policy_tools, loss_string=loss_string
+        )
+        ny = len(endogenous)
 
     if len(equations) != ny:
         raise ValueError("Number of equations does not match number of endogenous variables")
@@ -104,7 +257,9 @@ def write_system_in_dennis_form(model, policy_tools, shock):
     names = {'nu': [str(s) for s in nonpolicyshocks],
              'x': [str(v) for v in policy_tools],
              'y': [str(v) for v in endogenous]}
-    return A0, A1, A2, A3, A4, A5, names
+    if not return_symbols:
+        return A0, A1, A2, A3, A4, A5, names
+    return A0, A1, A2, A3, A4, A5, names, endogenous, policy_tools, nonpolicyshocks
 
 
 def compile_commitment(model, loss_string, policy_instruments, policy_shocks=None, beta=0.99):
@@ -121,22 +276,22 @@ def compile_commitment(model, loss_string, policy_instruments, policy_shocks=Non
     Tuple[Matrix, Matrix]: Matrices W and Q calculated from the loss function.
     """
 
+    if policy_shocks is None:
+        raise ValueError("policy_shocks is required for Dennis-form solvers (e.g. 'em').")
+
     all_parameters = model['parameters'] + list(model['auxiliary_parameters'].keys())
     # parse the loss function
     if type(beta) == str:
         beta = sympify(beta, locals={str(p): p for p in all_parameters})
 
-    if not isinstance(policy_instruments, list):
-        policy_instruments = [policy_instruments]
+    policy_instruments = _as_policy_tools(policy_instruments)
 
+    # write the system in Dennis form (may augment for lagged instruments)
+    A0, A1, A2, A3, A4, A5, names, endogenous, policy_instruments, _nonpolicyshocks = write_system_in_dennis_form(
+        model, policy_instruments, policy_shocks, loss_string=loss_string, return_symbols=True
+    )
 
-
-    W, Q = parse_loss(loss_string, 
-                      [v for v in model.variables if str(v) not in policy_instruments],
-                      policy_instruments, all_parameters)
-
-    # write the system in Dennis form
-    A0, A1, A2, A3, A4, A5, names = write_system_in_dennis_form(model, policy_instruments, policy_shocks)
+    W, Q = parse_loss(loss_string, endogenous, policy_instruments, all_parameters)
 
     # solve the system
     ny = len(names['y'])
@@ -230,6 +385,7 @@ def compile_commitment(model, loss_string, policy_instruments, policy_shocks=Non
 
     nall = 2*(nx+ny*2)
     # get slice of model['covariance'] that omits policy_shocks
+    policy_shocks = [str(s) for s in _as_policy_shocks(policy_shocks)]
     nonpolicyshocks = [i for i, s in enumerate(model.shocks) if str(s) not in policy_shocks]
     QQ = model.lambdify(model['covariance'][nonpolicyshocks, :][:, nonpolicyshocks])
     DD = model.lambdify(zeros(nall, 1))
@@ -318,22 +474,22 @@ def compile_discretion(model, loss_string, policy_instruments, policy_shocks=Non
     Tuple[Matrix, Matrix]: Matrices W and Q calculated from the loss function.
     """
 
+    if policy_shocks is None:
+        raise ValueError("policy_shocks is required for Dennis-form solvers (e.g. 'em').")
+
     all_parameters = model['parameters'] + list(model['auxiliary_parameters'].keys())
     # parse the loss function
     if type(beta) == str:
         beta = sympify(beta, locals={str(p): p for p in all_parameters})
 
-    if not isinstance(policy_instruments, list):
-        policy_instruments = [policy_instruments]
+    policy_instruments = _as_policy_tools(policy_instruments)
 
+    # write the system in Dennis form (may augment for lagged instruments)
+    A0, A1, A2, A3, A4, A5, names, endogenous, policy_instruments, _nonpolicyshocks = write_system_in_dennis_form(
+        model, policy_instruments, policy_shocks, loss_string=loss_string, return_symbols=True
+    )
 
-
-    W, Q = parse_loss(loss_string, 
-                      [v for v in model.variables if str(v) not in policy_instruments],
-                      policy_instruments, all_parameters)
-
-    # write the system in Dennis form
-    A0, A1, A2, A3, A4, A5, names = write_system_in_dennis_form(model, policy_instruments, policy_shocks)
+    W, Q = parse_loss(loss_string, endogenous, policy_instruments, all_parameters)
 
     A0 = model.lambdify(A0)
     A1 = model.lambdify(A1)
@@ -350,6 +506,7 @@ def compile_discretion(model, loss_string, policy_instruments, policy_shocks=Non
     shock_names = names['nu']
     obs_names = state_names
 
+    policy_shocks = [str(s) for s in _as_policy_shocks(policy_shocks)]
     nonpolicyshocks = [i for i, s in enumerate(model.shocks) if str(s) not in policy_shocks]
     QQ = model.lambdify(model['covariance'][nonpolicyshocks, :][:, nonpolicyshocks])
     nall = len(state_names)

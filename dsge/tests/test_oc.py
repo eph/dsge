@@ -75,6 +75,12 @@ calibration:
 
         mod_simple = f.compile_model()
         mod_commit = compile_commitment(f, 'pi**2 + y**2 + deli**2', 'i', 'em', beta='beta')
+        p0 = f.p0()
+
+        irf = mod_commit.impulse_response(p0, h=25)["er"].loc[:, ["i", "deli"]]
+        i = irf["i"].to_numpy()
+        i_lag = np.r_[0.0, i[:-1]]
+        assert_array_almost_equal(irf["deli"].to_numpy(), i - i_lag, decimal=8)
 
     def test_compile_commitment(self):
         from io import StringIO

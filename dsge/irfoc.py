@@ -113,10 +113,14 @@ def parse_policy_rules(
                     "Rules with max/min/Piecewise are available via `IRFOC.simulate_piecewise()`."
                 )
 
-        # Affine check relative to the allowed variables.
+        # Affine check relative to all (possibly time-shifted) model variables appearing in the rule.
         for eq in eqs:
+            rule_vars = sorted([v for v in eq.set_eq_zero.atoms(Variable)], key=str)
             try:
-                poly = sympy.Poly(eq.set_eq_zero, *variables, domain="EX")
+                if rule_vars:
+                    poly = sympy.Poly(eq.set_eq_zero, *rule_vars, domain="EX")
+                else:
+                    poly = sympy.Poly(eq.set_eq_zero, domain="EX")
                 if poly.total_degree() > 1:
                     raise ValueError(f"Policy rule must be affine in model variables, got: {str(eq)}")
             except sympy.PolynomialError:
@@ -188,6 +192,12 @@ class IRFOC:
 
         self._variable_context = context
         self._baseline_variables = [sympy.sympify(str(c), locals=context) for c in self.columns]
+        self._baseline_col_index_by_name: dict[str, int] = {}
+        for j, v in enumerate(self._baseline_variables):
+            if isinstance(v, Variable):
+                self._baseline_col_index_by_name[v.name] = j
+            else:
+                self._baseline_col_index_by_name[str(v)] = j
 
         self.M = self._build_M()
 
@@ -246,7 +256,8 @@ class IRFOC:
         return_details
             If True, return an `IRFOCResult` including the implied instrument shocks and residuals.
         """
-        # Dispatch to MILP backend if rules contain max/min/Piecewise.
+        # Dispatch to MILP backend if rules contain max/min/Piecewise, and to the
+        # time-shifted affine solver if rules reference i(-1)-style variables.
         try:
             eqs_pw = parse_policy_rules(
                 rules,
@@ -261,6 +272,12 @@ class IRFOC:
             eq.set_eq_zero.has(sympy.Max, sympy.Min, sympy.Piecewise, INDICATOR_FN) for eq in eqs_pw
         ):
             return self.simulate_piecewise(rules, return_details=return_details)
+
+        if eqs_pw is not None and any(
+            any(isinstance(v, Variable) and getattr(v, "date", 0) != 0 for v in eq.set_eq_zero.atoms(Variable))
+            for eq in eqs_pw
+        ):
+            return self._simulate_affine_time_shifted(rules, rcond=rcond, return_details=return_details)
 
         A, b, eqs = self._affine_A_b(rules)
 
@@ -289,6 +306,112 @@ class IRFOC:
 
         shocks = self._u_to_df(u)
         resid = self._residuals(sim, A, b, eqs)
+        return IRFOCResult(simulation=sim, shocks=shocks, residuals=resid)
+
+    def _simulate_affine_time_shifted(
+        self,
+        rules: str | Sequence[str],
+        *,
+        rcond: float | None = None,
+        return_details: bool = False,
+    ) -> pd.DataFrame | IRFOCResult:
+        """
+        Solve affine rules that reference time-shifted variables (e.g. `i(-1)`).
+
+        This builds the stacked linear system period-by-period using the same
+        expression compiler as the piecewise backend (but without MILP).
+        """
+        eqs = parse_policy_rules(
+            rules,
+            variables=self._baseline_variables,
+            variable_context=self._variable_context,
+            allow_piecewise=True,
+        )
+        if any(eq.set_eq_zero.has(sympy.Max, sympy.Min, sympy.Piecewise, INDICATOR_FN) for eq in eqs):
+            raise ValueError("Time-shifted affine solver does not support max/min/Piecewise rules.")
+
+        nu = int(self.M.shape[1])
+        ncons = len(eqs) * self.T
+        A_u = np.zeros((ncons, nu), dtype=float)
+        rhs = np.zeros((ncons,), dtype=float)
+
+        def const_expr(x: float) -> "IRFOC._LinExpr":
+            return IRFOC._LinExpr(a_u=np.zeros(nu, dtype=float), c=float(x))
+
+        def baseline_var_expr(var: Variable, t: int) -> "IRFOC._LinExpr":
+            if not isinstance(var, Variable):
+                raise TypeError("Expected a Variable.")
+            if var.name not in self._baseline_col_index_by_name:
+                raise ValueError(f"Variable {var!r} not found in baseline columns.")
+            j = self._baseline_col_index_by_name[var.name]
+            tt = int(t + getattr(var, "date", 0))
+            if tt < 0 or tt >= self.T:
+                return const_expr(0.0)
+            a_u = np.asarray(self.M[tt * self.n + j, :], dtype=float)
+            c = float(self.baseline.iloc[tt, j])
+            return IRFOC._LinExpr(a_u=a_u, c=c)
+
+        def compile_affine(expr: sympy.Expr, t: int) -> "IRFOC._LinExpr":
+            if expr.is_number:
+                return const_expr(float(expr))
+            if isinstance(expr, Variable):
+                return baseline_var_expr(expr, t)
+            if expr.func is sympy.Add:
+                out = const_expr(0.0)
+                for arg in expr.args:
+                    out = out.add(compile_affine(arg, t))
+                return out
+            if expr.func is sympy.Mul:
+                scalars = []
+                non_scalars = []
+                for arg in expr.args:
+                    if arg.is_number:
+                        scalars.append(float(arg))
+                    else:
+                        non_scalars.append(arg)
+                scale = float(np.prod(scalars)) if scalars else 1.0
+                if len(non_scalars) == 0:
+                    return const_expr(scale)
+                if len(non_scalars) != 1:
+                    raise ValueError("Policy rule must be affine (no products of variables).")
+                return compile_affine(non_scalars[0], t).scale(scale)
+            if expr.func is sympy.Pow:
+                base, power = expr.args
+                if power == 1:
+                    return compile_affine(base, t)
+                raise ValueError("Policy rule must be affine (no powers).")
+            raise ValueError(f"Unsupported function in affine time-shifted rule: {expr.func}")
+
+        row = 0
+        for t in range(self.T):
+            for eq in eqs:
+                form = compile_affine(eq.lhs, t).add(compile_affine(eq.rhs, t).scale(-1.0))
+                if form.a_w or form.a_z:
+                    raise RuntimeError("Internal error: affine compiler produced noncontinuous terms.")
+                A_u[row, :] = form.a_u
+                rhs[row] = -form.c
+                row += 1
+
+        if ncons != nu:
+            raise ValueError(
+                "System is not square: (#rules * T) must equal (#instrument_shocks * T). "
+                f"Got rules={len(eqs)}, T={self.T}, instrument_shocks={len(self.instrument_shocks)}."
+            )
+
+        try:
+            u = np.linalg.solve(A_u, rhs)
+        except np.linalg.LinAlgError:
+            u, *_ = np.linalg.lstsq(A_u, rhs, rcond=rcond)
+
+        y0 = self.baseline.values.reshape(-1)
+        y_alt = y0 + self.M @ u
+        sim = pd.DataFrame(y_alt.reshape(self.T, self.n), columns=self.columns, index=self.baseline.index)
+
+        if not return_details:
+            return sim
+
+        shocks = self._u_to_df(u)
+        resid = pd.DataFrame(index=sim.index)
         return IRFOCResult(simulation=sim, shocks=shocks, residuals=resid)
 
     def simulate_optimal_control(
@@ -535,9 +658,16 @@ class IRFOC:
         next_z = 0
 
         def baseline_var_expr(var: sympy.Expr, t: int) -> "IRFOC._LinExpr":
-            j = self._baseline_variables.index(var)
-            a_u = np.asarray(self.M[t * self.n + j, :], dtype=float)
-            c = float(self.baseline.iloc[t, j])
+            if not isinstance(var, Variable):
+                raise ValueError(f"Unsupported variable type in rule: {var!r}")
+            if var.name not in self._baseline_col_index_by_name:
+                raise ValueError(f"Variable {var!r} not found in baseline columns.")
+            j = self._baseline_col_index_by_name[var.name]
+            tt = int(t + getattr(var, "date", 0))
+            if tt < 0 or tt >= self.T:
+                return IRFOC._LinExpr(a_u=np.zeros(nu, dtype=float), c=0.0)
+            a_u = np.asarray(self.M[tt * self.n + j, :], dtype=float)
+            c = float(self.baseline.iloc[tt, j])
             return IRFOC._LinExpr(a_u=a_u, c=c)
 
         def const_expr(x: float) -> "IRFOC._LinExpr":
@@ -547,7 +677,7 @@ class IRFOC:
             nonlocal next_z
             if expr.is_number:
                 return const_expr(float(expr))
-            if expr in self._baseline_variables:
+            if isinstance(expr, Variable):
                 return baseline_var_expr(expr, t)
 
             if expr.func is sympy.Add:
