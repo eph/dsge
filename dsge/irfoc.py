@@ -291,6 +291,122 @@ class IRFOC:
         resid = self._residuals(sim, A, b, eqs)
         return IRFOCResult(simulation=sim, shocks=shocks, residuals=resid)
 
+    def simulate_optimal_control(
+        self,
+        loss: str,
+        *,
+        discount: float | str = 1.0,
+        ridge: float = 0.0,
+        u_weight: float = 0.0,
+        rcond: float | None = None,
+        return_details: bool = False,
+    ) -> pd.DataFrame | IRFOCResult:
+        """
+        Choose an instrument-shock path to minimize a quadratic per-period loss.
+
+        This is an "IRF-based" (finite-horizon) optimal control problem where the
+        endogenous paths are affine in the chosen instrument shocks:
+
+            y = y_baseline + M u
+
+        and the objective is:
+
+            sum_{t=0}^{T-1} discount^t * loss(y_t)
+
+        where `loss` must be quadratic (degree <= 2) in the baseline variables.
+
+        Notes
+        -----
+        - This is intended as a lightweight way to replicate the deterministic
+          impulse-response optimal policy (commitment) case. It is *not* a full
+          Ramsey / stochastic OC solver.
+        - Add a small `ridge` or `u_weight` if the Hessian is near-singular.
+        """
+        if not isinstance(loss, str) or not loss.strip():
+            raise ValueError("loss must be a non-empty string.")
+
+        nv = len(self._baseline_variables)
+        if nv != self.n:
+            raise ValueError("Loss parsing requires baseline columns to map 1:1 to baseline variables.")
+
+        context = dict(self._variable_context)
+        try:
+            model_parameters = list(self.model["parameters"]) + list(self.model["auxiliary_parameters"].keys())
+        except Exception:
+            model_parameters = []
+        for p in model_parameters:
+            context.setdefault(str(p), p)
+
+        loss_expr = _sympify_with_context(_preprocess_indicator_syntax(loss), context)
+        if loss_expr.has(sympy.Max, sympy.Min, sympy.Piecewise, INDICATOR_FN):
+            raise NotImplementedError("Piecewise / indicator loss functions are not supported in optimal control.")
+
+        # Disallow explicit leads/lags in the loss (users can include separate model vars like `deli` or `ilag`).
+        bad_vars = [v for v in loss_expr.atoms(Variable) if getattr(v, "date", 0) != 0]
+        if bad_vars:
+            raise ValueError(f"Loss may not reference lead/lag variables directly: {bad_vars!r}")
+
+        try:
+            poly = sympy.Poly(loss_expr, *self._baseline_variables, domain="EX")
+            if poly.total_degree() > 2:
+                raise ValueError("loss must be quadratic (degree <= 2) in baseline variables.")
+        except sympy.PolynomialError:
+            raise ValueError("loss must be a polynomial (degree <= 2) in baseline variables.") from None
+
+        # loss(y) = 1/2 y'W y + g'y + c, with W symmetric by construction.
+        W_sym = sympy.Matrix(nv, nv, lambda i, j: loss_expr.diff(self._baseline_variables[i]).diff(self._baseline_variables[j]))
+        g_sym = sympy.Matrix(nv, 1, lambda i, _: loss_expr.diff(self._baseline_variables[i]))
+        zero_subs = {v: 0 for v in self._baseline_variables}
+        g0_sym = g_sym.subs(zero_subs)
+
+        W = np.asarray(self.model.lambdify(W_sym)(self.p0), dtype=float)
+        g0 = np.asarray(self.model.lambdify(g0_sym)(self.p0), dtype=float).reshape(-1)
+
+        if np.max(np.abs(W - W.T)) > 1e-10:
+            W = 0.5 * (W + W.T)
+
+        if isinstance(discount, str):
+            disc_expr = _sympify_with_context(discount, context)
+            discount = float(np.asarray(self.model.lambdify(disc_expr)(self.p0), dtype=float))
+        discount = float(discount)
+        if not np.isfinite(discount) or discount <= 0.0:
+            raise ValueError("discount must be a positive finite scalar.")
+
+        ridge = float(ridge)
+        u_weight = float(u_weight)
+        if ridge < 0.0 or u_weight < 0.0:
+            raise ValueError("ridge and u_weight must be nonnegative.")
+
+        weights = discount ** np.arange(self.T, dtype=float)
+        Qz = np.kron(np.diag(weights), W)
+        gvec = np.kron(weights, g0)
+
+        y0 = self.baseline.values.reshape(-1)
+
+        H = self.M.T @ Qz @ self.M
+        H = 0.5 * (H + H.T)
+        if ridge > 0.0:
+            H = H + ridge * np.eye(H.shape[0])
+        if u_weight > 0.0:
+            H = H + u_weight * np.eye(H.shape[0])
+
+        f = self.M.T @ (Qz @ y0 + gvec)
+
+        try:
+            u = -np.linalg.solve(H, f)
+        except np.linalg.LinAlgError:
+            u, *_ = np.linalg.lstsq(H, -f, rcond=rcond)
+
+        y_alt = y0 + self.M @ u
+        sim = pd.DataFrame(y_alt.reshape(self.T, self.n), columns=self.columns, index=self.baseline.index)
+
+        if not return_details:
+            return sim
+
+        shocks = self._u_to_df(u)
+        resid = pd.DataFrame(index=sim.index)
+        return IRFOCResult(simulation=sim, shocks=shocks, residuals=resid)
+
     def _u_to_df(self, u: np.ndarray) -> pd.DataFrame:
         u = np.asarray(u, dtype=float).reshape(-1)
         k = len(self.instrument_shocks)
