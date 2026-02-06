@@ -199,6 +199,7 @@ class IRFOC:
             else:
                 self._baseline_col_index_by_name[str(v)] = j
 
+        self._M_perfect_foresight_cache: dict[tuple[tuple[str, ...], int, tuple[str, ...]], np.ndarray] = {}
         self.M = self._build_M()
 
     @property
@@ -206,21 +207,101 @@ class IRFOC:
         return list(self._baseline_variables)
 
     def _build_M(self) -> np.ndarray:
+        # Historically, M was built by repeatedly calling `anticipated_impulse_response(anticipated_h=t)`
+        # for each horizon t. That is expensive (O(T) gensys solves). We instead build the same mapping
+        # in one shot using the `anticipated_h=H` augmentation and responses to initial conditions in the
+        # shock-pipeline state (see `_build_M_perfect_foresight`).
+        return self._build_M_perfect_foresight(self.instrument_shocks)
+
+    def _build_M_perfect_foresight(self, instrument_shocks: Sequence[str]) -> np.ndarray:
+        """
+        Build the mapping from a deterministic (perfect-foresight) instrument-shock path to baseline columns.
+
+        Interpretation
+        --------------
+        The control is a *fully anticipated* (pre-announced) path for one or more structural shocks
+        (typically a monetary-policy wedge). This is the right notion for commitment-style exercises:
+        period-0 outcomes can depend on future planned wedges.
+
+        Implementation
+        --------------
+        We reuse `solve_LRE(anticipated_h=H)`'s "shock pipeline" augmentation, but compute responses to
+        *initial conditions* in the pipeline rather than to a single news innovation. Setting the
+        initial pipeline states pins down an arbitrary deterministic shock sequence over the horizon.
+        """
+        key = (tuple(map(str, instrument_shocks)), int(self.T), tuple(map(str, self.columns)))
+        cached = self._M_perfect_foresight_cache.get(key)
+        if cached is not None:
+            return cached
+
         if self.p0 is None:
             raise ValueError("p0 must be provided (or model must support model.p0()).")
 
-        blocks = []
-        for shock in self.instrument_shocks:
-            irf0 = self.compiled_model.impulse_response(self.p0, h=self.T - 1)[shock].loc[:, self.columns]
-            cols = [irf0.values.reshape(-1)]
-            for t in range(1, self.T):
-                irft = self.compiled_model.anticipated_impulse_response(
-                    self.p0, anticipated_h=t, h=self.T - 1, use_cache=True
-                )[shock].loc[:, self.columns]
-                cols.append(irft.values.reshape(-1))
-            blocks.append(np.column_stack(cols))
+        shock_names = [str(s) for s in getattr(self.compiled_model, "shock_names", [])]
+        if not shock_names:
+            raise ValueError("compiled_model must define shock_names for perfect-foresight mapping.")
 
-        return np.column_stack(blocks) if len(blocks) > 1 else blocks[0]
+        base_state_names = [str(s) for s in getattr(self.compiled_model, "state_names", [])]
+        if not base_state_names:
+            raise ValueError("compiled_model must define state_names for perfect-foresight mapping.")
+
+        H = int(self.T)
+        TT, _RR, RC = self.compiled_model.solve_LRE(self.p0, anticipated_h=H, use_cache=True)
+        if int(RC) != 1:
+            raise ValueError("Model does not have a unique stable solution (RC != 1); cannot build mapping.")
+
+        nshocks = len(shock_names)
+        ns_aug = TT.shape[0]
+        ns_base = ns_aug - nshocks * H
+        if ns_base != len(base_state_names):
+            raise ValueError(
+                "Unexpected augmented-state dimension from solve_LRE. "
+                f"Expected base={len(base_state_names)}, got base={ns_base}."
+            )
+
+        name_to_base_idx = {name: i for i, name in enumerate(base_state_names)}
+        out_idx: list[int] = []
+        for c in self.columns:
+            name = str(c)
+            if name not in name_to_base_idx:
+                raise ValueError(
+                    f"Baseline column {name!r} not found in compiled_model.state_names; "
+                    "perfect-foresight backend requires baseline columns be state names."
+                )
+            out_idx.append(name_to_base_idx[name])
+
+        instr = [str(s) for s in instrument_shocks]
+        shock_idx: list[int] = []
+        for s in instr:
+            try:
+                shock_idx.append(shock_names.index(s))
+            except ValueError as e:
+                raise ValueError(f"Instrument shock {s!r} not found in compiled_model.shock_names.") from e
+
+        k = len(instr)
+        nu = self.T * k
+
+        # Map the control path u_{t,s} into initial conditions for the shock pipeline states.
+        #
+        # With anticipated_h=H, the last shock-block in the pipeline enters the main equations with a
+        # one-period lag. Setting the initial pipeline values (at t=-1) therefore pins down the entire
+        # pre-announced shock path from t=0..H-1.
+        E = np.zeros((ns_aug, nu), dtype=float)
+        for s_i, idx in enumerate(shock_idx):
+            for t in range(self.T):
+                block = (H - 1) - t
+                row = ns_base + block * nshocks + idx
+                col = t + s_i * self.T
+                E[row, col] = 1.0
+
+        X = TT @ E  # states at t=0 for each basis control column
+        out = np.zeros((self.T * len(out_idx), nu), dtype=float)
+        for t in range(self.T):
+            out[t * len(out_idx) : (t + 1) * len(out_idx), :] = X[out_idx, :]
+            X = TT @ X
+
+        self._M_perfect_foresight_cache[key] = out
+        return out
 
     def _affine_A_b(self, rules: str | Sequence[str]) -> tuple[np.ndarray, np.ndarray, list[Equation]]:
         eqs = parse_policy_rules(
@@ -421,6 +502,7 @@ class IRFOC:
         discount: float | str = 1.0,
         ridge: float = 0.0,
         u_weight: float = 0.0,
+        dynamics: str = "perfect_foresight",
         rcond: float | None = None,
         return_details: bool = False,
     ) -> pd.DataFrame | IRFOCResult:
@@ -447,6 +529,10 @@ class IRFOC:
         """
         if not isinstance(loss, str) or not loss.strip():
             raise ValueError("loss must be a non-empty string.")
+
+        dynamics = str(dynamics).lower().strip()
+        if dynamics not in {"perfect_foresight", "pf", "irf"}:
+            raise ValueError("dynamics must be 'perfect_foresight' (default) or 'irf'.")
 
         nv = len(self._baseline_variables)
         if nv != self.n:
@@ -506,21 +592,23 @@ class IRFOC:
 
         y0 = self.baseline.values.reshape(-1)
 
-        H = self.M.T @ Qz @ self.M
+        M = self.M if dynamics == "irf" else self._build_M_perfect_foresight(self.instrument_shocks)
+
+        H = M.T @ Qz @ M
         H = 0.5 * (H + H.T)
         if ridge > 0.0:
             H = H + ridge * np.eye(H.shape[0])
         if u_weight > 0.0:
             H = H + u_weight * np.eye(H.shape[0])
 
-        f = self.M.T @ (Qz @ y0 + gvec)
+        f = M.T @ (Qz @ y0 + gvec)
 
         try:
             u = -np.linalg.solve(H, f)
         except np.linalg.LinAlgError:
             u, *_ = np.linalg.lstsq(H, -f, rcond=rcond)
 
-        y_alt = y0 + self.M @ u
+        y_alt = y0 + M @ u
         sim = pd.DataFrame(y_alt.reshape(self.T, self.n), columns=self.columns, index=self.baseline.index)
 
         if not return_details:

@@ -301,10 +301,11 @@ def compile_commitment(model, loss_string, policy_instruments, policy_shocks=Non
     GAM0_1 = (A0.T
 	      .row_join(W)
 	      .row_join(zeros(ny, nx))
-	      .row_join((beta*A1).T)
+	      .row_join((-beta*A1).T)
 	      .row_join(zeros(ny, ny))
 	      .row_join(zeros(ny, nx)))
-    GAM0_2 = (A3.T
+    # NOTE: sign on A3.T matters when Q != 0 (Q=0 hides this).
+    GAM0_2 = ((-A3.T)
 	      .row_join(zeros(nx, ny))
 	      .row_join(Q)
 	      .row_join(zeros(nx, ny))
@@ -375,15 +376,14 @@ def compile_commitment(model, loss_string, policy_instruments, policy_shocks=Non
     PI = (zeros(ny+ny+nx, ny+ny+nx).col_join(
 	eye(ny).row_join(zeros(ny,ny+nx)).col_join(
 	    zeros(ny,ny).row_join(eye(ny)).row_join(zeros(ny,nx)).col_join(
-		zeros(nx,ny+ny).row_join(eye(1))))))	   
+		zeros(nx,ny+ny).row_join(eye(nx))))))	   
+
+    nall = 2*(nx+ny*2)
 
     GAM0 = model.lambdify(GAM0)
     GAM1 = model.lambdify(GAM1)
     PSI = model.lambdify(PSI)
     PI = model.lambdify(PI)
-
-
-    nall = 2*(nx+ny*2)
     # get slice of model['covariance'] that omits policy_shocks
     policy_shocks = [str(s) for s in _as_policy_shocks(policy_shocks)]
     nonpolicyshocks = [i for i, s in enumerate(model.shocks) if str(s) not in policy_shocks]

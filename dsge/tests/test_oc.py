@@ -129,6 +129,99 @@ calibration:
             self.assertTrue(set(["y", "pi", "i"]).issubset(irfs["eu"].columns))
             self.assertTrue(set(["y", "pi", "i"]).issubset(irfs["er"].columns))
 
+    def test_commitment_matches_irfoc_optimal_control_with_smoothing(self):
+        from io import StringIO
+
+        import numpy as np
+
+        from dsge.irfoc import IRFOC
+
+        simple_dsge = StringIO(
+            """
+declarations:
+  name: 'example_dsge'
+  variables: [pi, y, i, u, re, deli]
+  parameters: [beta, kappa, sigma, rho, gamma_pi, gamma_y, rho_u, rho_r]
+  shocks: [eu, er, em]
+
+equations:
+  - pi = beta * pi(+1) + kappa * y + u
+  - y = y(+1) - sigma * (i - pi(+1) - re)
+  - i = rho * i(-1) + (1 - rho) * (gamma_pi * pi + gamma_y * y) + em
+  - u = rho_u * u(-1) + eu
+  - re = rho_r * re(-1) + er
+  - deli = i - i(-1)
+
+calibration:
+  parameters:
+    beta: 0.99
+    kappa: 0.024
+    sigma: 6.25
+    rho: 0.70
+    gamma_pi: 1.50
+    gamma_y: 0.15
+    rho_u: 0.0
+    rho_r: 0.50
+"""
+        )
+
+        f = read_yaml(simple_dsge)
+        p0 = f.p0()
+        h_compare = 60
+        h_full = 200
+        loss = "pi**2 + y**2 + deli**2"
+        cols = ["pi", "y", "i", "u", "re", "deli"]
+
+        mod_simple = f.compile_model()
+        baseline = mod_simple.impulse_response(p0, h=h_full)["er"].loc[:, cols]
+
+        irfoc = IRFOC(f, baseline=baseline, instrument_shocks="em", p0=p0, compiled_model=mod_simple)
+        sim = irfoc.simulate_optimal_control(loss, discount="beta").loc[:, cols]
+
+        mod_commit = compile_commitment(f, loss, "i", "em", beta="beta")
+        commit = mod_commit.impulse_response(p0, h=h_full)["er"].loc[:, cols]
+
+        diff = (sim.iloc[: h_compare + 1] - commit.iloc[: h_compare + 1]).to_numpy()
+        self.assertLess(float(np.max(np.abs(diff))), 1e-3)
+
+    def test_commitment_allows_instrument_penalty(self):
+        from io import StringIO
+
+        simple_dsge = StringIO(
+            """
+declarations:
+  name: 'example_dsge'
+  variables: [pi, y, i, u, re, deli]
+  parameters: [beta, kappa, sigma, rho, gamma_pi, gamma_y, rho_u, rho_r]
+  shocks: [eu, er, em]
+
+equations:
+  - pi = beta * pi(+1) + kappa * y + u
+  - y = y(+1) - sigma * (i - pi(+1) - re)
+  - i = rho * i(-1) + (1 - rho) * (gamma_pi * pi + gamma_y * y) + em
+  - u = rho_u * u(-1) + eu
+  - re = rho_r * re(-1) + er
+  - deli = i - i(-1)
+
+calibration:
+  parameters:
+    beta: 0.99
+    kappa: 0.024
+    sigma: 6.25
+    rho: 0.70
+    gamma_pi: 1.50
+    gamma_y: 0.15
+    rho_u: 0.0
+    rho_r: 0.50
+"""
+        )
+
+        f = read_yaml(simple_dsge)
+        p0 = f.p0()
+        mod_commit = compile_commitment(f, "pi**2 + y**2 + i**2", "i", "em", beta="beta")
+        _TT, _RR, rc = mod_commit.solve_LRE(p0)
+        self.assertEqual(int(rc), 1)
+
 
 #    def test_compile_commitment2(self):
 #        from dsge import read_yaml
