@@ -2,6 +2,15 @@
 
 This project uses `setuptools_scm` (version comes from git tags).
 
+## 0.2.7 (2026-02-07)
+
+- IRFOC: add quadratic optimal-control (`simulate_optimal_control`)
+- IRFOC: support indicator syntax `1(cond)` in piecewise rules
+- OC/IRFOC: handle lagged policy instruments consistently
+- OC: fix commitment solution when loss penalizes instruments (`Q != 0`)
+- Tests: parity checks between OC and IRFOC for simple quadratic losses
+- Examples: IRFOC NK ZLB rule comparison + OC NK commitment demo
+
 ## 0.2.5 (2026-02-05)
 
 - Add `dsge.irfoc.IRFOC` (IRF-based counterfactual simulator) with an affine policy-rule parser
