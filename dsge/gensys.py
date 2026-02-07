@@ -54,7 +54,9 @@ def gensys(
         # QZ output magnitudes instead.
         alpha_scale = float(max(1.0, np.max(np.abs(alpha)))) if np.size(alpha) else 1.0
         beta_scale = float(max(1.0, np.max(np.abs(beta)))) if np.size(beta) else 1.0
-        zxz = ((np.abs(beta) < REALSMALL * beta_scale) & (np.abs(alpha) < REALSMALL * alpha_scale)).any()
+        zxz_mask = (np.abs(beta) < REALSMALL * beta_scale) & (np.abs(alpha) < REALSMALL * alpha_scale)
+        zxz = bool(np.any(zxz_mask))
+        n_zxz = int(np.sum(zxz_mask))
 
         x = beta / alpha
         nstable = int(np.sum(np.abs(x) < DIV))
@@ -67,6 +69,7 @@ def gensys(
             "nstable": nstable,
             "nunstable": nunstab,
             "coincident_zeros": True,
+            "n_coincident_zeros": n_zxz,
             "alpha_scale": alpha_scale,
             "beta_scale": beta_scale,
         }

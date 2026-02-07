@@ -722,7 +722,9 @@ class LinearDSGEModel(StateSpaceModel):
                     DIV=qz_criterium,
                     REALSMALL=realsmall if realsmall is not None else 1e-6,
                 )
-            RC = int(RC[0] * RC[1])
+            # gensys returns a 2-vector RC: [existence, uniqueness]. Treat success as both == 1.
+            # Other codes (e.g. coincident zeros) should map to failure (0) for downstream callers.
+            RC = int((int(RC[0]) == 1) and (int(RC[1]) == 1))
             # TT, CC, RR, fmat, fwt, ywt, gev, RC, loose = gensysw.gensys.call_gensys(G0, G1, C0, PSI, PPI, 1.00000000001)
         else:
             TT = np.linalg.inv(G0).dot(G1)
@@ -774,13 +776,20 @@ class LinearDSGEModel(StateSpaceModel):
                 entry = {"qz_criterium": div, "realsmall": rs, "scale_equations": bool(scale_equations), "rc": int(RC)}
                 if isinstance(diag, dict):
                     eig = np.asarray(diag.get("eig", []))
+                    sv_unstable = diag.get("sv_unstable", None)
+                    sv_loose = diag.get("sv_loose", None)
                     entry.update(
                         {
                             "nstable": int(diag.get("nstable", 0)),
                             "nunstable": int(diag.get("nunstable", 0)),
                             "coincident_zeros": bool(diag.get("coincident_zeros", False)),
-                            "min_sv_unstable": float(np.min(diag["sv_unstable"])) if np.size(diag.get("sv_unstable")) else None,
-                            "max_sv_loose": float(np.max(diag["sv_loose"])) if np.size(diag.get("sv_loose")) else None,
+                            "n_coincident_zeros": int(diag.get("n_coincident_zeros", 0))
+                            if diag.get("coincident_zeros", False)
+                            else 0,
+                            "alpha_scale": float(diag.get("alpha_scale")) if diag.get("alpha_scale") is not None else None,
+                            "beta_scale": float(diag.get("beta_scale")) if diag.get("beta_scale") is not None else None,
+                            "min_sv_unstable": float(np.min(sv_unstable)) if sv_unstable is not None and np.size(sv_unstable) else None,
+                            "max_sv_loose": float(np.max(sv_loose)) if sv_loose is not None and np.size(sv_loose) else None,
                             "eig_modulus_max": float(np.max(np.abs(eig))) if eig.size else None,
                             "eig_modulus_min": float(np.min(np.abs(eig))) if eig.size else None,
                         }

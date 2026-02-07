@@ -10,6 +10,7 @@ This project uses `setuptools_scm` (version comes from git tags).
 - LRE robustness: `solve_LRE(..., scale_equations=True)` row-scales equations to improve conditioning
 - LRE diagnostics: `solve_LRE(..., realsmall=...)` and `determinacy_report(..., realsmall_criteria=...)` for sensitivity checks
 - Gensys: improve “coincident zeros” detection and SVD tolerances using relative scaling diagnostics
+- Fix: `solve_LRE` now maps non-(1,1) Gensys codes (e.g. coincident zeros) to `RC=0` instead of producing invalid values
 
 ## 0.2.7 (2026-02-07)
 
