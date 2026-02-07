@@ -52,6 +52,7 @@ _fortress_tmp/
 _fortress_tmp_cpp/
 _fortress_tmp_working/
 __fortress_tmp/
+**/_out/
 
 # Node / frontend artifacts
 node_modules/

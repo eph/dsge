@@ -1,0 +1,38 @@
+declarations:
+  name: nk_irfoc_demo
+  variables: [pi, y, i, re, u, deli]
+  parameters: [beta, kappa, sigma, rho_r, rho_i, phi_pi, phi_y]
+  shocks: [er, eu, em]
+
+equations:
+  # New Keynesian Phillips curve (cost-push u)
+  - pi = beta * pi(+1) + kappa * y + u
+
+  # IS curve with natural-rate shock re
+  - y = y(+1) - sigma * (i - pi(+1) - re)
+
+  # Exogenous processes
+  - re = rho_r * re(-1) + er
+  - u = eu
+
+  # Baseline Taylor rule with a monetary-policy shock wedge (IRFOC controls em path)
+  - i = rho_i*i(-1) + (1-rho_i)*(phi_pi*pi + phi_y*y) + em
+
+  # Helper for smoothing / first-difference rules
+  - deli = i - i(-1)
+
+calibration:
+  parameters:
+    beta: 0.99
+    kappa: 0.10
+    sigma: 1.00
+    rho_r: 0.80
+    rho_i: 0.85
+    phi_pi: 1.5
+    phi_y: 0.5
+
+  covariance:
+    # IRFs are linear in the shock scale, so these are just normalizations.
+    er: 1.0
+    eu: 1.0
+    em: 1.0
