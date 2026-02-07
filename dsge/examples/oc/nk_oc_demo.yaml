@@ -1,0 +1,39 @@
+declarations:
+  name: nk_oc_demo
+  variables: [pi, y, i, u, re, deli]
+  parameters: [beta, kappa, sigma, rho, gamma_pi, gamma_y, rho_u, rho_r]
+  shocks: [eu, er, em]
+
+equations:
+  # NK Phillips curve (cost-push u)
+  - pi = beta * pi(+1) + kappa * y + u
+
+  # IS curve with natural-rate shock re
+  - y = y(+1) - sigma * (i - pi(+1) - re)
+
+  # Baseline policy rule with MP wedge em (instrument shock for OC/IRFOC)
+  - i = rho * i(-1) + (1 - rho) * (gamma_pi * pi + gamma_y * y) + em
+
+  # Exogenous processes
+  - u = rho_u * u(-1) + eu
+  - re = rho_r * re(-1) + er
+
+  # Helper for interest-rate smoothing penalties
+  - deli = i - i(-1)
+
+calibration:
+  parameters:
+    beta: 0.99
+    kappa: 0.024
+    sigma: 6.25
+    rho: 0.70
+    gamma_pi: 1.50
+    gamma_y: 0.15
+    rho_u: 0.0
+    rho_r: 0.50
+
+  covariance:
+    eu: 1.0
+    er: 1.0
+    em: 1.0
+
