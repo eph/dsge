@@ -1,8 +1,8 @@
 import pytest
 import sympy as sp
 
-from dsge.parsing_tools import build_symbolic_context, parse_expression
-from dsge.symbols import Variable, Parameter, Shock, EXP
+from dsge.parsing_tools import build_symbolic_context, parse_expression, find_max_lead_lag
+from dsge.symbols import Variable, Parameter, Shock, EXP, Equation
 
 
 def test_parse_exp_and_sum():
@@ -31,3 +31,14 @@ def test_unknown_symbol_raises():
     with pytest.raises(ValueError):
         parse_expression('a + x', ctx)
 
+
+def test_find_max_lead_lag_single_pass():
+    x = Variable("x")
+    y = Variable("y")
+    eq = Equation(x(2), y(-3) + x(-1))
+
+    max_lead, max_lag = find_max_lead_lag([eq], [x, y])
+    assert max_lead[x] == 2
+    assert max_lag[x] == -1
+    assert max_lead[y] == 0
+    assert max_lag[y] == -3

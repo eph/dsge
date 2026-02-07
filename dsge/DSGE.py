@@ -122,8 +122,13 @@ class DSGE(Base):
         # get forward looking variables
         logger.debug("Identifying forward and backward looking variables")
         for eq in self["equations"]:
-            variable_too_far = [v for v in eq.atoms(Variable) if v.date > self.max_lead]
-            variable_too_early = [v for v in eq.atoms(Variable) if v.date < -self.max_lag]
+            # For large models, repeated `atoms(...)` calls are a major startup cost.
+            # Compute the time-indexed symbols once and reuse.
+            ts_atoms = eq.atoms(TSymbol)
+            var_atoms = [v for v in ts_atoms if isinstance(v, Variable)]
+
+            variable_too_far = [v for v in var_atoms if v.date > self.max_lead]
+            variable_too_early = [v for v in var_atoms if v.date < -self.max_lag]
 
             if variable_too_far:
                 logger.warning(f"Variables with leads beyond max_lead found: {variable_too_far}")
@@ -131,8 +136,8 @@ class DSGE(Base):
             if variable_too_early:
                 logger.warning(f"Variables with lags beyond max_lag found: {variable_too_early}")
 
-            eq_fvars = [v for v in eq.atoms(TSymbol) if v.date > 0]
-            eq_lvars = [v for v in eq.atoms(TSymbol) if v.date < 0]
+            eq_fvars = [v for v in ts_atoms if v.date > 0]
+            eq_lvars = [v for v in ts_atoms if v.date < 0]
 
             for f in eq_fvars:
                 if f not in fvars:
@@ -308,7 +313,23 @@ Equations:
 
 
         method = str(method).lower()
-        use_jacobian = method in {"auto", "jacobian", "jac"}
+        if method not in {"auto", "jacobian", "jac", "loop", "sparse"}:
+            # Backward-compatible behavior: unknown methods behave like the loop backend.
+            method = "loop"
+
+        # Heuristic: SymPy's full-system `.jacobian(...)` can be much slower than sparse/loop
+        # differentiation on large, sparse models (e.g. linver). Keep Jacobian for small systems.
+        if method == "auto":
+            n_eq = len(eq_cond)
+            n_v = len(vlist)
+            n_l = len(llist)
+            n_s = len(slist)
+            n_r = len(self["re_errors"])
+            # Rough proxy for expression/Jacobian size (not counting algebraic complexity).
+            size_proxy = n_eq * (n_v + n_l + n_s + n_r)
+            use_jacobian = (n_eq <= 150) and (size_proxy <= 150_000)
+        else:
+            use_jacobian = method in {"jacobian", "jac"}
 
         if use_jacobian:
             try:
@@ -328,26 +349,34 @@ Equations:
         if not use_jacobian:
             for eq_i, eq in enumerate(eq_cond):
                 eq0 = eq.set_eq_zero
-                curr_var = [v for v in eq.atoms(Variable) if v.date >= 0 and v in vpos]
+                var_atoms = eq0.atoms(Variable)
+                shock_atoms = eq0.atoms(Shock)
+                subs_atoms = var_atoms | shock_atoms
+                subs0 = {a: 0 for a in subs_atoms} if subs_atoms else None
+
+                def _subs_steady_state_fast(expr):
+                    if subs0 is None:
+                        return expr
+                    return expr.subs(subs0)
+
+                curr_var = [v for v in var_atoms if v.date >= 0 and v in vpos]
                 for v in curr_var:
                     v_j = vpos[v]
-                    GAM0[eq_i, v_j] = -_subs_steady_state(eq0.diff(v))
+                    GAM0[eq_i, v_j] = -_subs_steady_state_fast(eq0.diff(v))
 
-                past_var = [v for v in eq.atoms() if v in lpos]
+                past_var = [v for v in var_atoms if v in lpos]
                 for v in past_var:
-                    deq_dv = _subs_steady_state(eq0.diff(v))
+                    deq_dv = _subs_steady_state_fast(eq0.diff(v))
                     v_j = lpos[v]
                     GAM1[eq_i, v_j] = deq_dv
 
-                shocks = list(eq.atoms(Shock))
-
-                for s in shocks:
+                for s in shock_atoms:
                     if s not in self["re_errors"]:
                         s_j = spos[s]
-                        PSI[eq_i, s_j] = _subs_steady_state(eq0.diff(s))
+                        PSI[eq_i, s_j] = _subs_steady_state_fast(eq0.diff(s))
                     else:
                         s_j = rpos[s]
-                        PPI[eq_i, s_j] = _subs_steady_state(eq0.diff(s))
+                        PPI[eq_i, s_j] = _subs_steady_state_fast(eq0.diff(s))
 
                 # print "\r Differentiating equation {0} of {1}.".format(eq_i, len(eq_cond)),
         DD = zeros(ovar, 1)
@@ -364,12 +393,21 @@ Equations:
             for obs in self["observables"]:
                 eq = self["obs_equations"][obs.name]
 
-                DD[eq_i, 0] = _subs_steady_state(eq)
+                atoms = eq.atoms(Variable) | eq.atoms(Shock)
+                subs0 = {a: 0 for a in atoms} if atoms else None
 
-                curr_var = [v for v in eq.atoms(Variable) if v.date >= 0 and v in vpos]
+                def _subs_steady_state_obs(expr):
+                    if subs0 is None:
+                        return expr
+                    return expr.subs(subs0)
+
+                DD[eq_i, 0] = _subs_steady_state_obs(eq)
+
+                var_atoms = eq.atoms(Variable)
+                curr_var = [v for v in var_atoms if v.date >= 0 and v in vpos]
                 for v in curr_var:
                     v_j = vpos[v]
-                    ZZ[eq_i, v_j] = _subs_steady_state(eq.diff(v))
+                    ZZ[eq_i, v_j] = _subs_steady_state_obs(eq.diff(v))
 
                 eq_i += 1
 
@@ -664,7 +702,8 @@ Equations:
                 subs1 = [s(-i) for i in np.arange(1, abs(max_lag_exo[s]) + 1)]
                 subs2 = [var_s(-i) for i in np.arange(1, abs(max_lag_exo[s]) + 1)]
                 subs_dict = dict(zip(subs1, subs2))
-                equations = [eq.subs(subs_dict) for eq in equations]
+                # Pure symbol replacement: `xreplace` is much faster than `subs` for large models.
+                equations = [eq.xreplace(subs_dict) for eq in equations]
 
         (max_lead_endo,
          max_lag_endo) = find_max_lead_lag(equations, var_ordering)
@@ -692,7 +731,8 @@ Equations:
 
             # still need to do leads
 
-        equations = [eq.subs(subs_dict) for eq in equations]
+        # Pure symbol replacement: `xreplace` is much faster than `subs` for large models.
+        equations = [eq.xreplace(subs_dict) for eq in equations]
         if "covariance" in cal:
             QQ = from_dict_to_mat(cal["covariance"], shk_ordering, context)
         else:

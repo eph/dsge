@@ -49,7 +49,12 @@ def gensys(
 
     with np.errstate(invalid='ignore', divide='ignore'):
         AA, BB, alpha, beta, Q, Z = ordqz(G0, G1, sort=_eig_select, output='complex')
-        zxz = ((np.abs(beta) < REALSMALL) * (np.abs(alpha) < REALSMALL)).any()
+        # "Coincident zeros" (0/0 generalized eigenvalues) can be falsely detected if we use an
+        # absolute threshold on large, poorly-scaled systems. Use a relative scale based on the
+        # QZ output magnitudes instead.
+        alpha_scale = float(max(1.0, np.max(np.abs(alpha)))) if np.size(alpha) else 1.0
+        beta_scale = float(max(1.0, np.max(np.abs(beta)))) if np.size(beta) else 1.0
+        zxz = ((np.abs(beta) < REALSMALL * beta_scale) & (np.abs(alpha) < REALSMALL * alpha_scale)).any()
 
         x = beta / alpha
         nstable = int(np.sum(np.abs(x) < DIV))
@@ -57,7 +62,14 @@ def gensys(
 
     if zxz:
         RC = np.array([-2, -2], dtype=int)
-        diag = {"eig": x, "nstable": nstable, "nunstable": nunstab, "coincident_zeros": True}
+        diag = {
+            "eig": x,
+            "nstable": nstable,
+            "nunstable": nunstab,
+            "coincident_zeros": True,
+            "alpha_scale": alpha_scale,
+            "beta_scale": beta_scale,
+        }
         if return_diagnostics:
             return None, None, RC, diag
         return None, None, RC
@@ -66,6 +78,7 @@ def gensys(
     Qstab, Qunstab = Q[:nstable, :], Q[nstable:, :]
 
     RC = np.array([0, 0])
+    tol = float(REALSMALL)
 
     if nunstab == 0:
         ueta = np.zeros((0, 0))
@@ -76,7 +89,7 @@ def gensys(
         etawt = Qunstab.dot(PI)
         ueta, sv_unstable_all, veta = svd(etawt, full_matrices=False)
 
-        tol = REALSMALL
+        tol = float(max(REALSMALL, REALSMALL * float(np.max(sv_unstable_all)) if np.size(sv_unstable_all) else REALSMALL))
         bigev = sv_unstable_all > tol
         sv_unstable = sv_unstable_all[bigev]
         ueta = ueta[:, bigev]
@@ -94,7 +107,7 @@ def gensys(
     else:
         etawt1 = Qstab.dot(PI)
         ueta1, deta1, veta1 = svd(etawt1, full_matrices=False)
-        tol1 = REALSMALL
+        tol1 = float(max(REALSMALL, REALSMALL * float(np.max(deta1)) if np.size(deta1) else REALSMALL))
         bigev = deta1 > tol1
         sv_stable = deta1[bigev]
         ueta1 = ueta1[:, bigev]
@@ -154,10 +167,12 @@ def gensys(
         "unique": bool(RC[1]),
         "sv_unstable": sv_unstable,
         "sv_stable": sv_stable,
-        "sv_unstable_tol": REALSMALL,
-        "sv_stable_tol": REALSMALL,
+        "sv_unstable_tol": tol if nunstab else REALSMALL,
+        "sv_stable_tol": tol1 if veta1.size else REALSMALL,
         "unique_tol": REALSMALL,
         "sv_loose": dl_loose,
+        "alpha_scale": alpha_scale,
+        "beta_scale": beta_scale,
     }
 
     if return_everything:

@@ -9,6 +9,7 @@ common errors in model definitions.
 import logging
 from typing import List, Dict, Any, Optional, Union, Tuple, Callable
 from .symbols import Variable, Shock, Equation, TSymbol, EXP
+import sympy
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -209,20 +210,25 @@ def validate_dsge_leads_lags(
         List of validation error messages (empty if no errors)
     """
     errors = []
-    var_by_name = {v.name: v for v in variables}
+    var_names = {v.name for v in variables}
     
     for i, eq in enumerate(equations):
-        # Check for variables with leads/lags beyond limits
-        for atom in eq.atoms(Variable):
-            if atom.name in var_by_name:
-                if max_lead is not None and atom.date > max_lead:
-                    errors.append(
-                        f"Variable {atom.name}({atom.date}) in equation {i+1} exceeds maximum lead of {max_lead}"
-                    )
-                elif max_lag is not None and atom.date < -max_lag:
-                    errors.append(
-                        f"Variable {atom.name}({atom.date}) in equation {i+1} exceeds maximum lag of {max_lag}"
-                    )
+        # For large models, `atoms(Variable)` can be slow (it constructs a set).
+        # A preorder traversal avoids set construction and is typically faster for big expressions.
+        expr = eq.set_eq_zero if hasattr(eq, "set_eq_zero") else eq
+        for node in sympy.preorder_traversal(expr):
+            if not isinstance(node, Variable):
+                continue
+            if node.name not in var_names:
+                continue
+            if max_lead is not None and node.date > max_lead:
+                errors.append(
+                    f"Variable {node.name}({node.date}) in equation {i+1} exceeds maximum lead of {max_lead}"
+                )
+            elif max_lag is not None and node.date < -max_lag:
+                errors.append(
+                    f"Variable {node.name}({node.date}) in equation {i+1} exceeds maximum lag of {max_lag}"
+                )
     
     return errors
 

@@ -2,6 +2,15 @@
 
 This project uses `setuptools_scm` (version comes from git tags).
 
+## 0.3.0 (Unreleased)
+
+- Big-model YAML load speed: use `xreplace` for lag/lead symbol rewrites (avoid expensive SymPy `subs`)
+- Big-model compile speed: `python_sims_matrices(method="auto")` now avoids the full Jacobian backend on large systems
+- Parsing: `find_max_lead_lag` rewritten to single-pass over equations (avoid O(n_symbols * n_atoms))
+- LRE robustness: `solve_LRE(..., scale_equations=True)` row-scales equations to improve conditioning
+- LRE diagnostics: `solve_LRE(..., realsmall=...)` and `determinacy_report(..., realsmall_criteria=...)` for sensitivity checks
+- Gensys: improve “coincident zeros” detection and SVD tolerances using relative scaling diagnostics
+
 ## 0.2.7 (2026-02-07)
 
 - IRFOC: add quadratic optimal-control (`simulate_optimal_control`)

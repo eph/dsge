@@ -138,22 +138,32 @@ def construct_equation_list(raw_equations, context):
     return equations
 
 def find_max_lead_lag(equations, shocks_or_variables):
-    it = itertools.chain.from_iterable
+    """
+    Find maximum lead and lag for each symbol in a set of equations.
 
-    max_lead = dict.fromkeys(shocks_or_variables)
-    max_lag = dict.fromkeys(shocks_or_variables)
+    Notes
+    -----
+    This routine is on the hot path for large models. Avoid O(n_symbols * n_atoms)
+    scans by doing a single pass over the equations.
+    """
+    if not shocks_or_variables:
+        return {}, {}
 
-    type_of_array = type(shocks_or_variables[0])
-    all_shocks = [list(eq.atoms(type_of_array)) for eq in equations]
+    symbol_type = type(shocks_or_variables[0])
+    by_name = {s.name: s for s in shocks_or_variables}
 
-    for s in shocks_or_variables:
-        dates = [i.date for i in it(all_shocks) if i.name == s.name]
-        if dates:
-            max_lead[s] = max(dates)
-            max_lag[s] = min(dates)
-        else:
-            max_lead[s] = 0
-            max_lag[s] = 0
+    max_lead = {s: 0 for s in shocks_or_variables}
+    max_lag = {s: 0 for s in shocks_or_variables}
+
+    for eq in equations:
+        for atom in eq.atoms(symbol_type):
+            base = by_name.get(atom.name)
+            if base is None:
+                continue
+            if atom.date > max_lead[base]:
+                max_lead[base] = atom.date
+            if atom.date < max_lag[base]:
+                max_lag[base] = atom.date
 
     return max_lead, max_lag
 

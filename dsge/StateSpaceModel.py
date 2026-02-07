@@ -637,6 +637,10 @@ class LinearDSGEModel(StateSpaceModel):
     def solve_LRE(self, para, anticipated_h=0, use_cache=False, *args, **kwargs):
         qz_criterium = float(kwargs.pop("qz_criterium", 1 + 1e-6))
         return_diagnostics = bool(kwargs.pop("return_diagnostics", False))
+        scale_equations = bool(kwargs.pop("scale_equations", False))
+        realsmall = kwargs.pop("realsmall", None)
+        if realsmall is not None:
+            realsmall = float(realsmall)
 
         if use_cache and self.cached_lre_matrices is not None:
             G0, G1, PSI, PPI = self.cached_lre_matrices
@@ -679,11 +683,45 @@ class LinearDSGEModel(StateSpaceModel):
         nf = PPI.shape[1]
 
         if nf > 0:
+            if scale_equations:
+                # Row scaling: multiply each equation by 1 / row_norm to improve conditioning.
+                # This does not change the model solution (it is a left-multiplication of all matrices),
+                # but can materially improve numerical stability for large models.
+                combo = np.c_[G0, G1, PSI, PPI]
+                row_norm = np.linalg.norm(combo, axis=1)
+                row_norm[row_norm == 0.0] = 1.0
+                s = (1.0 / row_norm).reshape(-1, 1)
+                G0 = s * G0
+                G1 = s * G1
+                PSI = s * PSI
+                PPI = s * PPI
+
             if return_diagnostics:
-                TT, RR, RC, diag = gensys(G0, G1, PSI, PPI, C0=C0, DIV=qz_criterium, return_diagnostics=True)
+                TT, RR, RC, diag = gensys(
+                    G0,
+                    G1,
+                    PSI,
+                    PPI,
+                    C0=C0,
+                    DIV=qz_criterium,
+                    REALSMALL=realsmall if realsmall is not None else 1e-6,
+                    return_diagnostics=True,
+                )
+                if isinstance(diag, dict):
+                    diag["qz_criterium"] = qz_criterium
+                    diag["scale_equations"] = scale_equations
+                    diag["realsmall"] = realsmall if realsmall is not None else 1e-6
                 self.last_gensys_diagnostics = diag
             else:
-                TT, RR, RC = gensys(G0, G1, PSI, PPI, C0=C0, DIV=qz_criterium)
+                TT, RR, RC = gensys(
+                    G0,
+                    G1,
+                    PSI,
+                    PPI,
+                    C0=C0,
+                    DIV=qz_criterium,
+                    REALSMALL=realsmall if realsmall is not None else 1e-6,
+                )
             RC = int(RC[0] * RC[1])
             # TT, CC, RR, fmat, fwt, ywt, gev, RC, loose = gensysw.gensys.call_gensys(G0, G1, C0, PSI, PPI, 1.00000000001)
         else:
@@ -698,6 +736,8 @@ class LinearDSGEModel(StateSpaceModel):
         para,
         qz_criteria=(1 + 1e-6,),
         anticipated_h: int = 0,
+        scale_equations: bool = False,
+        realsmall_criteria=(None,),
         use_cache: bool = False,
         *args,
         **kwargs,
@@ -713,34 +753,39 @@ class LinearDSGEModel(StateSpaceModel):
         else:
             qz_list = [float(x) for x in qz_criteria]
 
+        realsmall_list = list(realsmall_criteria) if isinstance(realsmall_criteria, (list, tuple)) else [realsmall_criteria]
+
         reports = []
         for div in qz_list:
-            TT, RR, RC = self.solve_LRE(
-                para,
-                anticipated_h=anticipated_h,
-                use_cache=use_cache,
-                qz_criterium=div,
-                return_diagnostics=True,
-                *args,
-                **kwargs,
-            )
-            diag = getattr(self, "last_gensys_diagnostics", None)
-
-            entry = {"qz_criterium": div, "rc": int(RC)}
-            if isinstance(diag, dict):
-                eig = np.asarray(diag.get("eig", []))
-                entry.update(
-                    {
-                        "nstable": int(diag.get("nstable", 0)),
-                        "nunstable": int(diag.get("nunstable", 0)),
-                        "coincident_zeros": bool(diag.get("coincident_zeros", False)),
-                        "min_sv_unstable": float(np.min(diag["sv_unstable"])) if np.size(diag.get("sv_unstable")) else None,
-                        "max_sv_loose": float(np.max(diag["sv_loose"])) if np.size(diag.get("sv_loose")) else None,
-                        "eig_modulus_max": float(np.max(np.abs(eig))) if eig.size else None,
-                        "eig_modulus_min": float(np.min(np.abs(eig))) if eig.size else None,
-                    }
+            for rs in realsmall_list:
+                TT, RR, RC = self.solve_LRE(
+                    para,
+                    anticipated_h=anticipated_h,
+                    use_cache=use_cache,
+                    qz_criterium=div,
+                    realsmall=rs,
+                    scale_equations=scale_equations,
+                    return_diagnostics=True,
+                    *args,
+                    **kwargs,
                 )
-            reports.append(entry)
+                diag = getattr(self, "last_gensys_diagnostics", None)
+
+                entry = {"qz_criterium": div, "realsmall": rs, "scale_equations": bool(scale_equations), "rc": int(RC)}
+                if isinstance(diag, dict):
+                    eig = np.asarray(diag.get("eig", []))
+                    entry.update(
+                        {
+                            "nstable": int(diag.get("nstable", 0)),
+                            "nunstable": int(diag.get("nunstable", 0)),
+                            "coincident_zeros": bool(diag.get("coincident_zeros", False)),
+                            "min_sv_unstable": float(np.min(diag["sv_unstable"])) if np.size(diag.get("sv_unstable")) else None,
+                            "max_sv_loose": float(np.max(diag["sv_loose"])) if np.size(diag.get("sv_loose")) else None,
+                            "eig_modulus_max": float(np.max(np.abs(eig))) if eig.size else None,
+                            "eig_modulus_min": float(np.min(np.abs(eig))) if eig.size else None,
+                        }
+                    )
+                reports.append(entry)
 
         return {"by_qz": reports}
 
