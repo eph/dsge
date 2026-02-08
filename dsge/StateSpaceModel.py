@@ -798,6 +798,70 @@ class LinearDSGEModel(StateSpaceModel):
 
         return {"by_qz": reports}
 
+    def pencil_nullspace_report(
+        self,
+        para,
+        tol: float = 1e-12,
+        max_vecs: int = 3,
+        scale_equations: bool = True,
+        use_cache: bool = False,
+        *args,
+        **kwargs,
+    ):
+        """
+        Diagnose singular pencils (`coincident zeros`) by reporting right-nullspace directions.
+
+        Computes an SVD of `[G0; G1]` and returns the dominant contributors to the smallest
+        singular vectors, labeled by `state_names`.
+        """
+        G0 = self.GAM0(para, *args, **kwargs) if not (use_cache and self.cached_lre_matrices is not None) else self.cached_lre_matrices[0]
+        G1 = self.GAM1(para, *args, **kwargs) if not (use_cache and self.cached_lre_matrices is not None) else self.cached_lre_matrices[1]
+        PSI = self.PSI(para, *args, **kwargs) if not (use_cache and self.cached_lre_matrices is not None) else self.cached_lre_matrices[2]
+        PPI = self.PPI(para, *args, **kwargs) if not (use_cache and self.cached_lre_matrices is not None) else self.cached_lre_matrices[3]
+        self.cached_lre_matrices = (G0, G1, PSI, PPI)
+
+        G0 = np.atleast_2d(np.asarray(G0, dtype=float))
+        G1 = np.atleast_2d(np.asarray(G1, dtype=float))
+        PSI = np.atleast_2d(np.asarray(PSI, dtype=float))
+        PPI = np.atleast_2d(np.asarray(PPI, dtype=float))
+
+        if scale_equations:
+            combo = np.c_[G0, G1, PSI, PPI]
+            row_norm = np.linalg.norm(combo, axis=1)
+            row_norm[row_norm == 0.0] = 1.0
+            s = (1.0 / row_norm).reshape(-1, 1)
+            G0 = s * G0
+            G1 = s * G1
+
+        A = np.vstack([G0, G1])
+        # Economy SVD is enough: we only need smallest singular vectors.
+        _, sv, vt = np.linalg.svd(A, full_matrices=False)
+        s0 = float(sv[0]) if sv.size else 1.0
+        cutoff = float(tol) * max(1.0, s0)
+        null_idx = np.where(sv < cutoff)[0]
+
+        names = list(self.state_names) if self.state_names is not None else [f"x{i}" for i in range(A.shape[1])]
+        vecs = []
+        V = vt.T
+        for k in null_idx[: int(max_vecs)]:
+            v = V[:, k]
+            idx = np.argsort(np.abs(v))[::-1][:20]
+            vecs.append(
+                {
+                    "singular_value": float(sv[k]),
+                    "top": [(names[i], float(v[i])) for i in idx],
+                }
+            )
+
+        return {
+            "n": int(A.shape[1]),
+            "rank": int(np.sum(sv >= cutoff)),
+            "null_dim": int(null_idx.size),
+            "cutoff": cutoff,
+            "smallest_singular_values": sv[-min(10, sv.size) :].astype(float).tolist() if sv.size else [],
+            "vectors": vecs,
+        }
+
     def system_matrices(self, para, *args, **kwargs):
 
         TT, RR, RC = self.solve_LRE(para, *args, **kwargs)

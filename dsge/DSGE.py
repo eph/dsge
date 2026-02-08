@@ -89,15 +89,21 @@ class DSGE(Base):
             ValueError: If model validation fails
         """
         super(DSGE, self).__init__(self, *kargs, **kwargs)
+
+        # Prefer per-model settings (from YAML declarations) over class defaults.
+        if "max_lead" in self:
+            self.max_lead = int(self["max_lead"])
+        if "max_lag" in self:
+            self.max_lag = int(self["max_lag"])
         
         logger.info("Initializing DSGE model")
         
         # Validate model leads and lags
-        if "equations" in self and "variables" in self:
+        if "equations" in self and "var_ordering" in self:
             logger.debug("Validating model leads and lags")
             validation_errors = validate_dsge_leads_lags(
                 self["equations"], 
-                self["variables"],
+                self["var_ordering"],
                 max_lead=self.max_lead,
                 max_lag=self.max_lag
             )
@@ -468,7 +474,13 @@ Equations:
 
         return GAM0, GAM1, PSI, PPI
 
-    def compile_model(self, order=1, pruning=True, nonlinear_observables: str = "error"):
+    def compile_model(
+        self,
+        order=1,
+        pruning=True,
+        nonlinear_observables: str = "error",
+        lre_reduction: str = "none",
+    ):
         """
         Compile the DSGE model into an object with likelihood/simulation APIs.
 
@@ -524,6 +536,14 @@ Equations:
 
         if order != 1:
             raise ValueError(f"Unsupported perturbation order: {order}. Use order=1 or order=2.")
+
+        lre_reduction = str(lre_reduction).lower().strip()
+        if lre_reduction not in {"none", "core"}:
+            raise ValueError("lre_reduction must be one of {'none','core'}.")
+        if lre_reduction == "core":
+            core = self._lre_core_model()
+            # Important: avoid recursive reduction.
+            return core.compile_model(order=1, lre_reduction="none")
 
         self.python_sims_matrices()
 
@@ -609,6 +629,203 @@ Equations:
         from .second_order import solve_second_order
 
         return solve_second_order(self, p0, **kwargs)
+
+    def dynare_first_order_solution(self, *, p0=None, timeout: int = 240):
+        """
+        Solve the model with Dynare (order=1) and return Dynare's first-order objects.
+
+        This is intended as a robustness cross-check for large models when our
+        internal `gensys` plumbing flags coincident zeros / singular pencils.
+        """
+        if p0 is None:
+            p0 = self.p0()
+
+        # Ensure any matrix construction is done (and that auxiliary parameters are evaluated)
+        # so Dynare export sees the same calibrated parameter values.
+        _ = p0
+
+        from .dynare_export import to_dynare_mod
+        from .dynare_integration import load_first_order_solution, run_dynare_mod_text
+
+        mod = to_dynare_mod(self, order=1, pruning=False, irf=0, periods=0)
+        name = str(self.get("name", "dsge_model"))
+        safe_name = "".join(c if (c.isalnum() or c == "_") else "_" for c in name)
+        results_path = run_dynare_mod_text(mod_text=mod.mod_text, model_name=safe_name, timeout=int(timeout))
+        return load_first_order_solution(results_path)
+
+    @staticmethod
+    def _shift_expr(expr, shift: int):
+        """Shift all time-indexed symbols in an expression by `shift` periods."""
+        if shift == 0:
+            return expr
+        subs = {}
+        for v in expr.atoms(Variable):
+            subs[v] = Variable(v.name, date=v.date + shift)
+        for s in expr.atoms(Shock):
+            subs[s] = Shock(s.name, date=s.date + shift)
+        return expr.xreplace(subs)
+
+    def _lre_core_model(self):
+        """
+        Build a reduced 'core' DSGE model intended for solving large LRE systems.
+
+        The core model:
+        - removes dead-end variables whose defining equations contain leads and are
+          otherwise unused (typical 'reporting' / auxiliary forward variables), and
+        - performs safe one-step substitutions for orphan lead variables when their
+          defining equations are purely backward-looking (no leads, no shocks), and
+          the substitution does not introduce new orphan leads.
+
+        This is designed to address singular matrix pencils (coincident zeros) in
+        very large models that include unused forward-looking reporting variables.
+        """
+        var_ordering = list(self["var_ordering"])
+        equations = list(self["equations"])
+
+        # ------------------------------------------------------------
+        # Pass 1: safe orphan-lead substitution (iterative)
+        # ------------------------------------------------------------
+        lhs_eq = {
+            eq.lhs.name: eq
+            for eq in equations
+            if isinstance(eq.lhs, Variable) and getattr(eq.lhs, "date", 0) == 0
+        }
+
+        def lead_counts(eqs):
+            counts = {}
+            for eq in eqs:
+                for v in eq.set_eq_zero.atoms(Variable):
+                    if v.date == 1:
+                        counts[v] = counts.get(v, 0) + 1
+            return counts
+
+        changed = True
+        # Limit iterations to avoid pathological loops.
+        for _ in range(10):
+            if not changed:
+                break
+            changed = False
+            counts = lead_counts(equations)
+            # Identify orphan lead variables that appear in exactly one equation.
+            orphan_leads = [v for v, c in counts.items() if c == 1]
+            for v1 in orphan_leads:
+                base = v1.name
+                if base not in lhs_eq:
+                    continue
+                base_eq = lhs_eq[base]
+                rhs = base_eq.rhs
+                # Only substitute leads implied by purely backward, shock-free equations.
+                if rhs.atoms(Shock):
+                    continue
+                rhs_vars = rhs.atoms(Variable)
+                if rhs_vars and max(v.date for v in rhs_vars) > 0:
+                    continue
+
+                rhs_shift = self._shift_expr(rhs, 1)
+                # Guard: don't introduce new orphan leads.
+                new_leads = [v for v in rhs_shift.atoms(Variable) if v.date == 1]
+                introduces_orphans = any(counts.get(v, 0) <= 1 and v != v1 for v in new_leads)
+                if introduces_orphans:
+                    continue
+
+                repl = {v1: rhs_shift}
+                equations = [eq.xreplace(repl) for eq in equations]
+                lhs_eq = {
+                    eq.lhs.name: eq
+                    for eq in equations
+                    if isinstance(eq.lhs, Variable) and getattr(eq.lhs, "date", 0) == 0
+                }
+                changed = True
+
+        # ------------------------------------------------------------
+        # Pass 2: prune dead-end forward reporting variables (iterative)
+        # ------------------------------------------------------------
+        while True:
+            # Map variable name -> set of equation indices where it appears (any lag/lead).
+            occ = {}
+            for i, eq in enumerate(equations):
+                for v in eq.set_eq_zero.atoms(Variable):
+                    occ.setdefault(v.name, set()).add(i)
+
+            lhs_index = {
+                eq.lhs.name: i
+                for i, eq in enumerate(equations)
+                if isinstance(eq.lhs, Variable) and getattr(eq.lhs, "date", 0) == 0
+            }
+
+            drop_names = []
+            for v in var_ordering:
+                name = v.name
+                if name not in lhs_index:
+                    continue
+                idx = lhs_index[name]
+                if occ.get(name, set()) != {idx}:
+                    continue
+                # Only drop if its defining equation contains a lead.
+                has_lead = any(
+                    vv.date > 0 for vv in equations[idx].set_eq_zero.atoms(Variable)
+                )
+                if has_lead:
+                    drop_names.append(name)
+
+            if not drop_names:
+                break
+
+            drop_set = set(drop_names)
+            var_ordering = [v for v in var_ordering if v.name not in drop_set]
+            equations = [
+                eq
+                for eq in equations
+                if not (isinstance(eq.lhs, Variable) and eq.lhs.name in drop_set and eq.lhs.date == 0)
+            ]
+
+        keep_names = {v.name for v in var_ordering}
+
+        # Observables: if user explicitly provided observables, require they all survive.
+        explicit_obs = False
+        try:
+            explicit_obs = "observables" in self["__data__"]["declarations"]
+        except Exception:
+            explicit_obs = False
+
+        if explicit_obs:
+            missing = [v.name for v in self["observables"] if v.name not in keep_names]
+            if missing:
+                raise ValueError(
+                    "lre_reduction='core' dropped variables that are declared as observables: "
+                    + ", ".join(missing[:20])
+                )
+            observables = list(self["observables"])
+            obs_equations = {k: v for k, v in self["obs_equations"].items() if k in {o.name for o in observables}}
+        else:
+            observables = [Variable(v.name) for v in var_ordering]
+            obs_equations = {v.name: Variable(v.name) for v in observables}
+
+        model_dict = {
+            "var_ordering": var_ordering,
+            "parameters": self["parameters"],
+            "shk_ordering": self["shk_ordering"],
+            "other_parameters": self.get("other_parameters", []),
+            "other_para": self.get("other_para", []),
+            "auxiliary_parameters": self.get("auxiliary_parameters", {}),
+            "calibration": self["calibration"],
+            "steady_state": self.get("steady_state", [0]),
+            "init_values": self.get("init_values", [0]),
+            "equations": equations,
+            "covariance": self["covariance"],
+            "measurement_errors": self["measurement_errors"],
+            "meas_ordering": self.get("meas_ordering", None),
+            "info": dict(),
+            "make_log": self.get("make_log", []),
+            "estimation": self.get("estimation", {}),
+            "__data__": self.get("__data__", {}),
+            "name": f"{self.get('name','model')}_core",
+            "observables": observables,
+            "obs_equations": obs_equations,
+            "max_lead": int(getattr(self, "max_lead", 1)),
+            "max_lag": int(getattr(self, "max_lag", 1)),
+        }
+        return DSGE(**model_dict)
 
     @classmethod
     def read(cls, model_yaml):
@@ -729,7 +946,20 @@ Equations:
                 var_ordering.append(var_l)
                 equations.append(Equation(var_l, var_l_1))
 
-            # still need to do leads
+            # leads
+            for i in np.arange(2, abs(max_lead_endo[v]) + 1):
+                # For lead i we add a (i-1)-step auxiliary variable, chaining one-period ahead.
+                # Example: v(+2) becomes v_LEAD1(+1) with v_LEAD1 = v(+1).
+                var_f = Variable(v.name + "_LEAD" + str(i - 1))
+
+                if i == 2:
+                    var_f_1 = Variable(v.name, date=1)
+                else:
+                    var_f_1 = Variable(v.name + "_LEAD" + str(i - 2), date=1)
+
+                subs_dict[Variable(v.name, date=i)] = var_f(1)
+                var_ordering.append(var_f)
+                equations.append(Equation(var_f, var_f_1))
 
         # Pure symbol replacement: `xreplace` is much faster than `subs` for large models.
         equations = [eq.xreplace(subs_dict) for eq in equations]
@@ -794,6 +1024,8 @@ Equations:
             "name": dec["name"],
             "observables": observables,
             "obs_equations": obs_equations,
+            "max_lead": max_lead,
+            "max_lag": max_lag,
         }
 
         logger.info(f"DSGE model '{dec['name']}' creation complete with {len(var_ordering)} variables and {len(equations)} equations")
