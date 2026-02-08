@@ -1,0 +1,167 @@
+declarations:
+  name: 'linver_mini_legacy_fail'
+  max_lead: 1
+  max_lag: 1
+  variables: [hqlfpr, hqlww, huqpct, huqpct_LAG1, huxb, hxbt, hxbtr, jccan_l, kbfi_l, kh_l, kh_l_LAG1, kh_l_LAG2, ki_l, ki_l_LAG1, ks_l, leg_l, leh_l, leo_l, lep_l, leppot_l, lf_l, lfpr, lhp_l, lhp_l_LAG1, lprdt_l, lprdt_l_LAG1, lqualt_l_VAR, lur, lur_LAG1, lurnat, lurnat_LAG1, lww_l, mei_l, mep_l, mfpt_l, n16_l_VAR, pbfir_l, pcer_l, pcfr_l, pcfr_l_LAG1, pcfr_l_LAG2, pcfr_l_LAG3, pcfrt_VAR, pcnia_l, pcnia_l_LAG1, pcnia_l_LAG2, pcnia_l_LAG3, pcpi_l, pcxfe_l, pcxfe_l_LAG1, pcxfe_l_LAG2, pcxfe_l_LAG3, pegfr_l, pegsr_l, pic4_LEAD1, pic4_LEAD2, pic4_LEAD3, pic4_LEAD4, pic4_LEAD5, pic4_LEAD6, pic4_LEAD7, rfynil_LAG1, rg10, rg10p, rme, rme_LAG1, rrff, rrtr, rstar, rtb, rtb_LAG1, rtr, rule, tcin_l, trci, trcit_VAR, uemot_VAR, uleg_l, uqpct_l, uxbt_l, uynicpnr, vbfi, xb_l, xb_l_LAG1, xbn_l, xbo_l, xbo_l_LAG1, xbt_l, xbtr_l, xfs_l, xfs_l_LAG1, xfs_l_LAG2, xgap, xgap2, xgap2_LAG1, xgap2_LAG2, xgap2_LAG3, xgap_LAG1, xgap_LAG2, xgap_LAG3, xgdi_l, xgdin_l, xgdo_l, xgdp_l, xgdpn_l, xgdpt_l, xgdptn_l, xp_l, xpn_l, yhgap, yhgap_LAG1, yhgap_LAG2, yhgap_LAG3, yhl_l, yhpgap, yhpgap_LAG1, yhpgap_LAG2, yhpgap_LAG3, yht_l, yhtgap, yhtgap_LAG1, yhtgap_LAG2, yhtgap_LAG3, ynicpn_l, yniln_l, ynin_l, ynirn_l, zdivgr, zebfi, zecd, zeco, zgap05, zgap10, zgap30, zpi10, zpi10f, zpib5, zpic30, zpic58, zrff10, zrff30, zrff5]
+  shocks: [e]
+  parameters: []
+  observables: [hqlfpr, hqlww, huqpct, huqpct_LAG1, huxb, hxbt, hxbtr, jccan_l, kbfi_l, kh_l]
+equations:
+  model:
+    - hqlfpr = 0.95*hqlfpr(-1)
+    - hqlww = 0.95*hqlww(-1)
+    - huqpct = 0.95*huqpct(-1)
+    - huqpct_LAG1 = huqpct(-1)
+    - huxb = 0.95*huxb(-1)
+    - hxbt = 0.725*hqlww + hxbtr - 290.0*lqualt_l_VAR(-1)
+    - hxbtr = 0
+    - jccan_l = 0.82051735145*jccan_l(-1) + 0.128120564883*kbfi_l(-1) - 0.948637916333*xgdpn_l(-1) + xgdpn_l
+    - kbfi_l = 0.971891589449*kbfi_l(-1) + 0.0281084105505*pbfir_l
+    - kh_l = 0.991269672597*kh_l(-1)
+    - kh_l_LAG1 = kh_l(-1)
+    - kh_l_LAG2 = kh_l_LAG1(-1)
+    - ki_l = 1.44204786648*ki_l(-1) - 0.456739929026*ki_l_LAG1(-1) + 0.250723990347*xfs_l(-1) + 0.0711962153783*xfs_l_LAG1(-1) - 0.307228143176*xfs_l_LAG2(-1)
+    - ki_l_LAG1 = ki_l(-1)
+    - ks_l = ks_l(-1)
+    - leg_l = -lprdt_l + uleg_l
+    - leh_l = 0.132451786431*leg_l + 0.0535684241064*leo_l + 0.813979789462*lep_l
+    - leo_l = 0.756667597034*leo_l(-1) - 0.0164258334824*xgap2(-1)
+    - lep_l = lhp_l - lww_l
+    - leppot_l = -0.0110028694424*lurnat
+    - lf_l = 1.58659431972*lfpr
+    - lfpr = hqlfpr + 0.432392517171*lfpr(-1) - 0.000875189202097*lur(-1) + 0.000875189202097*lurnat(-1)
+    - lhp_l = 1.00059088506*lhp_l(-1) - 0.202880674857*lhp_l_LAG1(-1) - 0.755331857052*xbo_l(-1) + 0.627935815115*xbo_l + 0.127396041937*xbo_l_LAG1(-1)
+    - lhp_l_LAG1 = lhp_l(-1)
+    - lprdt_l = -leppot_l + xbt_l
+    - lprdt_l_LAG1 = lprdt_l(-1)
+    - lqualt_l_VAR = 0.0
+    - lur = -96.2208093896*leh_l + 96.2208093896*lf_l
+    - lur_LAG1 = lur(-1)
+    - lurnat = 0.95*lurnat(-1)
+    - lurnat_LAG1 = lurnat(-1)
+    - lww_l = -0.208436738112*leg_l + 0.168101269732*leo_l + 0.0502050126093*lep_l
+    - mei_l = 0.95*mei_l(-1)
+    - mep_l = 0.95*mep_l(-1)
+    - mfpt_l = 0.95*mfpt_l(-1)
+    - n16_l_VAR = 0.0
+    - pbfir_l = 0.95*pbfir_l(-1)
+    - pcer_l = 0.95*pcer_l(-1)
+    - pcfr_l = 0.977271021619*pcfr_l(-1) + 0.00845560089185*pcfr_l_LAG1(-1) + 0.0070506829387*pcfr_l_LAG2(-1) + 0.00722269454957*pcfr_l_LAG3(-1)
+    - pcfr_l_LAG1 = pcfr_l(-1)
+    - pcfr_l_LAG2 = pcfr_l_LAG1(-1)
+    - pcfr_l_LAG3 = pcfr_l_LAG2(-1)
+    - pcfrt_VAR = 0.0
+    - pcnia_l = 0.95*pcnia_l(-1)
+    - pcnia_l_LAG1 = pcnia_l(-1)
+    - pcnia_l_LAG2 = pcnia_l_LAG1(-1)
+    - pcnia_l_LAG3 = pcnia_l_LAG2(-1)
+    - pcpi_l = 0.95*pcpi_l(-1)
+    - pcxfe_l = 0.95*pcxfe_l(-1)
+    - pcxfe_l_LAG1 = pcxfe_l(-1)
+    - pcxfe_l_LAG2 = pcxfe_l_LAG1(-1)
+    - pcxfe_l_LAG3 = pcxfe_l_LAG2(-1)
+    - pegfr_l = 0.95*pegfr_l(-1)
+    - pegsr_l = 0.95*pegsr_l(-1)
+    - pic4_LEAD1 = pic4_LEAD2(1)
+    - pic4_LEAD2 = pic4_LEAD3(1)
+    - pic4_LEAD3 = pic4_LEAD4(1)
+    - pic4_LEAD4 = pic4_LEAD5(1)
+    - pic4_LEAD5 = pic4_LEAD6(1)
+    - pic4_LEAD6 = pic4_LEAD7(1)
+    - pic4_LEAD7 = 100.0*pcnia_l - 100.0*pcnia_l_LAG3(-1)
+    - rfynil_LAG1 = 0
+    - rg10 = 0.95*rg10(-1)
+    - rg10p = 0.95*rg10p(-1)
+    - rme = 0.95*rme(-1)
+    - rme_LAG1 = rme(-1)
+    - rrff = 0
+    - rrtr = 0
+    - rstar = 0.895762855247*rstar(-1) + 4.43528271106e-5*ynicpn_l - 4.43528271106e-5*yniln_l + 0.000722512380916*ynin_l - 0.000722512380916*ynirn_l + 3.55359706509e-5*ynicpn_l(-1) - 3.55359706509e-5*yniln_l(-1) - 0.00062252575642*ynin_l(-1) + 0.00062252575642*ynirn_l(-1)
+    - rtb = 0.95*rtb(-1)
+    - rtb_LAG1 = rtb(-1)
+    - rtr = 0.95*rtr(-1)
+    - rule = rule(-1) + 0.316673737773*rrff - 0.316673737773*rrff(-1)
+    - tcin_l = tcin_l(-1)
+    - trci = 0.95*trci(-1)
+    - trcit_VAR = 0.0
+    - uemot_VAR = 0.0
+    - uleg_l = 0.95*uleg_l(-1)
+    - uqpct_l = 0.95*uqpct_l(-1)
+    - uxbt_l = uxbt_l(-1)
+    - uynicpnr = 0
+    - vbfi = 0.97*vbfi(-1) + 0.07*rme(-1) + 0.02*rg10(-1) - 0.02*rg10p(-1)
+    - xb_l = 0.95*xb_l(-1)
+    - xb_l_LAG1 = xb_l(-1)
+    - xbn_l = 0.954706660789*xbn_l(-1) + 0.045293339211*xgdpn_l
+    - xbo_l = 0.95*xbo_l(-1)
+    - xbo_l_LAG1 = xbo_l(-1)
+    - xbt_l = xbt_l(-1)
+    - xbtr_l = 0.95*xbtr_l(-1)
+    - xfs_l = 0.95*xfs_l(-1)
+    - xfs_l_LAG1 = xfs_l(-1)
+    - xfs_l_LAG2 = xfs_l_LAG1(-1)
+    - xgap = 0.95*xgap(-1)
+    - xgap2 = 0.898476598067*xgap2(-1) + 0.101523401933*xgap_LAG1(-1)
+    - xgap2_LAG1 = xgap2(-1)
+    - xgap2_LAG2 = xgap2_LAG1(-1)
+    - xgap2_LAG3 = xgap2_LAG2(-1)
+    - xgap_LAG1 = xgap(-1)
+    - xgap_LAG2 = xgap_LAG1(-1)
+    - xgap_LAG3 = xgap_LAG2(-1)
+    - xgdi_l = 0.95*xgdi_l(-1)
+    - xgdin_l = 0.965273901165*xgdin_l(-1) + 0.0347260988353*xgdpn_l
+    - xgdo_l = 0.95*xgdo_l(-1)
+    - xgdp_l = 0.95*xgdp_l(-1)
+    - xgdpn_l = xgdpn_l(-1)
+    - xgdpt_l = 0.95*xgdpt_l(-1)
+    - xgdptn_l = xgdptn_l(-1)
+    - xp_l = 0.95*xp_l(-1)
+    - xpn_l = 0.95*xpn_l(-1)
+    - yhgap = 0.95*yhgap(-1)
+    - yhgap_LAG1 = yhgap(-1)
+    - yhgap_LAG2 = yhgap_LAG1(-1)
+    - yhgap_LAG3 = yhgap_LAG2(-1)
+    - yhl_l = yhl_l(-1)
+    - yhpgap = 0.95*yhpgap(-1)
+    - yhpgap_LAG1 = yhpgap(-1)
+    - yhpgap_LAG2 = yhpgap_LAG1(-1)
+    - yhpgap_LAG3 = yhpgap_LAG2(-1)
+    - yht_l = 0.95*yht_l(-1)
+    - yhtgap = 0.95*yhtgap(-1)
+    - yhtgap_LAG1 = yhtgap(-1)
+    - yhtgap_LAG2 = yhtgap_LAG1(-1)
+    - yhtgap_LAG3 = yhtgap_LAG2(-1)
+    - ynicpn_l = ynicpn_l(-1)
+    - yniln_l = yniln_l(-1)
+    - ynin_l = 0.95*ynin_l(-1)
+    - ynirn_l = ynirn_l(-1)
+    - zdivgr = 0.990242735743*zdivgr(1)
+    - zebfi = 0.00035570453849*hxbt(-1) + 0.000145632881593*rtr(-1) + 0.000691481740712*xgap(-1) - 0.00152462990113*xgap_LAG1(-1) + 0.000182102122415*xgap_LAG2(-1) + 0.000170960242897*xgap_LAG3(-1)
+    - zecd = -0.000639602744318*rtr(-1) + 0.000428608849069*xgap2(-1) - 0.00111248088805*xgap2_LAG1(-1) + 3.61133130939e-5*xgap2_LAG2(-1) + 7.97590705793e-5*xgap2_LAG3(-1) - 0.00010841426451*yhgap(-1) + 0.000210363124201*yhgap_LAG1(-1) + 0.000178061664134*yhgap_LAG2(-1) + 0.000146912749167*yhgap_LAG3(-1) + 0.000124123127885*yhpgap(-1) - 0.000203591971486*yhpgap_LAG1(-1) + 5.7989188193e-5*yhpgap_LAG2(-1) + 0.000114280775871*yhpgap_LAG3(-1) - 0.000139880426754*yhtgap(-1) - 3.38007573296e-5*yhtgap_LAG1(-1) + 0.000166975793706*yhtgap_LAG2(-1) + 0.000113506936821*yhtgap_LAG3(-1)
+    - zeco = -0.000130139477521*rtr(-1) - 0.000630171036922*xgap2(-1) + 0.000273875586514*xgap2_LAG1(-1) + 0.000133019756131*xgap2_LAG2(-1) - 3.46619140531e-5*xgap2_LAG3(-1) - 0.000574849476126*yhgap(-1) + 0.000315791553755*yhgap_LAG1(-1) + 0.000397005436297*yhgap_LAG2(-1) + 2.60636593368e-5*yhgap_LAG3(-1) + 0.000205501772024*yhpgap(-1) - 0.000240937714399*yhpgap_LAG1(-1) - 0.000131812287659*yhpgap_LAG2(-1) - 8.99812036284e-5*yhpgap_LAG3(-1) - 6.06591388527e-5*yhtgap(-1) - 5.86151697491e-6*yhtgap_LAG1(-1) + 4.60869299242e-5*yhtgap_LAG2(-1) - 3.67533909379e-5*yhtgap_LAG3(-1)
+    - zgap05 = 0.0547936526434*xgap + 0.945206347357*zgap05(1)
+    - zgap10 = 0.0300745581094*xgap + 0.969925441891*zgap10(1)
+    - zgap30 = 0.014106588982*xgap + 0.985893411018*zgap30(1)
+    - zpi10 = 0.969925441891*zpi10(1)
+    - zpi10f = 0.969925441891*zpi10f(1)
+    - zpib5 = 0.945206347357*zpib5(1)
+    - zpic30 = 0.985893411018*zpic30(1)
+    - zpic58 = pic4_LEAD7(1)
+    - zrff10 = 0.969925441891*zrff10(1)
+    - zrff30 = 0.985893411018*zrff30(1)
+    - zrff5 = 0.945206347357*zrff5(1)
+  observables:
+    hqlfpr: hqlfpr
+    hqlww: hqlww
+    huqpct: huqpct
+    huqpct_LAG1: huqpct_LAG1
+    huxb: huxb
+    hxbt: hxbt
+    hxbtr: hxbtr
+    jccan_l: jccan_l
+    kbfi_l: kbfi_l
+    kh_l: kh_l
+calibration:
+  parameters: {}
+  covariance:
+    e: 1.0
