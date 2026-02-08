@@ -59,3 +59,17 @@ This repo includes the translated variants:
 
 To regenerate, use `generate_runmod_mods.py` to create the `.mod` files and then import them with
 `import_linver_mods.py`.
+
+## Solving LINVER with `dsge`
+
+LINVER YAML files declare `max_lead > 1` and include auxiliary lead variables after parsing. For these
+large systems, `dsge` uses a more robust internal LRE augmentation by default:
+
+```python
+from dsge import read_yaml
+
+m = read_yaml("dsge/examples/linver/mcap.yaml")
+lin = m.compile_model(order=1)  # uses lre_form="auto" by default
+TT, RR, RC = lin.solve_LRE(m.p0(), return_diagnostics=True, scale_equations=True)
+assert RC == 1
+```

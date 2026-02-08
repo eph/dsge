@@ -274,7 +274,37 @@ Equations:
     def p0(self):
         return list(map(lambda x: self["calibration"][x], self.parameters))
 
-    def python_sims_matrices(self, matrix_format="numeric", method: str = "auto"):
+    def python_sims_matrices(
+        self,
+        matrix_format="numeric",
+        method: str = "auto",
+        lre_form: str = "auto",
+    ):
+        """
+        Construct Sims-style system matrices for the linear rational expectations model.
+
+        Notes
+        -----
+        For historical reasons, the default ("legacy") representation used a mismatched
+        `(vlist, llist)` pair (lead symbols in `vlist` but `__LAGGED_*` placeholders in `llist`).
+        On large models with auxiliary lead variables this can produce a singular pencil
+        (GENSYS "coincident zeros").
+
+        The `"expvars"` form replaces each lead symbol `x(+1)` with a distinct current-period
+        expectation variable, so the lag list is the true lag of the current list.
+        """
+        lre_form = str(lre_form).lower().strip()
+        if lre_form not in {"auto", "legacy", "expvars"}:
+            raise ValueError("lre_form must be one of {'auto','legacy','expvars'}.")
+
+        # Heuristic: the legacy LRE augmentation uses an inconsistent (vlist,llist) pair where
+        # G0 columns correspond to `fvars` but G1 columns correspond to `__LAGGED_*` placeholders.
+        # This can produce singular pencils on large models with auxiliary lead variables (e.g. LINVER).
+        if lre_form == "auto":
+            # If the YAML declared max_lead > 1, we almost surely introduced Dynare-style lead auxiliaries.
+            # Use the more robust expvars form.
+            lre_form = "expvars" if int(getattr(self, "max_lead", 1)) > 1 else "legacy"
+
         if matrix_format != "symbolic":
             already = (
                 callable(getattr(self, "GAM0", None))
@@ -286,14 +316,51 @@ Equations:
                 and callable(getattr(self, "DD", None))
                 and callable(getattr(self, "ZZ", None))
             )
-            if already:
+            if already and getattr(self, "_python_sims_lre_form", None) == lre_form:
                 return None
 
-        vlist = self["var_ordering"] + self["fvars"]
-        llist = [var(-1) for var in self["var_ordering"]] + self["fvars_lagged"]
-        slist = self["shk_ordering"]
+        if lre_form == "legacy":
+            vlist = self["var_ordering"] + self["fvars"]
+            llist = [var(-1) for var in self["var_ordering"]] + self["fvars_lagged"]
+            slist = self["shk_ordering"]
+            eq_cond = self["perturb_eq"] + self["re_errors_eq"]
+        else:
+            # Robust "expectation variables" formulation:
+            # - replace each lead symbol x(+1) with a distinct current-period symbol E_x
+            # - build lags consistently as E_x(-1), so `[G0;G1]` is a proper matrix pencil
+            fvars = list(self.get("fvars", []))
+            if any(not isinstance(v, Variable) for v in fvars):
+                raise NotImplementedError(
+                    "lre_form='expvars' currently supports only endogenous lead variables (no shock leads). "
+                    "Use lre_form='legacy' for models with anticipated shocks written as eps(+k)."
+                )
 
-        eq_cond = self["perturb_eq"] + self["re_errors_eq"]
+            used_names = {v.name for v in self["var_ordering"]}
+            exp_vars = []
+            repl = {}
+            for fv in fvars:
+                base = f"__E_{fv.name}"
+                name = base
+                j = 1
+                while name in used_names:
+                    j += 1
+                    name = f"{base}_{j}"
+                used_names.add(name)
+                ev = Variable(name)
+                exp_vars.append(ev)
+                repl[fv] = ev
+
+            vlist = self["var_ordering"] + exp_vars
+            llist = [var(-1) for var in self["var_ordering"]] + [ev(-1) for ev in exp_vars]
+            slist = self["shk_ordering"]
+
+            eq_model = [eq.xreplace(repl) for eq in self["perturb_eq"]]
+            # Forecast error equations: x_t - E_{t-1}[x_t] - eta_t = 0
+            eq_re = [
+                Equation(fv(-1) - ev(-1) - eta, sympify(0))
+                for fv, ev, eta in zip(fvars, exp_vars, self["re_errors"])
+            ]
+            eq_cond = eq_model + eq_re
 
         vpos = {v: i for i, v in enumerate(vlist)}
         lpos = {v: i for i, v in enumerate(llist)}
@@ -420,6 +487,7 @@ Equations:
         if matrix_format == "symbolic":
             QQ = self["covariance"]
             HH = self["measurement_errors"]
+            self._python_sims_lre_form = lre_form
             return GAM0, GAM1, PSI, PPI, QQ, DD, ZZ, HH
 
         subs_dict = []
@@ -456,6 +524,7 @@ Equations:
         self.ZZ = self.lambdify(ZZ, context=context_f)
 
         self.psi = None
+        self._python_sims_lre_form = lre_form
 
         # if self['__data__']['declarations']['type'] == 'sv':
         #     sv = self['__data__']['equations']['sv']
@@ -480,6 +549,7 @@ Equations:
         pruning=True,
         nonlinear_observables: str = "error",
         lre_reduction: str = "none",
+        lre_form: str = "auto",
     ):
         """
         Compile the DSGE model into an object with likelihood/simulation APIs.
@@ -497,6 +567,10 @@ Equations:
             be affine in current-period endogenous variables. If `"linearize"`, allow
             nonlinear observables and interpret them via a first-order linearization
             at the steady state (still disallow lags/leads and shocks in observables).
+        lre_form : {"auto", "legacy", "expvars"}
+            Only used when `order=1`. Controls the internal LRE augmentation used to
+            construct the GENSYS pencil. `"auto"` selects `"expvars"` for models with
+            declared `max_lead > 1` (e.g. LINVER) and `"legacy"` otherwise.
         """
         if order == 2:
             from .perturbation_model import PerturbationDSGEModel
@@ -543,9 +617,9 @@ Equations:
         if lre_reduction == "core":
             core = self._lre_core_model()
             # Important: avoid recursive reduction.
-            return core.compile_model(order=1, lre_reduction="none")
+            return core.compile_model(order=1, lre_reduction="none", lre_form=lre_form)
 
-        self.python_sims_matrices()
+        self.python_sims_matrices(lre_form=lre_form)
 
         GAM0 = self.GAM0
         GAM1 = self.GAM1
