@@ -1,12 +1,58 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 from typing import Any, Dict, List, Tuple
 
 from lark import Lark, Transformer, v_args
 
 GRAMMAR_PATH = Path(__file__).with_name("dynare.lark")
 _PARSER: Lark | None = None
+
+
+_DYNARE_COMMAND_RE = re.compile(
+    r"^\s*(stoch_simul|steady|check|simul|forecast|estimation|model_diagnostics|resid)\b",
+    re.IGNORECASE,
+)
+_DYNARE_EQUATION_NAME_RE = re.compile(r"^\s*\[\s*name\s*=\s*(['\"]).*?\1\s*\]\s*$", re.IGNORECASE)
+
+
+def _preprocess_mod_text(text: str) -> str:
+    """Strip Dynare commands that are outside our minimal grammar.
+
+    We intentionally support only declarations/blocks needed to map `.mod` files
+    into dsge YAML. Dynare command statements like `stoch_simul(...)` are ignored.
+    """
+
+    out_lines: List[str] = []
+    skipping_command = False
+    for line in text.splitlines():
+        stripped = line.strip()
+
+        if skipping_command:
+            if ";" in stripped:
+                skipping_command = False
+            continue
+
+        if not stripped:
+            continue
+
+        # Dynare equation labels inside `model; ... end;`
+        if _DYNARE_EQUATION_NAME_RE.match(stripped):
+            continue
+
+        # Dynare macro / include directives (not modeled by our grammar)
+        if stripped.startswith("@#") or stripped.startswith("#include"):
+            continue
+
+        if _DYNARE_COMMAND_RE.match(stripped):
+            if ";" not in stripped:
+                skipping_command = True
+            continue
+
+        out_lines.append(line)
+
+    return "\n".join(out_lines) + "\n"
 
 
 def _load_parser() -> Lark:
@@ -117,7 +163,7 @@ class _DynareTransformer(Transformer):
 
 def parse_mod_text(text: str) -> Dict[str, Any]:
     parser = _load_parser()
-    tree = parser.parse(text)
+    tree = parser.parse(_preprocess_mod_text(text))
     t = _DynareTransformer()
     t.transform(tree)
 

@@ -12,8 +12,21 @@ keeps a YAML translation (`mcap.yaml`) and provides scripts to:
 ## Workflow
 
 1. Download and unzip the Fed LINVER package.
-2. Run the Octave/Matlab script(s) that generate the `.mod` files (per the Fed instructions).
-3. Use the scripts below.
+2. Generate `runmod.mod` using the Fed `make_runmod.m` (Matlab) or `make_runmod_octave.m` (Octave).
+3. Use the scripts below to import/verify.
+
+### Generate `runmod.mod` (Octave)
+
+The Fed package’s `make_runmod_octave.m` ends by calling Dynare to *parse* the model. For translation
+checks we only need the generated `runmod.mod`, so this repo includes a small wrapper that installs a
+temporary `dynare.m` stub (unless you pass `--use-dynare`).
+
+```bash
+.venv/bin/python dsge/examples/linver/generate_runmod_mods.py /path/to/public_linver \\
+  --out /tmp/linver_mods \\
+  --expvers mcap mcapwp var \\
+  --mprule intay
+```
 
 ## Import `.mod` → YAML
 
@@ -38,7 +51,11 @@ The verifier does:
 
 ## Variants (MCAP+WP, VAR-based, …)
 
-If the Fed package generates multiple `.mod` variants, point `import_linver_mods.py` at the directory
-containing them; it will import all `*.mod` files it finds. Once we confirm the mappings, we can
-commit the additional YAML variants (e.g. `mcap_wp.yaml`, `mcap_var.yaml`) alongside `mcap.yaml`.
+This repo includes the translated variants:
 
+- `mcap.yaml` (MCAP expectations, inertial Taylor rule)
+- `mcapwp.yaml` (MCAP+WP expectations, inertial Taylor rule)
+- `var.yaml` (VAR expectations, inertial Taylor rule)
+
+To regenerate, use `generate_runmod_mods.py` to create the `.mod` files and then import them with
+`import_linver_mods.py`.
