@@ -1,9 +1,11 @@
 import numpy as np
 
-#from numba import jit
+try:
+    from numba import njit
+except Exception:  # pragma: no cover
+    njit = None  # type: ignore
 
 
-#@jit(nopython=True)
 def chand_recursion(y, CC, TT, RR, QQ, DD, ZZ, HH, A0, P0, t0=0):
     nobs, ny = y.shape
 
@@ -12,11 +14,14 @@ def chand_recursion(y, CC, TT, RR, QQ, DD, ZZ, HH, A0, P0, t0=0):
 
     loglh = 0.0
 
-    Ft = ZZ @ Pt @ ZZ.T + HH
+    # In the Numba-accelerated path, using an explicit contiguous transpose copy
+    # avoids performance warnings and is typically faster for small ny.
+    ZZT = ZZ.T.copy()
+    Ft = ZZ @ Pt @ ZZT + HH
     Ft = 0.5 * (Ft + Ft.T)
     iFt = np.linalg.inv(Ft)
 
-    St = TT @ Pt @ ZZ.T
+    St = TT @ Pt @ ZZT
     Mt = -iFt
     Kt = St @ iFt
 
@@ -38,7 +43,8 @@ def chand_recursion(y, CC, TT, RR, QQ, DD, ZZ, HH, A0, P0, t0=0):
         At = CC + TT @ At + Kt @ nut.T
 
         ZZSt = ZZ @ St
-        MSpZp = Mt @ ZZSt.T
+        ZZStT = ZZSt.T.copy()
+        MSpZp = Mt @ ZZStT
         TTSt = TT @ St
 
         Ft1 = Ft + ZZSt @ MSpZp
@@ -50,7 +56,8 @@ def chand_recursion(y, CC, TT, RR, QQ, DD, ZZ, HH, A0, P0, t0=0):
         # K_{t+1}
         St = TTSt - Kt @ ZZSt
         # S_{t+1}
-        Mt = Mt + MSpZp @ iFt @ MSpZp.T
+        MSpZpT = MSpZp.T.copy()
+        Mt = Mt + MSpZp @ iFt @ MSpZpT
         # M_{t+1}
         Mt = 0.5 * (Mt + Mt.T)
         Ft = Ft1
@@ -59,7 +66,6 @@ def chand_recursion(y, CC, TT, RR, QQ, DD, ZZ, HH, A0, P0, t0=0):
     return loglh
 
 
-#@jit(nopython=True)
 def kalman_filter(y, CC, TT, RR, QQ, DD, ZZ, HH, A0, P0, t0=0):
 
     # y = np.asarray(y)
@@ -105,7 +111,6 @@ def kalman_filter(y, CC, TT, RR, QQ, DD, ZZ, HH, A0, P0, t0=0):
     return loglh
 
 
-#@jit(nopython=True)
 def filter_and_smooth(y, CC, TT, RR, QQ, DD, ZZ, HH, A0, P0, t0=0):
 
     nobs, ny = y.shape
@@ -213,3 +218,17 @@ def filter_and_smooth(y, CC, TT, RR, QQ, DD, ZZ, HH, A0, P0, t0=0):
         smoothed_stds,
         smoothed_cov,
     )
+
+
+# Optional Numba acceleration
+#
+# We keep the original Python implementations (for debugging/testing) but, when
+# Numba is available and JIT is enabled, replace `chand_recursion` and
+# `kalman_filter` with `njit`-compiled versions. This substantially speeds up
+# tight time loops in order-1 likelihood evaluations.
+chand_recursion_py = chand_recursion
+kalman_filter_py = kalman_filter
+
+if njit is not None:
+    chand_recursion = njit(cache=False)(chand_recursion_py)  # type: ignore[assignment]
+    kalman_filter = njit(cache=False)(kalman_filter_py)  # type: ignore[assignment]
