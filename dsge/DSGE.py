@@ -437,11 +437,15 @@ Equations:
                     v_j = vpos[v]
                     GAM0[eq_i, v_j] = -_subs_steady_state_fast(eq0.diff(v))
 
-                past_var = [v for v in var_atoms if v in lpos]
-                for v in past_var:
-                    deq_dv = _subs_steady_state_fast(eq0.diff(v))
-                    v_j = lpos[v]
-                    GAM1[eq_i, v_j] = deq_dv
+                # `llist` can contain non-Variable symbols (e.g. `__LAGGED_*` placeholders used
+                # by the legacy LRE augmentation). Restrict to symbols that actually appear in
+                # the equation and are in the lag-position map.
+                for sym in eq0.free_symbols:
+                    if sym not in lpos:
+                        continue
+                    deq_dsym = _subs_steady_state_fast(eq0.diff(sym))
+                    v_j = lpos[sym]
+                    GAM1[eq_i, v_j] = deq_dsym
 
                 for s in shock_atoms:
                     if s not in self["re_errors"]:

@@ -1,0 +1,23 @@
+declarations:
+  name: 'tiny_forward_expectation'
+  variables: [u, v]
+  shocks: [e]
+  parameters: [rho]
+  observables: [u, v]
+  max_lead: 1
+  max_lag: 1
+
+equations:
+  model:
+    # A single forward-looking reference to a purely backward-looking process.
+    - u = v(+1)
+    - v = rho*v(-1) + e
+  observables:
+    u: u
+    v: v
+
+calibration:
+  parameters:
+    rho: 0.9
+  covariance:
+    e: 1.0
