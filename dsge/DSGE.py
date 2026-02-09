@@ -8,7 +8,7 @@ linear rational expectations framework.
 
 import numpy as np
 import sympy
-from typing import List, Dict, Union
+from typing import Any, Dict, List, Mapping, Optional, Union
 
 from sympy.matrices import zeros
 from sympy import sympify
@@ -675,6 +675,93 @@ Equations:
         dsge.psi = self.psi
 
         return dsge
+
+    def estimate_smc(
+        self,
+        *,
+        order: int = 1,
+        backend: str = "local",
+        backend_options: Optional[Mapping[str, Any]] = None,
+        smc_options=None,
+        log_lik_kwargs: Optional[Mapping[str, Any]] = None,
+        n_workers: int = 1,
+        parallel: str = "thread",
+        wait: bool = False,
+    ):
+        """
+        Estimate the model using tempered SMC.
+
+        Parameters
+        ----------
+        order
+            Perturbation/solution order for compilation (`1` or `2`).
+        backend
+            Execution backend: `"local"` (in-process) or `"slurm"` (submitit).
+        backend_options
+            Backend-specific options. For Slurm, supports:
+            - `submitit_folder` (str): log folder (default `_submitit`)
+            - `slurm_params` (dict): forwarded to `submitit.AutoExecutor.update_parameters`
+            - `yaml_path` (str): override YAML path if `source_file` is not set
+        smc_options
+            Either an `SMCOptions` instance or a dict of constructor kwargs.
+        log_lik_kwargs
+            Extra keyword arguments forwarded to `compiled.log_lik`.
+        n_workers, parallel
+            Likelihood batch parallelism for local runs (`parallel="thread"` avoids pickling).
+        wait
+            Only for backend `"slurm"`: if True, block and return the result.
+        """
+        from .smc import SMCOptions, smc_submit_slurm
+
+        if smc_options is None:
+            options_obj = SMCOptions()
+        elif isinstance(smc_options, dict):
+            options_obj = SMCOptions(**smc_options)
+        else:
+            options_obj = smc_options
+
+        backend = str(backend).lower().strip()
+        if backend == "local":
+            compiled = self.compile_model(order=order)
+            return compiled.estimate_smc(
+                options=options_obj,
+                log_lik_kwargs=log_lik_kwargs,
+                n_workers=n_workers,
+                parallel=parallel,
+            )
+
+        if backend == "slurm":
+            opts = dict(backend_options or {})
+            yaml_path = opts.pop("yaml_path", None) or getattr(self, "source_file", None)
+            if yaml_path is None:
+                raise ValueError(
+                    "Slurm backend requires a YAML path. Load the model with `read_yaml(path)` "
+                    "(so `source_file` is set) or pass backend_options={'yaml_path': ...}."
+                )
+
+            submitit_folder = str(opts.pop("submitit_folder", "_submitit"))
+            slurm_params = opts.pop("slurm_params", None)
+            if opts:
+                raise ValueError(f"Unknown backend_options for slurm: {sorted(opts.keys())}")
+
+            job = smc_submit_slurm(
+                str(yaml_path),
+                order=int(order),
+                options=options_obj,
+                log_lik_kwargs=log_lik_kwargs,
+                n_workers=int(n_workers),
+                parallel=str(parallel),
+                submitit_folder=submitit_folder,
+                slurm_params=slurm_params,
+            )
+            return job.result() if wait else job
+
+        if backend == "modal":  # pragma: no cover
+            raise NotImplementedError(
+                "Modal backend is not implemented yet. Use backend='local' or backend='slurm' for now."
+            )
+
+        raise ValueError(f"Unknown backend: {backend!r}. Expected one of {{'local','slurm','modal'}}.")
 
     def solve_model(self, p0):
 

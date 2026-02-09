@@ -255,6 +255,37 @@ class PerturbationDSGEModel:
             x = -1000000000.0
         return x
 
+    def estimate_smc(
+        self,
+        *,
+        options=None,
+        log_lik_kwargs=None,
+        n_workers: int = 1,
+        parallel: str = "thread",
+    ):
+        """
+        Tempered SMC estimation (Python implementation).
+
+        For order-2 models, pass particle-filter settings via `log_lik_kwargs`
+        (e.g. `{"nparticles": 5000, "seed": 0}`).
+        """
+        from .smc import SMCOptions, smc_estimate
+
+        if options is None:
+            options_obj = SMCOptions()
+        elif isinstance(options, dict):
+            options_obj = SMCOptions(**options)
+        else:
+            options_obj = options
+
+        return smc_estimate(
+            self,
+            options=options_obj,
+            log_lik_kwargs=log_lik_kwargs,
+            n_workers=int(n_workers),
+            parallel=str(parallel),
+        )
+
     def log_lik(self, para, use_cache: bool = False, *args, **kwargs):
         """
         Particle filter likelihood for order-2 perturbation model.

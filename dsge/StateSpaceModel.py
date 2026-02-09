@@ -894,6 +894,39 @@ class LinearDSGEModel(StateSpaceModel):
             x = -1000000000.0
         return x
 
+    def estimate_smc(
+        self,
+        *,
+        options=None,
+        log_lik_kwargs=None,
+        n_workers: int = 1,
+        parallel: str = "thread",
+    ):
+        """
+        Tempered SMC estimation (Python implementation).
+
+        Notes
+        -----
+        This runs locally. For Slurm submission, call `DSGE.estimate_smc(backend="slurm", ...)`
+        on the YAML model instance (so we can re-load/compile on the compute node).
+        """
+        from .smc import SMCOptions, smc_estimate
+
+        if options is None:
+            options_obj = SMCOptions()
+        elif isinstance(options, dict):
+            options_obj = SMCOptions(**options)
+        else:
+            options_obj = options
+
+        return smc_estimate(
+            self,
+            options=options_obj,
+            log_lik_kwargs=log_lik_kwargs,
+            n_workers=int(n_workers),
+            parallel=str(parallel),
+        )
+
     def anticipated_impulse_response(self, para, anticipated_h=1, h=20, use_cache=False, *args, **kwargs, ):
         """
         Computes anticipated impulse response functions of model.

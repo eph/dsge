@@ -11,7 +11,7 @@ import re
 import os
 import warnings
 import logging
-from typing import List, Dict, Union, IO
+from typing import List, Dict, Optional, Union, IO
 
 from .DSGE import DSGE
 from .FHPRepAgent import FHPRepAgent
@@ -163,10 +163,14 @@ def read_yaml(yaml_file: Union[str,IO[str]],
     # Read the file content
     if isinstance(yaml_file, str):
         logger.info(f"Reading YAML from file: {yaml_file}")
+        yaml_path = os.path.abspath(yaml_file)
+        yaml_dir = os.path.dirname(yaml_path)
         with open(yaml_file) as f:
             txt = f.read()
     else:
         logger.info("Reading YAML from stream")
+        yaml_path = None
+        yaml_dir = None
         txt = yaml_file.read()
 
     # Apply text replacements
@@ -178,6 +182,45 @@ def read_yaml(yaml_file: Union[str,IO[str]],
     # Parse YAML to dictionary
     yaml_dict = yaml.safe_load(txt)
     yaml_dict = update_deprecated_keys(yaml_dict)
+
+    def _find_project_root(start_dir: str) -> Optional[str]:
+        """
+        Heuristic: walk upward to find a repo/project root (pyproject.toml or .git).
+        """
+        cur = os.path.abspath(start_dir)
+        for _ in range(50):
+            if os.path.exists(os.path.join(cur, "pyproject.toml")) or os.path.exists(os.path.join(cur, ".git")):
+                return cur
+            parent = os.path.dirname(cur)
+            if parent == cur:
+                break
+            cur = parent
+        return None
+
+    # Resolve relative file references against the YAML directory (when available).
+    if yaml_dir and isinstance(yaml_dict, dict):
+        project_root = _find_project_root(yaml_dir)
+        est = yaml_dict.get("estimation", {})
+        if isinstance(est, dict) and "data" in est:
+            data_spec = est.get("data")
+            if isinstance(data_spec, dict) and "file" in data_spec:
+                f = data_spec.get("file")
+                if isinstance(f, str) and not os.path.isabs(f):
+                    candidate = os.path.join(yaml_dir, f)
+                    if os.path.exists(candidate):
+                        data_spec["file"] = candidate
+                    elif project_root:
+                        candidate = os.path.join(project_root, f)
+                        if os.path.exists(candidate):
+                            data_spec["file"] = candidate
+            elif isinstance(data_spec, str) and not os.path.isabs(data_spec):
+                candidate = os.path.join(yaml_dir, data_spec)
+                if os.path.exists(candidate):
+                    est["data"] = candidate
+                elif project_root:
+                    candidate = os.path.join(project_root, data_spec)
+                    if os.path.exists(candidate):
+                        est["data"] = candidate
 
     # Determine model type and validate schema
     kind = yaml_dict['declarations'].get('type', 'dsge')
@@ -198,22 +241,32 @@ def read_yaml(yaml_file: Union[str,IO[str]],
             # Occasionally-binding constraint model
             from .obc import read_obc
             logger.debug("Creating OBC (OccBin) model with regimes/constraints")
-            return read_obc(yaml_dict)
+            model_obj = read_obc(yaml_dict)
         elif kind == 'fhp':
             logger.debug("Creating FHP Representative Agent model")
-            return FHPRepAgent.read(yaml_dict)
+            model_obj = FHPRepAgent.read(yaml_dict)
         elif kind == 'si' or kind == 'sticky-information':
             logger.debug("Creating Sticky Information DSGE model")
-            return read_si(yaml_dict)
+            model_obj = read_si(yaml_dict)
         elif kind == 'dsge-sv':
             logger.error("DSGE-SV model type not implemented")
             raise NotImplementedError('DSGE-SV model not implemented yet')
         else:
             logger.debug("Creating standard DSGE model")
-            return DSGE.read(yaml_dict)
+            model_obj = DSGE.read(yaml_dict)
     except ValueError as e:
         # Model-specific validation errors
         logger.error(f"Model validation failed: {e}")
         raise
+
+    # Attach source metadata for downstream tools (e.g., Slurm backends).
+    if yaml_path is not None:
+        try:
+            setattr(model_obj, "source_file", yaml_path)
+            setattr(model_obj, "source_dir", yaml_dir)
+        except Exception:
+            pass
+
+    return model_obj
 
     
