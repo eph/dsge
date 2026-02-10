@@ -230,5 +230,6 @@ chand_recursion_py = chand_recursion
 kalman_filter_py = kalman_filter
 
 if njit is not None:
-    chand_recursion = njit(cache=False)(chand_recursion_py)  # type: ignore[assignment]
-    kalman_filter = njit(cache=False)(kalman_filter_py)  # type: ignore[assignment]
+    # `nogil=True` lets threaded likelihood evaluation run truly in parallel.
+    chand_recursion = njit(cache=False, nogil=True)(chand_recursion_py)  # type: ignore[assignment]
+    kalman_filter = njit(cache=False, nogil=True)(kalman_filter_py)  # type: ignore[assignment]

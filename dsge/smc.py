@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Literal, Mapping, Optional, Protocol, Sequence, Tuple
+from typing import Any, Dict, Literal, Mapping, Optional, Protocol, Sequence, Tuple
 
 import numpy as np
 
@@ -72,39 +72,86 @@ def _log_prior_many(model: ModelLike, particles: np.ndarray) -> np.ndarray:
     return lp
 
 
-def _log_lik_many(
-    model: ModelLike,
-    particles: np.ndarray,
-    *,
-    log_lik_kwargs: Mapping[str, Any],
-    n_workers: int,
-    parallel: Literal["none", "thread"],
-) -> np.ndarray:
-    particles = np.asarray(particles, dtype=float)
-    if particles.ndim != 2:
-        raise ValueError("particles must be a 2D array (npart, npara).")
+def _chunk_slices(n: int, *, n_workers: int, chunks_per_worker: int = 4) -> list[tuple[int, int]]:
+    if n <= 0:
+        return []
+    n_workers = int(max(1, n_workers))
+    chunks_per_worker = int(max(1, chunks_per_worker))
+    n_tasks = min(n, n_workers * chunks_per_worker)
+    chunk = int((n + n_tasks - 1) // n_tasks)
+    return [(i, min(i + chunk, n)) for i in range(0, n, chunk)]
 
-    def _eval_one(p: np.ndarray) -> float:
+
+class _LogLikBatchEvaluator:
+    def __init__(
+        self,
+        model: ModelLike,
+        *,
+        log_lik_kwargs: Mapping[str, Any],
+        n_workers: int,
+        parallel: Literal["none", "thread"],
+    ):
+        self._model = model
+        self._log_lik_kwargs = dict(log_lik_kwargs)
+        self._parallel = str(parallel)
+        self._n_workers = int(max(1, n_workers))
+        self._executor = None
+
+        if self._parallel not in {"none", "thread"}:
+            raise ValueError(f"Unsupported parallel mode: {parallel!r}.")
+
+        if self._parallel == "thread" and self._n_workers > 1:
+            from concurrent.futures import ThreadPoolExecutor
+
+            self._executor = ThreadPoolExecutor(max_workers=self._n_workers)
+
+    def close(self) -> None:
+        if self._executor is not None:
+            self._executor.shutdown(wait=True)
+            self._executor = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        self.close()
+        return False
+
+    def _eval_one(self, p: np.ndarray) -> float:
         try:
-            ll = float(model.log_lik(p, use_cache=False, **dict(log_lik_kwargs)))
+            ll = float(self._model.log_lik(p, use_cache=False, **self._log_lik_kwargs))
         except Exception:
             return BAD_LOG_LIKELIHOOD
         if not np.isfinite(ll):
             return BAD_LOG_LIKELIHOOD
         return ll
 
-    if parallel == "none" or n_workers <= 1:
-        out = np.fromiter((_eval_one(particles[i, :]) for i in range(particles.shape[0])), dtype=float)
+    def eval_many(self, particles: np.ndarray) -> np.ndarray:
+        particles = np.asarray(particles, dtype=float)
+        if particles.ndim != 2:
+            raise ValueError("particles must be a 2D array (npart, npara).")
+        n = int(particles.shape[0])
+
+        if self._executor is None:
+            out = np.empty((n,), dtype=float)
+            for i in range(n):
+                out[i] = self._eval_one(particles[i, :])
+            return out
+
+        # Chunk work to amortize Python scheduling overhead.
+        slices = _chunk_slices(n, n_workers=self._n_workers, chunks_per_worker=1)
+
+        def _eval_slice(bounds: tuple[int, int]) -> tuple[int, np.ndarray]:
+            lo, hi = bounds
+            buf = np.empty((hi - lo,), dtype=float)
+            for j in range(lo, hi):
+                buf[j - lo] = self._eval_one(particles[j, :])
+            return lo, buf
+
+        out = np.empty((n,), dtype=float)
+        for lo, buf in self._executor.map(_eval_slice, slices):
+            out[lo : lo + buf.size] = buf
         return out
-
-    if parallel != "thread":
-        raise ValueError(f"Unsupported parallel mode: {parallel!r}.")
-
-    from concurrent.futures import ThreadPoolExecutor
-
-    with ThreadPoolExecutor(max_workers=int(n_workers)) as ex:
-        out_list = list(ex.map(_eval_one, (particles[i, :] for i in range(particles.shape[0]))))
-    return np.asarray(out_list, dtype=float)
 
 
 def _weighted_mean_and_cov(particles: np.ndarray, weights: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
@@ -346,153 +393,150 @@ def smc_estimate(
     if prior is None or getattr(prior, "priors", None) is None:
         raise ValueError("Model has no prior attached; SMC requires `model.prior`.")
 
-    # ---------------------------------------------------------------------
-    # Initialization: draw from prior + evaluate likelihood once.
-    # ---------------------------------------------------------------------
-    draws_needed = npart + int(options.npriorextra)
-    particles_all = np.asarray(prior.rvs(size=draws_needed, random_state=rng), dtype=float)
-    if particles_all.ndim != 2:
-        raise ValueError("prior.rvs(size=...) must return a 2D array (n, npara).")
-    particles_all = particles_all.reshape(draws_needed, -1)
-    npara = particles_all.shape[1]
-
-    ll_all = _log_lik_many(
+    with _LogLikBatchEvaluator(
         model,
-        particles_all,
         log_lik_kwargs=log_lik_kwargs,
-        n_workers=n_workers,
+        n_workers=int(n_workers),
         parallel=parallel,
-    )
+    ) as ll_eval:
+        # -----------------------------------------------------------------
+        # Initialization: draw from prior + evaluate likelihood once.
+        # -----------------------------------------------------------------
+        draws_needed = npart + int(options.npriorextra)
+        particles_all = np.asarray(prior.rvs(size=draws_needed, random_state=rng), dtype=float)
+        if particles_all.ndim != 2:
+            raise ValueError("prior.rvs(size=...) must return a 2D array (n, npara).")
+        particles_all = particles_all.reshape(draws_needed, -1)
+        npara = particles_all.shape[1]
 
-    good = np.isfinite(ll_all) & (ll_all > BAD_LOG_LIKELIHOOD)
-    if int(np.sum(good)) < npart:
-        raise RuntimeError(
-            "Prior is too far from likelihood: not enough finite likelihood draws.\n"
-            f"- needed npart={npart}, got {int(np.sum(good))}\n"
-            f"- consider increasing npriorextra (currently {options.npriorextra}) or adjusting the prior"
-        )
+        ll_all = ll_eval.eval_many(particles_all)
 
-    good_idx = np.flatnonzero(good)[:npart]
-    particles = particles_all[good_idx, :].copy()
-    log_lik = ll_all[good_idx].copy()
-    log_prior = _log_prior_many(model, particles)
-
-    weights = np.full((npart,), 1.0 / npart, dtype=float)
-
-    phi_sched = options.phi_schedule()
-    logz = np.zeros_like(phi_sched, dtype=float)
-    ess = np.zeros_like(phi_sched, dtype=float)
-    stage_stats: list[SMCStageStats] = []
-
-    ess[0] = _effective_sample_size(weights)
-
-    scale = float(options.initial_scale)
-    target_accept = float(options.target_accept)
-
-    # ---------------------------------------------------------------------
-    # Main loop over tempering stages.
-    # ---------------------------------------------------------------------
-    for i in range(1, phi_sched.size):
-        phi_old = float(phi_sched[i - 1])
-        phi = float(phi_sched[i])
-
-        if options.endog_tempering:
-            phi = _choose_phi_endogenous(
-                phi_old=phi_old,
-                phi_max=1.0,
-                log_lik=log_lik,
-                weights=weights,
-                ess_target=float(options.resample_tol) * npart,
-                tol=float(options.bisection_thresh),
+        good = np.isfinite(ll_all) & (ll_all > BAD_LOG_LIKELIHOOD)
+        if int(np.sum(good)) < npart:
+            raise RuntimeError(
+                "Prior is too far from likelihood: not enough finite likelihood draws.\n"
+                f"- needed npart={npart}, got {int(np.sum(good))}\n"
+                f"- consider increasing npriorextra (currently {options.npriorextra}) or adjusting the prior"
             )
-            phi_sched[i] = phi
 
-        # ----------------------------
-        # Correction (reweight)
-        # ----------------------------
-        inc = (phi - phi_old) * log_lik
-        m = float(np.max(inc))
-        if not np.isfinite(m):
-            raise RuntimeError("SMC weight update failed: max incremental log-weight is not finite.")
-        w_unnorm = weights * np.exp(inc - m)
-        zt = float(np.sum(w_unnorm))
-        if zt <= 0.0 or not np.isfinite(zt):
-            raise RuntimeError("SMC weight update failed: weight normalization constant is invalid.")
-        weights = w_unnorm / zt
-        logz[i] = np.log(zt) + m
+        good_idx = np.flatnonzero(good)[:npart]
+        particles = particles_all[good_idx, :].copy()
+        log_lik = ll_all[good_idx].copy()
+        log_prior = _log_prior_many(model, particles)
 
-        ess_i = _effective_sample_size(weights)
-        ess[i] = ess_i
+        weights = np.full((npart,), 1.0 / npart, dtype=float)
 
-        # ----------------------------
-        # Selection (resample)
-        # ----------------------------
-        resampled = False
-        if options.resample_every_stage or (ess_i < float(options.resample_threshold) * npart):
-            idx = _systematic_resample(weights, rng)
-            particles = particles[idx, :]
-            log_lik = log_lik[idx]
-            log_prior = log_prior[idx]
-            weights = np.full((npart,), 1.0 / npart, dtype=float)
-            resampled = True
+        phi_sched = options.phi_schedule()
+        logz = np.zeros_like(phi_sched, dtype=float)
+        ess = np.zeros_like(phi_sched, dtype=float)
+        stage_stats: list[SMCStageStats] = []
 
-        # ----------------------------
-        # Mutation (block RWMH)
-        # ----------------------------
-        blocks = _blocks(rng, npara, nblocks)
-        _, cov = _weighted_mean_and_cov(particles, weights)
-        chols = _block_cholesky_factors(
-            cov,
-            blocks,
-            conditional_covariance=bool(options.conditional_covariance),
-        )
+        ess[0] = _effective_sample_size(weights)
 
-        eps = rng.standard_normal(size=(npart, nintmh, npara))
-        uu = rng.random(size=(npart, nintmh, len(blocks)))
+        scale = float(options.initial_scale)
+        target_accept = float(options.target_accept)
 
-        accepted_total = 0.0
-        for mstep in range(nintmh):
-            for b_idx, b in enumerate(blocks):
-                L = chols[b_idx]
-                z = eps[:, mstep, :][:, b]
-                prop = particles.copy()
-                prop[:, b] = prop[:, b] + scale * (z @ L.T)
+        # ---------------------------------------------------------------
+        # Main loop over tempering stages.
+        # ---------------------------------------------------------------
+        for i in range(1, phi_sched.size):
+            phi_old = float(phi_sched[i - 1])
+            phi = float(phi_sched[i])
 
-                ll_prop = _log_lik_many(
-                    model,
-                    prop,
-                    log_lik_kwargs=log_lik_kwargs,
-                    n_workers=n_workers,
-                    parallel=parallel,
+            if options.endog_tempering:
+                phi = _choose_phi_endogenous(
+                    phi_old=phi_old,
+                    phi_max=1.0,
+                    log_lik=log_lik,
+                    weights=weights,
+                    ess_target=float(options.resample_tol) * npart,
+                    tol=float(options.bisection_thresh),
                 )
-                lp_prop = _log_prior_many(model, prop)
+                phi_sched[i] = phi
 
-                log_alpha = phi * (ll_prop - log_lik) + (lp_prop - log_prior)
-                log_u = np.log(uu[:, mstep, b_idx])
-                accept = np.isfinite(log_alpha) & (log_u < log_alpha)
+            # --------------------------
+            # Correction (reweight)
+            # --------------------------
+            inc = (phi - phi_old) * log_lik
+            m = float(np.max(inc))
+            if not np.isfinite(m):
+                raise RuntimeError("SMC weight update failed: max incremental log-weight is not finite.")
+            w_unnorm = weights * np.exp(inc - m)
+            zt = float(np.sum(w_unnorm))
+            if zt <= 0.0 or not np.isfinite(zt):
+                raise RuntimeError("SMC weight update failed: weight normalization constant is invalid.")
+            weights = w_unnorm / zt
+            logz[i] = np.log(zt) + m
 
-                if np.any(accept):
-                    particles[accept, :] = prop[accept, :]
-                    log_lik[accept] = ll_prop[accept]
-                    log_prior[accept] = lp_prop[accept]
+            ess_i = _effective_sample_size(weights)
+            ess[i] = ess_i
 
-                accepted_total += float(np.sum(accept)) * float(b.size)
+            # --------------------------
+            # Selection (resample)
+            # --------------------------
+            resampled = False
+            if options.resample_every_stage or (ess_i < float(options.resample_threshold) * npart):
+                idx = _systematic_resample(weights, rng)
+                particles = particles[idx, :]
+                log_lik = log_lik[idx]
+                log_prior = log_prior[idx]
+                weights = np.full((npart,), 1.0 / npart, dtype=float)
+                resampled = True
 
-        accept_rate = accepted_total / float(npart * nintmh * npara)
-
-        # Fortress-style scale adaptation.
-        scale *= 0.80 + 0.40 * (np.exp(16.0 * (accept_rate - target_accept)) / (1.0 + np.exp(16.0 * (accept_rate - target_accept))))
-
-        stage_stats.append(
-            SMCStageStats(
-                phi=phi,
-                ess=ess_i,
-                logz=float(logz[i]),
-                accepted=float(accept_rate),
-                scale=float(scale),
-                resampled=bool(resampled),
+            # --------------------------
+            # Mutation (block RWMH)
+            # --------------------------
+            blocks = _blocks(rng, npara, nblocks)
+            _, cov = _weighted_mean_and_cov(particles, weights)
+            chols = _block_cholesky_factors(
+                cov,
+                blocks,
+                conditional_covariance=bool(options.conditional_covariance),
             )
-        )
+
+            eps = rng.standard_normal(size=(npart, nintmh, npara))
+            uu = rng.random(size=(npart, nintmh, len(blocks)))
+
+            accepted_total = 0.0
+            for mstep in range(nintmh):
+                for b_idx, b in enumerate(blocks):
+                    L = chols[b_idx]
+                    z = eps[:, mstep, :][:, b]
+                    prop = particles.copy()
+                    prop[:, b] = prop[:, b] + scale * (z @ L.T)
+
+                    ll_prop = ll_eval.eval_many(prop)
+                    lp_prop = _log_prior_many(model, prop)
+
+                    log_alpha = phi * (ll_prop - log_lik) + (lp_prop - log_prior)
+                    log_u = np.log(uu[:, mstep, b_idx])
+                    accept = np.isfinite(log_alpha) & (log_u < log_alpha)
+
+                    if np.any(accept):
+                        particles[accept, :] = prop[accept, :]
+                        log_lik[accept] = ll_prop[accept]
+                        log_prior[accept] = lp_prop[accept]
+
+                    accepted_total += float(np.sum(accept)) * float(b.size)
+
+            accept_rate = accepted_total / float(npart * nintmh * npara)
+
+            # Fortress-style scale adaptation.
+            scale *= 0.80 + 0.40 * (
+                np.exp(16.0 * (accept_rate - target_accept))
+                / (1.0 + np.exp(16.0 * (accept_rate - target_accept)))
+            )
+
+            stage_stats.append(
+                SMCStageStats(
+                    phi=phi,
+                    ess=ess_i,
+                    logz=float(logz[i]),
+                    accepted=float(accept_rate),
+                    scale=float(scale),
+                    resampled=bool(resampled),
+                )
+            )
 
     param_names = None
     if getattr(model, "parameter_names", None) is not None:

@@ -28,6 +28,11 @@ def test_smc_dummy_model_runs():
     assert res.phi_schedule[-1] == 1.0
     assert len(res.stage_stats) == opts.nphi - 1
 
+    # Threaded likelihood evaluation path (should also run).
+    res_thr = smc_estimate(DummyModel(), options=opts, n_workers=2, parallel="thread")
+    assert res_thr.particles.shape == (opts.npart, 2)
+    assert np.isclose(res_thr.weights.sum(), 1.0)
+
 
 def test_smc_smoke_nkmp_model():
     from dsge import read_yaml
@@ -53,4 +58,3 @@ def test_smc_smoke_nkmp_model():
     assert res.particles.shape[0] == 40
     assert res.particles.shape[1] == len(res.parameter_names)
     assert np.isfinite(res.log_lik).all()
-
