@@ -85,3 +85,29 @@ def test_smc_smoke_nkmp_model():
     assert res.particles.shape[0] == 40
     assert res.particles.shape[1] == len(res.parameter_names)
     assert np.isfinite(res.log_lik).all()
+
+
+def test_smc_smoke_nkmp_model_allows_state_space_reduction():
+    from dsge import read_yaml
+
+    m = read_yaml("dsge/examples/nkmp/nkmp.yaml")
+    res = m.estimate_smc(
+        order=1,
+        backend="local",
+        smc_options={
+            "npart": 10,
+            "nphi": 3,
+            "bend": 2.0,
+            "seed": 123,
+            "nintmh": 1,
+            "nblocks": 1,
+            "initial_scale": 0.10,
+            "npriorextra": 50,
+            "verbose": False,
+        },
+        log_lik_kwargs={"reduce_state_space": "minimal", "reduce_tol": 1e-10},
+        n_workers=1,
+        parallel="none",
+    )
+    assert res.particles.shape[0] == 10
+    assert np.isfinite(res.log_lik).all()

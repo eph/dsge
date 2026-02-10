@@ -109,6 +109,18 @@ class StateSpaceModel(object):
         P0 : 2d array-like or string, optional
             [ns x ns] initial covariance matrix of states, or `unconditional` to use the one
             associated with the invariant distribution.  The default is `unconditional.`
+        reduce_state_space : bool or {"minimal","observable","controllable"}, optional
+            If provided, perform an (exact, rank-based) state-space reduction before filtering.
+            `True` is treated as `"minimal"`. Useful when models contain redundant/unobservable
+            state directions (can materially speed up likelihood evaluation in SMC).
+        reduce_tol : float, optional
+            Relative tolerance for rank decisions used by the reduction (default 1e-10).
+        reduce_max_steps : int or None, optional
+            Maximum Krylov steps used to build controllable/observable subspaces
+            (default uses `ns`).
+        reduce_strict : bool, optional
+            If True, propagate reduction failures. Otherwise, silently fall back to
+            the unreduced system.
 
 
         Returns
@@ -126,6 +138,10 @@ class StateSpaceModel(object):
         t0 = kwargs.pop("t0", self.t0)
         yy = kwargs.pop("y", self.yy)
         P0 = kwargs.pop("P0", "unconditional")
+        reduce_state_space = kwargs.pop("reduce_state_space", False)
+        reduce_tol = float(kwargs.pop("reduce_tol", 1e-10))
+        reduce_max_steps = kwargs.pop("reduce_max_steps", None)
+        reduce_strict = bool(kwargs.pop("reduce_strict", False))
 
         if np.isnan(yy).any().any():
             default_filter = "kalman_filter"
@@ -145,7 +161,38 @@ class StateSpaceModel(object):
             lik = -1000000000000.0
             return lik
 
-        if P0 == "unconditional":
+        if reduce_state_space:
+            from .state_space_reduction import reduce_state_space as _reduce_state_space
+
+            if isinstance(reduce_state_space, str):
+                mode = reduce_state_space
+            else:
+                mode = "minimal"
+
+            p0_is_unconditional = isinstance(P0, str) and P0 == "unconditional"
+            p0_mat = None if p0_is_unconditional else P0
+            try:
+                CC, TT, RR, QQ, DD, ZZ, HH, A0, p0_mat, _ = _reduce_state_space(
+                    CC,
+                    TT,
+                    RR,
+                    QQ,
+                    DD,
+                    ZZ,
+                    HH,
+                    A0=A0,
+                    P0=p0_mat,
+                    mode=mode,
+                    tol=reduce_tol,
+                    max_steps=reduce_max_steps,
+                )
+                if not p0_is_unconditional:
+                    P0 = p0_mat
+            except Exception:
+                if reduce_strict:
+                    raise
+
+        if isinstance(P0, str) and P0 == "unconditional":
             P0 = solve_discrete_lyapunov(TT, RR.dot(QQ).dot(RR.T))
 
         lik = filt_func(
@@ -218,7 +265,7 @@ class StateSpaceModel(object):
             ZZ = np.hstack([ZZ, np.zeros((nobs, neps))])
 
         A0 = kwargs.pop("A0", np.zeros(CC.shape))
-        if P0 == "unconditional":
+        if isinstance(P0, str) and P0 == "unconditional":
             P0 = solve_discrete_lyapunov(TT, RR.dot(QQ).dot(RR.T))
 
         res = filter_and_smooth(

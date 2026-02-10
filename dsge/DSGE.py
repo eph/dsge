@@ -706,6 +706,8 @@ Equations:
             Either an `SMCOptions` instance or a dict of constructor kwargs.
         log_lik_kwargs
             Extra keyword arguments forwarded to `compiled.log_lik`.
+            For order-1 (linear) models, this can include state-space reduction knobs
+            such as `{"reduce_state_space": "minimal", "reduce_tol": 1e-10}`.
         n_workers, parallel
             Likelihood batch parallelism for local runs (`parallel="thread"` avoids pickling).
         wait
