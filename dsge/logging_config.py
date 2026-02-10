@@ -8,10 +8,22 @@ throughout the package, making log output consistent and configurable.
 
 import logging
 import sys
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
 
 # Default logging format
 DEFAULT_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+
+# Library default: be silent unless the user opts in.
+#
+# We intentionally do *not* configure handlers on import, because that would
+# force log output on downstream users. Instead, we attach a NullHandler and
+# set a conservative default level so `logger.info(...)` calls are hidden unless
+# logging is explicitly enabled by the application (or via `configure_logging`).
+_pkg_logger = logging.getLogger("dsge")
+_pkg_logger.addHandler(logging.NullHandler())
+_pkg_logger.setLevel(logging.WARNING)
+
+
 
 def configure_logging(
     level: int = logging.INFO,
@@ -68,5 +80,4 @@ def get_logger(name: str) -> logging.Logger:
     return logging.getLogger(f"dsge.{name}")
 
 
-# Configure default logging when the module is imported
-configure_logging()
+__all__ = ["configure_logging", "get_logger", "DEFAULT_FORMAT"]
