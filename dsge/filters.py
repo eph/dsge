@@ -6,6 +6,65 @@ except Exception:  # pragma: no cover
     njit = None  # type: ignore
 
 
+def _symmetrize_inplace(a):
+    n = a.shape[0]
+    for i in range(n):
+        for j in range(i + 1, n):
+            v = 0.5 * (a[i, j] + a[j, i])
+            a[i, j] = v
+            a[j, i] = v
+
+
+def _chol_logdet(l):
+    n = l.shape[0]
+    s = 0.0
+    for i in range(n):
+        s += np.log(l[i, i])
+    return 2.0 * s
+
+
+def _chol_solve(l, b):
+    """
+    Solve (l @ l.T) x = b for x, where `l` is lower-triangular from Cholesky.
+
+    Supports vector RHS (ndim=1) and matrix RHS (ndim=2).
+    """
+    n = l.shape[0]
+    if b.ndim == 1:
+        y = np.empty_like(b)
+        for i in range(n):
+            s = b[i]
+            for j in range(i):
+                s -= l[i, j] * y[j]
+            y[i] = s / l[i, i]
+
+        x = np.empty_like(b)
+        for i in range(n - 1, -1, -1):
+            s = y[i]
+            for j in range(i + 1, n):
+                s -= l[j, i] * x[j]
+            x[i] = s / l[i, i]
+        return x
+
+    m = b.shape[1]
+    y = np.empty_like(b)
+    for k in range(m):
+        for i in range(n):
+            s = b[i, k]
+            for j in range(i):
+                s -= l[i, j] * y[j, k]
+            y[i, k] = s / l[i, i]
+
+    x = np.empty_like(b)
+    for k in range(m):
+        for i in range(n - 1, -1, -1):
+            s = y[i, k]
+            for j in range(i + 1, n):
+                s -= l[j, i] * x[j, k]
+            x[i, k] = s / l[i, i]
+    return x
+
+
 def chand_recursion(y, CC, TT, RR, QQ, DD, ZZ, HH, A0, P0, t0=0):
     nobs, ny = y.shape
 
@@ -13,26 +72,27 @@ def chand_recursion(y, CC, TT, RR, QQ, DD, ZZ, HH, A0, P0, t0=0):
     Pt = P0
 
     loglh = 0.0
+    dd = DD.reshape(-1)
 
     # In the Numba-accelerated path, using an explicit contiguous transpose copy
     # avoids performance warnings and is typically faster for small ny.
     ZZT = ZZ.T.copy()
     Ft = ZZ @ Pt @ ZZT + HH
-    Ft = 0.5 * (Ft + Ft.T)
-    # Numba's `np.linalg.inv` returns a Fortran-ordered array; forcing a C-order
-    # copy here keeps `Mt` consistently contiguous and avoids matmul warnings.
-    iFt = np.linalg.inv(Ft).copy()
+    _symmetrize_inplace(Ft)
+    eye_ny = np.eye(ny, dtype=Ft.dtype)
+    L = np.linalg.cholesky(Ft)
+    iFt = _chol_solve(L, eye_ny)
+    Mt = -iFt
 
     St = TT @ Pt @ ZZT
-    Mt = -iFt
     Kt = St @ iFt
 
     for i in range(nobs):
-        yhat = ZZ @ At + DD.flatten()
+        yhat = ZZ @ At + dd
         nut = y[i] - yhat
 
-        dFt = np.log(np.linalg.det(Ft))
-        iFtnut = np.linalg.solve(Ft, nut)
+        dFt = _chol_logdet(L)
+        iFtnut = iFt @ nut
 
         if i >= t0:
             loglh = (
@@ -51,8 +111,9 @@ def chand_recursion(y, CC, TT, RR, QQ, DD, ZZ, HH, A0, P0, t0=0):
 
         Ft1 = Ft + ZZSt @ MSpZp
         # F_{t+1}
-        Ft1 = 0.5 * (Ft1 + Ft1.T)
-        iFt1 = np.linalg.inv(Ft1).copy()
+        _symmetrize_inplace(Ft1)
+        L1 = np.linalg.cholesky(Ft1)
+        iFt1 = _chol_solve(L1, eye_ny)
 
         Kt = (Kt @ Ft + TTSt @ MSpZp) @ iFt1
         # K_{t+1}
@@ -61,8 +122,9 @@ def chand_recursion(y, CC, TT, RR, QQ, DD, ZZ, HH, A0, P0, t0=0):
         MSpZpT = MSpZp.T.copy()
         Mt = Mt + MSpZp @ iFt @ MSpZpT
         # M_{t+1}
-        Mt = 0.5 * (Mt + Mt.T)
+        _symmetrize_inplace(Mt)
         Ft = Ft1
+        L = L1
         iFt = iFt1
 
     return loglh
@@ -232,6 +294,9 @@ chand_recursion_py = chand_recursion
 kalman_filter_py = kalman_filter
 
 if njit is not None:
+    _symmetrize_inplace = njit(cache=False, nogil=True)(_symmetrize_inplace)  # type: ignore[assignment]
+    _chol_logdet = njit(cache=False, nogil=True)(_chol_logdet)  # type: ignore[assignment]
+    _chol_solve = njit(cache=False, nogil=True)(_chol_solve)  # type: ignore[assignment]
     # `nogil=True` lets threaded likelihood evaluation run truly in parallel.
     chand_recursion = njit(cache=False, nogil=True)(chand_recursion_py)  # type: ignore[assignment]
     kalman_filter = njit(cache=False, nogil=True)(kalman_filter_py)  # type: ignore[assignment]
