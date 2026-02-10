@@ -1,13 +1,33 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, Literal, Mapping, Optional, Protocol, Sequence, Tuple
+from typing import Any, Literal, Mapping, Optional, Protocol, Sequence, Tuple
 
 import numpy as np
 
 
 BAD_LOG_LIKELIHOOD = -1e11
 BAD_LOG_PRIOR = -1e11
+
+
+def _process_worker_loop(conn, model: "ModelLike", log_lik_kwargs: Mapping[str, Any]) -> None:
+    log_lik_kwargs = dict(log_lik_kwargs)
+    while True:
+        msg = conn.recv()
+        if msg is None:
+            break
+        lo, particles = msg
+        particles = np.asarray(particles, dtype=float)
+        buf = np.empty((particles.shape[0],), dtype=float)
+        for i in range(particles.shape[0]):
+            try:
+                ll = float(model.log_lik(particles[i, :], use_cache=False, **log_lik_kwargs))
+            except Exception:
+                ll = BAD_LOG_LIKELIHOOD
+            if not np.isfinite(ll):
+                ll = BAD_LOG_LIKELIHOOD
+            buf[i] = ll
+        conn.send((lo, buf))
 
 
 class PriorLike(Protocol):
@@ -89,15 +109,17 @@ class _LogLikBatchEvaluator:
         *,
         log_lik_kwargs: Mapping[str, Any],
         n_workers: int,
-        parallel: Literal["none", "thread"],
+        parallel: Literal["none", "thread", "process"],
     ):
         self._model = model
         self._log_lik_kwargs = dict(log_lik_kwargs)
         self._parallel = str(parallel)
         self._n_workers = int(max(1, n_workers))
         self._executor = None
+        self._proc_conns = []
+        self._proc_procs = []
 
-        if self._parallel not in {"none", "thread"}:
+        if self._parallel not in {"none", "thread", "process"}:
             raise ValueError(f"Unsupported parallel mode: {parallel!r}.")
 
         if self._parallel == "thread" and self._n_workers > 1:
@@ -105,10 +127,75 @@ class _LogLikBatchEvaluator:
 
             self._executor = ThreadPoolExecutor(max_workers=self._n_workers)
 
+        if self._parallel == "process" and self._n_workers > 1:
+            import __main__
+            import multiprocessing as mp
+            import os
+            import pickle
+            import threading
+
+            start_methods = set(mp.get_all_start_methods())
+            if "fork" in start_methods:
+                is_multithreaded = False
+                try:
+                    # Best-effort OS-thread count on Linux.
+                    is_multithreaded = len(os.listdir("/proc/self/task")) > 1
+                except Exception:
+                    is_multithreaded = threading.active_count() > 1
+
+                if is_multithreaded and "spawn" in start_methods:
+                    # Avoid forking a multi-threaded process when possible.
+                    main_file = getattr(__main__, "__file__", None)
+                    can_spawn = bool(main_file) and main_file not in {"<stdin>", "<string>"} and os.path.exists(main_file)
+                    try:
+                        pickle.dumps(model)
+                        pickle.dumps(self._log_lik_kwargs)
+                        if can_spawn:
+                            ctx = mp.get_context("spawn")
+                        else:
+                            ctx = mp.get_context("fork")
+                    except Exception:
+                        ctx = mp.get_context("fork")
+                else:
+                    ctx = mp.get_context("fork")
+            else:
+                ctx = mp.get_context()
+
+            for _ in range(self._n_workers):
+                parent_conn, child_conn = ctx.Pipe(duplex=True)
+                p = ctx.Process(
+                    target=_process_worker_loop,
+                    args=(child_conn, model, self._log_lik_kwargs),
+                )
+                p.daemon = True
+                p.start()
+                child_conn.close()
+                self._proc_conns.append(parent_conn)
+                self._proc_procs.append(p)
+
     def close(self) -> None:
         if self._executor is not None:
             self._executor.shutdown(wait=True)
             self._executor = None
+        for conn in self._proc_conns:
+            try:
+                conn.send(None)
+            except Exception:
+                pass
+            try:
+                conn.close()
+            except Exception:
+                pass
+        for p in self._proc_procs:
+            try:
+                p.join(timeout=1.0)
+                if p.is_alive():
+                    p.terminate()
+                    p.join(timeout=1.0)
+            except Exception:
+                pass
+        self._proc_conns = []
+        self._proc_procs = []
 
     def __enter__(self):
         return self
@@ -132,26 +219,63 @@ class _LogLikBatchEvaluator:
             raise ValueError("particles must be a 2D array (npart, npara).")
         n = int(particles.shape[0])
 
-        if self._executor is None:
+        if self._parallel == "none" or self._n_workers <= 1:
             out = np.empty((n,), dtype=float)
             for i in range(n):
                 out[i] = self._eval_one(particles[i, :])
             return out
 
-        # Chunk work to amortize Python scheduling overhead.
-        slices = _chunk_slices(n, n_workers=self._n_workers, chunks_per_worker=1)
+        if self._parallel == "thread":
+            if self._executor is None:
+                raise RuntimeError("Thread executor is not initialized.")
 
-        def _eval_slice(bounds: tuple[int, int]) -> tuple[int, np.ndarray]:
-            lo, hi = bounds
-            buf = np.empty((hi - lo,), dtype=float)
-            for j in range(lo, hi):
-                buf[j - lo] = self._eval_one(particles[j, :])
-            return lo, buf
+            # Chunk work to amortize Python scheduling overhead.
+            slices = _chunk_slices(n, n_workers=self._n_workers, chunks_per_worker=1)
 
-        out = np.empty((n,), dtype=float)
-        for lo, buf in self._executor.map(_eval_slice, slices):
-            out[lo : lo + buf.size] = buf
-        return out
+            def _eval_slice(bounds: tuple[int, int]) -> tuple[int, np.ndarray]:
+                lo, hi = bounds
+                buf = np.empty((hi - lo,), dtype=float)
+                for j in range(lo, hi):
+                    buf[j - lo] = self._eval_one(particles[j, :])
+                return lo, buf
+
+            out = np.empty((n,), dtype=float)
+            for lo, buf in self._executor.map(_eval_slice, slices):
+                out[lo : lo + buf.size] = buf
+            return out
+
+        if self._parallel == "process":
+            if not self._proc_conns:
+                raise RuntimeError("Process workers are not initialized.")
+
+            slices = _chunk_slices(n, n_workers=self._n_workers, chunks_per_worker=1)
+            out = np.empty((n,), dtype=float)
+
+            try:
+                import multiprocessing.connection as mp_connection
+            except Exception:
+                mp_connection = None  # type: ignore[assignment]
+
+            for w, (lo, hi) in enumerate(slices):
+                self._proc_conns[w].send((lo, np.ascontiguousarray(particles[lo:hi, :])))
+
+            pending = set(self._proc_conns[: len(slices)])
+            while pending:
+                if mp_connection is None:
+                    ready = [next(iter(pending))]
+                else:
+                    ready = mp_connection.wait(pending)
+                for conn in ready:
+                    try:
+                        lo, buf = conn.recv()
+                    except EOFError as exc:
+                        raise RuntimeError("Process worker died during likelihood evaluation.") from exc
+                    out[lo : lo + buf.size] = buf
+                    pending.remove(conn)
+
+            return out
+
+        raise ValueError(f"Unsupported parallel mode: {self._parallel!r}.")
 
 
 def _weighted_mean_and_cov(particles: np.ndarray, weights: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
@@ -348,7 +472,7 @@ def smc_estimate(
     options: Optional[SMCOptions] = None,
     log_lik_kwargs: Optional[Mapping[str, Any]] = None,
     n_workers: int = 1,
-    parallel: Literal["none", "thread"] = "thread",
+    parallel: Literal["none", "thread", "process"] = "thread",
 ) -> SMCResult:
     """
     Run a tempered SMC sampler for a model with `log_lik` + `prior`.
@@ -365,7 +489,9 @@ def smc_estimate(
         for order-2 models).
     n_workers, parallel
         Parallel evaluation strategy for batch likelihood calls. Thread-parallelism avoids
-        pickling the model (useful for SymPy-lambdified callables).
+        pickling the model (useful for SymPy-lambdified callables). Process parallelism
+        uses `fork` when available; on platforms where `fork` is unavailable, it requires
+        the model to be picklable.
     """
     if options is None:
         options = SMCOptions()
@@ -562,7 +688,7 @@ def smc_estimate_from_yaml(
     options: Optional[SMCOptions] = None,
     log_lik_kwargs: Optional[Mapping[str, Any]] = None,
     n_workers: int = 1,
-    parallel: Literal["none", "thread"] = "thread",
+    parallel: Literal["none", "thread", "process"] = "thread",
 ) -> SMCResult:
     """
     Convenience wrapper for Slurm/remote runs: load YAML, compile, run SMC.
@@ -587,7 +713,7 @@ def smc_submit_slurm(
     options: Optional[SMCOptions] = None,
     log_lik_kwargs: Optional[Mapping[str, Any]] = None,
     n_workers: int = 1,
-    parallel: Literal["none", "thread"] = "thread",
+    parallel: Literal["none", "thread", "process"] = "thread",
     submitit_folder: str = "_submitit",
     slurm_params: Optional[Mapping[str, Any]] = None,
 ):
