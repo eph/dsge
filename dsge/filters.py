@@ -19,7 +19,9 @@ def chand_recursion(y, CC, TT, RR, QQ, DD, ZZ, HH, A0, P0, t0=0):
     ZZT = ZZ.T.copy()
     Ft = ZZ @ Pt @ ZZT + HH
     Ft = 0.5 * (Ft + Ft.T)
-    iFt = np.linalg.inv(Ft)
+    # Numba's `np.linalg.inv` returns a Fortran-ordered array; forcing a C-order
+    # copy here keeps `Mt` consistently contiguous and avoids matmul warnings.
+    iFt = np.linalg.inv(Ft).copy()
 
     St = TT @ Pt @ ZZT
     Mt = -iFt
@@ -50,7 +52,7 @@ def chand_recursion(y, CC, TT, RR, QQ, DD, ZZ, HH, A0, P0, t0=0):
         Ft1 = Ft + ZZSt @ MSpZp
         # F_{t+1}
         Ft1 = 0.5 * (Ft1 + Ft1.T)
-        iFt1 = np.linalg.inv(Ft1)
+        iFt1 = np.linalg.inv(Ft1).copy()
 
         Kt = (Kt @ Ft + TTSt @ MSpZp) @ iFt1
         # K_{t+1}
