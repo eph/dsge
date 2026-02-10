@@ -5,6 +5,9 @@ from typing import Any, Literal, Mapping, Optional, Protocol, Sequence, Tuple
 
 import numpy as np
 
+import sys
+import time
+
 
 BAD_LOG_LIKELIHOOD = -1e11
 BAD_LOG_PRIOR = -1e11
@@ -428,6 +431,7 @@ class SMCOptions:
 
     npriorextra: int = 1000
     verbose: bool = True
+    progress: Literal["auto", "off", "basic", "rich"] = "auto"
 
     def phi_schedule(self) -> np.ndarray:
         return _phi_schedule(self.nphi, self.bend, phi_max=1.0)
@@ -464,6 +468,210 @@ class SMCResult:
         frame["loglh"] = self.log_lik
         frame["prior"] = self.log_prior
         return frame
+
+
+def _isatty(stream: Any) -> bool:
+    try:
+        return bool(stream.isatty())
+    except Exception:
+        return False
+
+
+def _format_elapsed(seconds: float) -> str:
+    seconds = float(max(0.0, seconds))
+    if seconds < 60.0:
+        return f"{seconds:4.1f}s"
+    minutes = int(seconds // 60.0)
+    rem = seconds - 60.0 * minutes
+    return f"{minutes:d}m{rem:04.1f}s"
+
+
+class _NullSMCProgress:
+    def message(self, text: str) -> None:
+        return
+
+    def update(
+        self,
+        stage: int,
+        *,
+        total_stages: int,
+        phi: float,
+        ess: float,
+        accept_rate: float,
+        scale: float,
+        resampled: bool,
+        logz_cum: float,
+    ) -> None:
+        return
+
+    def close(self) -> None:
+        return
+
+
+class _BasicSMCProgress:
+    def __init__(self, *, total_stages: int, npart: int, stream: Any):
+        self._total = int(total_stages)
+        self._npart = int(npart)
+        self._stream = stream
+        self._tty = _isatty(stream)
+        self._start = time.perf_counter()
+        self._last_len = 0
+        self._non_tty_every = max(1, self._total // 10)
+
+    def message(self, text: str) -> None:
+        if not text:
+            return
+        s = text.rstrip("\n")
+        self._stream.write(s + "\n")
+        self._stream.flush()
+
+    def update(
+        self,
+        stage: int,
+        *,
+        total_stages: int,
+        phi: float,
+        ess: float,
+        accept_rate: float,
+        scale: float,
+        resampled: bool,
+        logz_cum: float,
+    ) -> None:
+        total = int(total_stages)
+        stage = int(stage)
+        frac = 0.0 if total <= 0 else max(0.0, min(1.0, stage / float(total)))
+
+        bar_w = 18
+        filled = int(round(frac * bar_w))
+        filled = max(0, min(bar_w, filled))
+        bar = ("#" * filled) + ("-" * (bar_w - filled))
+
+        elapsed = _format_elapsed(time.perf_counter() - self._start)
+        ess_ratio = 0.0 if self._npart <= 0 else float(ess) / float(self._npart)
+        res = "R" if resampled else " "
+
+        line = (
+            f"SMC {stage:>4}/{total:<4} [{bar}] "
+            f"phi={phi:0.3f} "
+            f"ESS={ess:7.1f} ({ess_ratio:5.1%}) "
+            f"acc={accept_rate:5.1%} "
+            f"scale={scale:7.4g} "
+            f"logZ={logz_cum:9.2f} "
+            f"{res} "
+            f"t={elapsed}"
+        )
+
+        if self._tty:
+            pad = max(0, self._last_len - len(line))
+            self._stream.write("\r" + line + (" " * pad))
+            self._stream.flush()
+            self._last_len = len(line)
+            return
+
+        if stage == 1 or stage == total or (self._non_tty_every > 0 and stage % self._non_tty_every == 0):
+            self._stream.write(line + "\n")
+            self._stream.flush()
+
+    def close(self) -> None:
+        if self._tty:
+            self._stream.write("\n")
+            self._stream.flush()
+
+
+def _make_smc_progress(*, options: SMCOptions, total_stages: int, npart: int):
+    if not bool(options.verbose):
+        return _NullSMCProgress()
+
+    mode = str(getattr(options, "progress", "auto")).lower().strip()
+    if mode in {"off", "none", "false", "0"}:
+        return _NullSMCProgress()
+
+    stream = sys.stderr
+    is_tty = _isatty(stream)
+
+    if mode == "auto":
+        if not is_tty:
+            return _NullSMCProgress()
+        try:
+            import rich  # noqa: F401
+        except Exception:
+            return _BasicSMCProgress(total_stages=total_stages, npart=npart, stream=stream)
+        mode = "rich"
+
+    if mode == "basic":
+        return _BasicSMCProgress(total_stages=total_stages, npart=npart, stream=stream)
+
+    if mode == "rich":
+        if not is_tty:
+            return _BasicSMCProgress(total_stages=total_stages, npart=npart, stream=stream)
+        try:
+            from rich.console import Console
+            from rich.progress import BarColumn, Progress, TextColumn, TimeElapsedColumn
+        except Exception:
+            return _BasicSMCProgress(total_stages=total_stages, npart=npart, stream=stream)
+
+        class _RichSMCProgress:
+            def __init__(self, *, total: int):
+                self._console = Console(stderr=True)
+                self._progress = Progress(
+                    TextColumn("SMC"),
+                    BarColumn(bar_width=20),
+                    TextColumn("{task.completed}/{task.total}"),
+                    TextColumn("phi={task.fields[phi]:0.3f}"),
+                    TextColumn("ESS={task.fields[ess]:7.1f}"),
+                    TextColumn("acc={task.fields[acc]:5.1%}"),
+                    TextColumn("scale={task.fields[scale]:7.4g}"),
+                    TextColumn("logZ={task.fields[logz]:9.2f}"),
+                    TextColumn("{task.fields[res]}"),
+                    TimeElapsedColumn(),
+                    console=self._console,
+                    transient=False,
+                )
+                self._task = self._progress.add_task(
+                    "SMC",
+                    total=int(total),
+                    phi=0.0,
+                    ess=float(npart),
+                    acc=0.0,
+                    scale=float(options.initial_scale),
+                    logz=0.0,
+                    res="",
+                )
+                self._progress.start()
+
+            def message(self, text: str) -> None:
+                if text:
+                    self._console.print(text)
+
+            def update(
+                self,
+                stage: int,
+                *,
+                total_stages: int,
+                phi: float,
+                ess: float,
+                accept_rate: float,
+                scale: float,
+                resampled: bool,
+                logz_cum: float,
+            ) -> None:
+                self._progress.update(
+                    self._task,
+                    completed=int(stage),
+                    phi=float(phi),
+                    ess=float(ess),
+                    acc=float(accept_rate),
+                    scale=float(scale),
+                    logz=float(logz_cum),
+                    res="R" if resampled else "",
+                )
+
+            def close(self) -> None:
+                self._progress.stop()
+
+        return _RichSMCProgress(total=total_stages)
+
+    raise ValueError(f"Unknown progress mode: {options.progress!r}. Expected one of {{'auto','off','basic','rich'}}.")
 
 
 def smc_estimate(
@@ -525,144 +733,163 @@ def smc_estimate(
         n_workers=int(n_workers),
         parallel=parallel,
     ) as ll_eval:
-        # -----------------------------------------------------------------
-        # Initialization: draw from prior + evaluate likelihood once.
-        # -----------------------------------------------------------------
-        draws_needed = npart + int(options.npriorextra)
-        particles_all = np.asarray(prior.rvs(size=draws_needed, random_state=rng), dtype=float)
-        if particles_all.ndim != 2:
-            raise ValueError("prior.rvs(size=...) must return a 2D array (n, npara).")
-        particles_all = particles_all.reshape(draws_needed, -1)
-        npara = particles_all.shape[1]
+        progress = _make_smc_progress(options=options, total_stages=int(options.nphi) - 1, npart=npart)
+        try:
+            # -----------------------------------------------------------------
+            # Initialization: draw from prior + evaluate likelihood once.
+            # -----------------------------------------------------------------
+            draws_needed = npart + int(options.npriorextra)
+            progress.message(f"SMC init: drawing {draws_needed} prior draws and evaluating likelihoods...")
+            particles_all = np.asarray(prior.rvs(size=draws_needed, random_state=rng), dtype=float)
+            if particles_all.ndim != 2:
+                raise ValueError("prior.rvs(size=...) must return a 2D array (n, npara).")
+            particles_all = particles_all.reshape(draws_needed, -1)
+            npara = particles_all.shape[1]
 
-        ll_all = ll_eval.eval_many(particles_all)
+            ll_all = ll_eval.eval_many(particles_all)
 
-        good = np.isfinite(ll_all) & (ll_all > BAD_LOG_LIKELIHOOD)
-        if int(np.sum(good)) < npart:
-            raise RuntimeError(
-                "Prior is too far from likelihood: not enough finite likelihood draws.\n"
-                f"- needed npart={npart}, got {int(np.sum(good))}\n"
-                f"- consider increasing npriorextra (currently {options.npriorextra}) or adjusting the prior"
-            )
-
-        good_idx = np.flatnonzero(good)[:npart]
-        particles = particles_all[good_idx, :].copy()
-        log_lik = ll_all[good_idx].copy()
-        log_prior = _log_prior_many(model, particles)
-
-        weights = np.full((npart,), 1.0 / npart, dtype=float)
-
-        phi_sched = options.phi_schedule()
-        logz = np.zeros_like(phi_sched, dtype=float)
-        ess = np.zeros_like(phi_sched, dtype=float)
-        stage_stats: list[SMCStageStats] = []
-
-        ess[0] = _effective_sample_size(weights)
-
-        scale = float(options.initial_scale)
-        target_accept = float(options.target_accept)
-
-        # ---------------------------------------------------------------
-        # Main loop over tempering stages.
-        # ---------------------------------------------------------------
-        for i in range(1, phi_sched.size):
-            phi_old = float(phi_sched[i - 1])
-            phi = float(phi_sched[i])
-
-            if options.endog_tempering:
-                phi = _choose_phi_endogenous(
-                    phi_old=phi_old,
-                    phi_max=1.0,
-                    log_lik=log_lik,
-                    weights=weights,
-                    ess_target=float(options.resample_tol) * npart,
-                    tol=float(options.bisection_thresh),
+            good = np.isfinite(ll_all) & (ll_all > BAD_LOG_LIKELIHOOD)
+            if int(np.sum(good)) < npart:
+                raise RuntimeError(
+                    "Prior is too far from likelihood: not enough finite likelihood draws.\n"
+                    f"- needed npart={npart}, got {int(np.sum(good))}\n"
+                    f"- consider increasing npriorextra (currently {options.npriorextra}) or adjusting the prior"
                 )
-                phi_sched[i] = phi
 
-            # --------------------------
-            # Correction (reweight)
-            # --------------------------
-            inc = (phi - phi_old) * log_lik
-            m = float(np.max(inc))
-            if not np.isfinite(m):
-                raise RuntimeError("SMC weight update failed: max incremental log-weight is not finite.")
-            w_unnorm = weights * np.exp(inc - m)
-            zt = float(np.sum(w_unnorm))
-            if zt <= 0.0 or not np.isfinite(zt):
-                raise RuntimeError("SMC weight update failed: weight normalization constant is invalid.")
-            weights = w_unnorm / zt
-            logz[i] = np.log(zt) + m
+            good_idx = np.flatnonzero(good)[:npart]
+            particles = particles_all[good_idx, :].copy()
+            log_lik = ll_all[good_idx].copy()
+            log_prior = _log_prior_many(model, particles)
 
-            ess_i = _effective_sample_size(weights)
-            ess[i] = ess_i
+            weights = np.full((npart,), 1.0 / npart, dtype=float)
 
-            # --------------------------
-            # Selection (resample)
-            # --------------------------
-            resampled = False
-            if options.resample_every_stage or (ess_i < float(options.resample_threshold) * npart):
-                idx = _systematic_resample(weights, rng)
-                particles = particles[idx, :]
-                log_lik = log_lik[idx]
-                log_prior = log_prior[idx]
-                weights = np.full((npart,), 1.0 / npart, dtype=float)
-                resampled = True
+            phi_sched = options.phi_schedule()
+            logz = np.zeros_like(phi_sched, dtype=float)
+            ess = np.zeros_like(phi_sched, dtype=float)
+            stage_stats: list[SMCStageStats] = []
 
-            # --------------------------
-            # Mutation (block RWMH)
-            # --------------------------
-            blocks = _blocks(rng, npara, nblocks)
-            _, cov = _weighted_mean_and_cov(particles, weights)
-            chols = _block_cholesky_factors(
-                cov,
-                blocks,
-                conditional_covariance=bool(options.conditional_covariance),
-            )
+            ess[0] = _effective_sample_size(weights)
 
-            eps = rng.standard_normal(size=(npart, nintmh, npara))
-            uu = rng.random(size=(npart, nintmh, len(blocks)))
+            scale = float(options.initial_scale)
+            target_accept = float(options.target_accept)
 
-            accepted_total = 0.0
-            for mstep in range(nintmh):
-                for b_idx, b in enumerate(blocks):
-                    L = chols[b_idx]
-                    z = eps[:, mstep, :][:, b]
-                    prop = particles.copy()
-                    prop[:, b] = prop[:, b] + scale * (z @ L.T)
+            logz_cum = 0.0
 
-                    ll_prop = ll_eval.eval_many(prop)
-                    lp_prop = _log_prior_many(model, prop)
+            # ---------------------------------------------------------------
+            # Main loop over tempering stages.
+            # ---------------------------------------------------------------
+            for i in range(1, phi_sched.size):
+                phi_old = float(phi_sched[i - 1])
+                phi = float(phi_sched[i])
 
-                    log_alpha = phi * (ll_prop - log_lik) + (lp_prop - log_prior)
-                    log_u = np.log(uu[:, mstep, b_idx])
-                    accept = np.isfinite(log_alpha) & (log_u < log_alpha)
+                if options.endog_tempering:
+                    phi = _choose_phi_endogenous(
+                        phi_old=phi_old,
+                        phi_max=1.0,
+                        log_lik=log_lik,
+                        weights=weights,
+                        ess_target=float(options.resample_tol) * npart,
+                        tol=float(options.bisection_thresh),
+                    )
+                    phi_sched[i] = phi
 
-                    if np.any(accept):
-                        particles[accept, :] = prop[accept, :]
-                        log_lik[accept] = ll_prop[accept]
-                        log_prior[accept] = lp_prop[accept]
+                # --------------------------
+                # Correction (reweight)
+                # --------------------------
+                inc = (phi - phi_old) * log_lik
+                m = float(np.max(inc))
+                if not np.isfinite(m):
+                    raise RuntimeError("SMC weight update failed: max incremental log-weight is not finite.")
+                w_unnorm = weights * np.exp(inc - m)
+                zt = float(np.sum(w_unnorm))
+                if zt <= 0.0 or not np.isfinite(zt):
+                    raise RuntimeError("SMC weight update failed: weight normalization constant is invalid.")
+                weights = w_unnorm / zt
+                logz[i] = np.log(zt) + m
+                logz_cum += float(logz[i])
 
-                    accepted_total += float(np.sum(accept)) * float(b.size)
+                ess_i = _effective_sample_size(weights)
+                ess[i] = ess_i
 
-            accept_rate = accepted_total / float(npart * nintmh * npara)
+                # --------------------------
+                # Selection (resample)
+                # --------------------------
+                resampled = False
+                if options.resample_every_stage or (ess_i < float(options.resample_threshold) * npart):
+                    idx = _systematic_resample(weights, rng)
+                    particles = particles[idx, :]
+                    log_lik = log_lik[idx]
+                    log_prior = log_prior[idx]
+                    weights = np.full((npart,), 1.0 / npart, dtype=float)
+                    resampled = True
 
-            # Fortress-style scale adaptation.
-            scale *= 0.80 + 0.40 * (
-                np.exp(16.0 * (accept_rate - target_accept))
-                / (1.0 + np.exp(16.0 * (accept_rate - target_accept)))
-            )
+                # --------------------------
+                # Mutation (block RWMH)
+                # --------------------------
+                blocks = _blocks(rng, npara, nblocks)
+                _, cov = _weighted_mean_and_cov(particles, weights)
+                chols = _block_cholesky_factors(
+                    cov,
+                    blocks,
+                    conditional_covariance=bool(options.conditional_covariance),
+                )
 
-            stage_stats.append(
-                SMCStageStats(
+                eps = rng.standard_normal(size=(npart, nintmh, npara))
+                uu = rng.random(size=(npart, nintmh, len(blocks)))
+
+                accepted_total = 0.0
+                for mstep in range(nintmh):
+                    for b_idx, b in enumerate(blocks):
+                        L = chols[b_idx]
+                        z = eps[:, mstep, :][:, b]
+                        prop = particles.copy()
+                        prop[:, b] = prop[:, b] + scale * (z @ L.T)
+
+                        ll_prop = ll_eval.eval_many(prop)
+                        lp_prop = _log_prior_many(model, prop)
+
+                        log_alpha = phi * (ll_prop - log_lik) + (lp_prop - log_prior)
+                        log_u = np.log(uu[:, mstep, b_idx])
+                        accept = np.isfinite(log_alpha) & (log_u < log_alpha)
+
+                        if np.any(accept):
+                            particles[accept, :] = prop[accept, :]
+                            log_lik[accept] = ll_prop[accept]
+                            log_prior[accept] = lp_prop[accept]
+
+                        accepted_total += float(np.sum(accept)) * float(b.size)
+
+                accept_rate = accepted_total / float(npart * nintmh * npara)
+
+                # Fortress-style scale adaptation.
+                scale *= 0.80 + 0.40 * (
+                    np.exp(16.0 * (accept_rate - target_accept))
+                    / (1.0 + np.exp(16.0 * (accept_rate - target_accept)))
+                )
+
+                stage_stats.append(
+                    SMCStageStats(
+                        phi=phi,
+                        ess=ess_i,
+                        logz=float(logz[i]),
+                        accepted=float(accept_rate),
+                        scale=float(scale),
+                        resampled=bool(resampled),
+                    )
+                )
+
+                progress.update(
+                    i,
+                    total_stages=int(phi_sched.size) - 1,
                     phi=phi,
                     ess=ess_i,
-                    logz=float(logz[i]),
-                    accepted=float(accept_rate),
-                    scale=float(scale),
-                    resampled=bool(resampled),
+                    accept_rate=accept_rate,
+                    scale=scale,
+                    resampled=resampled,
+                    logz_cum=logz_cum,
                 )
-            )
+        finally:
+            progress.close()
 
     param_names = None
     if getattr(model, "parameter_names", None) is not None:

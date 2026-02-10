@@ -33,6 +33,9 @@ test = [
   "pytest",
   "matplotlib",
 ]
+progress = [
+  "rich",
+]
 slurm = [
   "submitit",
 ]
