@@ -245,6 +245,9 @@ def read_yaml(yaml_file: Union[str,IO[str]],
         elif kind == 'fhp':
             logger.debug("Creating FHP Representative Agent model")
             model_obj = FHPRepAgent.read(yaml_dict)
+            # Optional: endogenous horizon switching when declarations.horizon_choice is present.
+            if isinstance(yaml_dict.get("declarations"), dict) and "horizon_choice" in yaml_dict["declarations"]:
+                model_obj = model_obj.compile_endogenous_horizon_model()
         elif kind == "switching_ssm":
             logger.debug("Creating switching state-space model")
             from .switching_ssm import read_switching_ssm

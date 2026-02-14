@@ -8,7 +8,8 @@ Representative Agent DSGE models, which include cycle, trend, and value function
 
 import numpy as np
 import sympy
-from typing import Dict, Optional, Any
+import re
+from typing import Dict, Optional, Any, Tuple
 
 from sympy import sympify
 from sympy.utilities.lambdify import lambdify
@@ -121,6 +122,87 @@ def _align_terminal_equations_by_lhs_name(*, plan_dyn, term_dyn, block: str):
         )
 
     return [term_map[name] for name in plan_names]
+
+
+def _svd_rank(mat: np.ndarray, *, tol: float) -> int:
+    mat = np.asarray(mat, dtype=float)
+    if mat.size == 0:
+        return 0
+    _, s, _ = np.linalg.svd(mat, full_matrices=False)
+    if s.size == 0:
+        return 0
+    s0 = float(s[0])
+    if not np.isfinite(s0) or s0 == 0.0:
+        return 0
+    cutoff = float(tol) * s0
+    return int(np.sum(s > cutoff))
+
+
+def _controllable_subspace_basis(
+    TT: np.ndarray,
+    RR: np.ndarray,
+    *,
+    tol: float,
+    max_steps: Optional[int] = None,
+) -> np.ndarray:
+    """
+    Orthonormal basis Q for the reachable (controllable) subspace of (TT, RR).
+
+    Builds a controllability matrix [RR, TT RR, ..., TT^{L-1} RR] and computes a
+    rank-revealing SVD basis.
+    """
+    TT = np.asarray(TT, dtype=float)
+    RR = np.asarray(RR, dtype=float)
+    n = int(TT.shape[0])
+    if RR.size == 0:
+        return np.zeros((n, 0), dtype=float)
+
+    L = int(n if max_steps is None else max(1, min(int(max_steps), n)))
+    blocks = []
+    M = RR
+    for _ in range(L):
+        blocks.append(M)
+        M = TT @ M
+    C = np.concatenate(blocks, axis=1)
+    u, s, _ = np.linalg.svd(C, full_matrices=False)
+    if s.size == 0:
+        return np.zeros((n, 0), dtype=float)
+    s0 = float(s[0])
+    if not np.isfinite(s0) or s0 == 0.0:
+        return np.zeros((n, 0), dtype=float)
+    r = int(np.sum(s > float(tol) * s0))
+    return np.ascontiguousarray(u[:, :r])
+
+
+_IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _is_identifier(name: str) -> bool:
+    return bool(_IDENT_RE.match(str(name)))
+
+
+def _lagged_endogenous_variable_names(equations: Dict[str, Any], variables) -> set[str]:
+    """Return endogenous variable names that appear with a negative lag anywhere."""
+    endog_names = {v.name for v in variables}
+    lagged: set[str] = set()
+
+    def _scan(eq_list):
+        for eq in eq_list:
+            expr = eq.set_eq_zero
+            for v in expr.atoms(Variable):
+                if v.lag < 0 and v.name in endog_names:
+                    lagged.add(v.name)
+
+    _scan(equations.get("static", []))
+    for blk in ("cycle", "trend"):
+        if blk in equations:
+            _scan(equations[blk].get("terminal", []))
+            _scan(equations[blk].get("plan", []))
+    if "value" in equations:
+        _scan(equations["value"].get("function", []))
+        _scan(equations["value"].get("update", []))
+
+    return lagged
 
 
 # Define a new function
@@ -773,6 +855,8 @@ class FHPRepAgent(Base):
             'k': k_spec["k_max"],
             # Rich horizon spec for equation-row horizons.
             'k_spec': k_spec,
+            # Optional endogenous horizon-choice configuration.
+            'horizon_choice': dec.get('horizon_choice', None),
         }
 
         logger.info(f"FHP model creation complete: {len(variables)} variables, {len(parameters)} parameters")
@@ -979,3 +1063,378 @@ class FHPRepAgent(Base):
                                           prior=prior,
                                           parameter_names=parameter_names)
         return linmod
+
+    def compile_endogenous_horizon_model(
+        self,
+        *,
+        expectations: Optional[int] = None,
+        basis_tol: float = 1e-10,
+        basis_max_steps: Optional[int] = None,
+    ):
+        """
+        Compile an endogenous-horizon switching model from an FHP YAML with declarations.horizon_choice.
+
+        Returns an EndogenousHorizonSwitchingModel whose state is a reduced set of
+        predetermined variables (selected components of the full FHP state). The
+        observation matrix becomes regime-dependent via reconstruction of the full
+        state on the reachable subspace.
+        """
+        hc = self.get("horizon_choice", None)
+        if hc is None:
+            raise ValueError("Missing declarations.horizon_choice in FHP YAML.")
+
+        expectations = self["expectations"] if expectations is None else int(expectations)
+
+        # Base horizon spec (can include fixed by_lhs overrides).
+        k_base_spec = _parse_k_spec(self.get("k_spec", self["k"]))
+        all_var_names = {v.name for v in self["variables"]}
+        unknown_base = sorted(set(k_base_spec["by_lhs"].keys()) - all_var_names)
+        if unknown_base:
+            raise ValueError(
+                "declarations.k.by_lhs contains unknown variable name(s): "
+                f"{unknown_base}. Expected one of {sorted(all_var_names)}."
+            )
+
+        hc_components = hc.get("components", {}) or {}
+        if not isinstance(hc_components, dict) or not hc_components:
+            raise ValueError("declarations.horizon_choice.components must be a non-empty dict.")
+
+        components = [str(c) for c in hc_components.keys()]
+        if len(set(components)) != len(components):
+            raise ValueError(f"Duplicate components in declarations.horizon_choice.components: {components}")
+
+        selection_order = hc.get("selection_order", None)
+        if selection_order is None:
+            selection_order = components
+        else:
+            selection_order = [str(c) for c in selection_order]
+            if set(selection_order) != set(components):
+                raise ValueError("declarations.horizon_choice.selection_order must be a permutation of components.")
+
+        # Validate LHS assignments and build per-component configs.
+        cycle_plan_dyn = self["equations"]["cycle"]["plan"]
+        trend_plan_dyn = self["equations"]["trend"]["plan"]
+        cycle_plan_lhs = [eq.lhs.name for eq in cycle_plan_dyn]
+        trend_plan_lhs = [eq.lhs.name for eq in trend_plan_dyn]
+
+        lhs_owner: Dict[str, str] = {}
+        assign_lhs_by_comp: Dict[str, list[str]] = {}
+        k_max_by_comp: Dict[str, int] = {}
+
+        # Parse cost/lambda/policy expressions (evaluated at calibration p0 for now).
+        # We keep parsing strict to avoid silent typos.
+        p0 = np.asarray(self.p0(), dtype=float)
+        parameter_names = [str(x) for x in self["parameters"]]
+        param_syms = {name: sympy.Symbol(name) for name in parameter_names}
+        param_ctx = {"exp": sympy.exp, "log": sympy.log, "sqrt": sympy.sqrt, "Abs": sympy.Abs, **param_syms}
+        allowed_param_syms = set(param_syms.values())
+
+        def _parse_param_expr(expr: Any, *, where: str) -> sympy.Expr:
+            s = str(expr) if not isinstance(expr, str) else expr
+            try:
+                out = sympy.sympify(s, locals=param_ctx)
+            except Exception as e:  # pragma: no cover
+                raise ValueError(f"While parsing {where} expression {s!r}: {e}") from e
+            unknown = [v for v in out.free_symbols if v not in allowed_param_syms]
+            if unknown:
+                raise ValueError(f"Unknown symbol(s) in {where} expression {s!r}: {[str(u) for u in unknown]}")
+            return out
+
+        a_by_comp: Dict[str, float] = {}
+        lam_by_comp: Dict[str, float] = {}
+        policy_expr_by_comp: Dict[str, sympy.Expr] = {}
+
+        for comp in components:
+            cfg = hc_components[comp]
+            try:
+                k_max_by_comp[comp] = int(cfg["k_max"])
+            except Exception as e:
+                raise ValueError(f"horizon_choice.components.{comp}.k_max must be an integer.") from e
+            if k_max_by_comp[comp] < 0:
+                raise ValueError(
+                    f"horizon_choice.components.{comp}.k_max must be >= 0, got {k_max_by_comp[comp]}"
+                )
+
+            lhs_list = cfg.get("assign_lhs", None)
+            if not isinstance(lhs_list, (list, tuple)) or not lhs_list:
+                raise ValueError(f"horizon_choice.components.{comp}.assign_lhs must be a non-empty list.")
+            lhs_names = [str(x) for x in lhs_list]
+            unknown_assign = sorted(set(lhs_names) - all_var_names)
+            if unknown_assign:
+                raise ValueError(
+                    f"horizon_choice.components.{comp}.assign_lhs has unknown variable(s): {unknown_assign}."
+                )
+            missing_cycle = sorted(set(lhs_names) - set(cycle_plan_lhs))
+            missing_trend = sorted(set(lhs_names) - set(trend_plan_lhs))
+            if missing_cycle or missing_trend:
+                raise ValueError(
+                    f"horizon_choice.components.{comp}.assign_lhs must appear in both cycle.plan and trend.plan. "
+                    f"Missing in cycle.plan: {missing_cycle}; missing in trend.plan: {missing_trend}."
+                )
+
+            for nm in lhs_names:
+                prev = lhs_owner.get(nm)
+                if prev is not None and prev != comp:
+                    raise ValueError(
+                        f"LHS variable {nm!r} is assigned to multiple components: {prev!r}, {comp!r}."
+                    )
+                lhs_owner[nm] = comp
+            assign_lhs_by_comp[comp] = lhs_names
+
+            if "cost" not in cfg or not isinstance(cfg["cost"], dict) or "a" not in cfg["cost"]:
+                raise ValueError(f"horizon_choice.components.{comp}.cost.a is required.")
+            a_expr = _parse_param_expr(cfg["cost"]["a"], where=f"horizon_choice.components.{comp}.cost.a")
+            a_val = float(sympy.lambdify(list(param_syms.values()), a_expr, modules="numpy")(*p0.tolist()))
+            a_by_comp[comp] = a_val
+
+            lam_expr = _parse_param_expr(cfg["lambda"], where=f"horizon_choice.components.{comp}.lambda")
+            lam_val = float(sympy.lambdify(list(param_syms.values()), lam_expr, modules="numpy")(*p0.tolist()))
+            lam_by_comp[comp] = lam_val
+
+            pol = cfg.get("policy_object", None)
+            if not isinstance(pol, str) or not pol.strip():
+                raise ValueError(f"horizon_choice.components.{comp}.policy_object must be a non-empty string.")
+            # Parsed later once reduced state/observable symbols are known.
+            policy_expr_by_comp[comp] = sympy.sympify(pol, locals={})
+
+        global_k_max = max([k_base_spec["k_max"]] + [k_max_by_comp[c] for c in components])
+
+        # Compile a kernel FHP linear model once at a global maximum horizon.
+        kernel = self.compile_model(k=global_k_max, expectations=expectations)
+
+        # Select a reduced switching state:
+        # - lagged endogenous variables (total) (predetermined)
+        # - values
+        # - shock states
+        lagged_names = _lagged_endogenous_variable_names(self["equations"], self["variables"])
+        base_state_names = [nm for nm in kernel.state_names if nm in lagged_names]
+        base_state_names += [str(v) for v in self["values"]]
+        base_state_names += [str(s) for s in self["shocks"]]
+
+        # Avoid selecting controlled variables if possible (so observables can depend on regime).
+        controlled = set()
+        for lhs in lhs_owner.keys():
+            controlled.update({lhs, f"{lhs}_cycle", f"{lhs}_trend"})
+
+        state_index = {name: i for i, name in enumerate(kernel.state_names)}
+        missing = [nm for nm in base_state_names if nm not in state_index]
+        if missing:
+            raise ValueError(f"Internal error: reduced-state name(s) missing from kernel.state_names: {missing}")
+
+        sel_idx = []
+        seen = set()
+        for nm in base_state_names:
+            i = state_index[nm]
+            if i not in seen:
+                sel_idx.append(i)
+                seen.add(i)
+        sel_idx.sort()
+
+        # Build a reference regime (all components at k=0) for rank-checking.
+        regime0 = tuple(0 for _ in components)
+
+        static_eqs = self["equations"]["static"]
+        cycle_plan_eqs = self["equations"]["cycle"]["plan"] + static_eqs
+        trend_plan_eqs = self["equations"]["trend"]["plan"] + static_eqs
+        nv = len(self["variables"])
+
+        def _row_horizons_for_regime(regime: Tuple[int, ...]):
+            by_lhs = dict(k_base_spec["by_lhs"])
+            for comp, kval in zip(components, regime):
+                for lhs in assign_lhs_by_comp[comp]:
+                    by_lhs[lhs] = int(kval)
+            default_k = int(k_base_spec["default"])
+
+            def _build(eq_list, block: str) -> np.ndarray:
+                if len(eq_list) != nv:
+                    raise ValueError(f"Internal error: {block} has {len(eq_list)} rows, expected {nv}")
+                out = np.zeros((nv,), dtype=int)
+                for i, eq in enumerate(eq_list):
+                    lhs = eq.lhs
+                    if not isinstance(lhs, Variable):
+                        raise ValueError(
+                            f"Internal error: {block} row {i} LHS must be a Variable, got {type(lhs).__name__}: {lhs}"
+                        )
+                    out[i] = int(by_lhs.get(lhs.name, default_k))
+                return out
+
+            return _build(cycle_plan_eqs, "cycle.plan"), _build(trend_plan_eqs, "trend.plan")
+
+        def _full_mats_at_regime(params_vec: np.ndarray, regime: Tuple[int, ...]):
+            k_cycle_row, k_trend_row = _row_horizons_for_regime(regime)
+            k_use = int(max(int(np.max(k_cycle_row)), int(np.max(k_trend_row))))
+            lm = LinearDSGEforFHPRepAgent(
+                kernel.yy,
+                kernel.alpha0_cycle,
+                kernel.alpha1_cycle,
+                kernel.beta0_cycle,
+                kernel.alphaC_cycle,
+                kernel.alphaF_cycle,
+                kernel.alphaB_cycle,
+                kernel.betaS_cycle,
+                kernel.alpha0_trend,
+                kernel.alpha1_trend,
+                kernel.betaV_trend,
+                kernel.alphaC_trend,
+                kernel.alphaF_trend,
+                kernel.alphaB_trend,
+                kernel.value_gammaC,
+                kernel.value_gamma,
+                kernel.value_Cx,
+                kernel.value_Cs,
+                kernel.P,
+                kernel.R,
+                kernel.QQ,
+                kernel.DD,
+                kernel.ZZ,
+                kernel.HH,
+                k_use,
+                k_cycle_row=k_cycle_row,
+                k_trend_row=k_trend_row,
+                t0=kernel.t0,
+                expectations=kernel.expectations,
+                shock_names=kernel.shock_names,
+                state_names=kernel.state_names,
+                obs_names=kernel.obs_names,
+                prior=kernel.prior,
+                parameter_names=kernel.parameter_names,
+            )
+            return lm.system_matrices(params_vec)
+
+        # Expand selection until it is injective on the reachable subspace.
+        CC0, TT0, RR0, QQ0, DD0, ZZ0, HH0 = _full_mats_at_regime(p0, regime0)
+        Q0 = _controllable_subspace_basis(TT0, RR0, tol=basis_tol, max_steps=basis_max_steps)
+        r0 = int(Q0.shape[1])
+
+        def _rank_on_sel(Q: np.ndarray, idx: list[int]) -> int:
+            if Q.size == 0:
+                return 0
+            return _svd_rank(Q[np.asarray(idx, dtype=int), :], tol=basis_tol)
+
+        if len(sel_idx) < r0:
+            # start by allowing additional non-controlled identifiers from the full state.
+            candidates = [
+                i
+                for i, nm in enumerate(kernel.state_names)
+                if _is_identifier(nm) and (i not in seen) and (nm not in controlled)
+            ]
+            for i in candidates:
+                sel_idx.append(i)
+                seen.add(i)
+                sel_idx.sort()
+                if len(sel_idx) >= r0 and _rank_on_sel(Q0, sel_idx) == r0:
+                    break
+
+        if _rank_on_sel(Q0, sel_idx) != r0:
+            # Last resort: allow adding controlled names too.
+            candidates = [i for i, nm in enumerate(kernel.state_names) if _is_identifier(nm) and (i not in seen)]
+            for i in candidates:
+                sel_idx.append(i)
+                seen.add(i)
+                sel_idx.sort()
+                if len(sel_idx) >= r0 and _rank_on_sel(Q0, sel_idx) == r0:
+                    break
+
+        if _rank_on_sel(Q0, sel_idx) != r0:
+            raise ValueError(
+                "Could not construct a reduced switching state that identifies the reachable subspace. "
+                "Try simplifying observables or increasing the state selection manually (not yet supported)."
+            )
+
+        reduced_state_names = [kernel.state_names[i] for i in sel_idx]
+
+        # Parse policy_object expressions now that state/observable symbols are known.
+        obs_names = list(kernel.obs_names) if kernel.obs_names is not None else []
+        if not obs_names:
+            raise ValueError("Internal error: kernel has empty obs_names.")
+        state_syms = {nm: sympy.Symbol(nm) for nm in reduced_state_names}
+        obs_syms = {nm: sympy.Symbol(nm) for nm in obs_names}
+        pol_ctx = {"exp": sympy.exp, "log": sympy.log, "sqrt": sympy.sqrt, "Abs": sympy.Abs, **param_syms, **state_syms, **obs_syms}
+        allowed_pol_syms = set(param_syms.values()) | set(state_syms.values()) | set(obs_syms.values())
+
+        policy_funcs = {}
+        pol_args = [param_syms[n] for n in parameter_names] + [state_syms[nm] for nm in reduced_state_names] + [obs_syms[nm] for nm in obs_names]
+        for comp in components:
+            expr_raw = hc_components[comp]["policy_object"]
+            expr = sympy.sympify(str(expr_raw), locals=pol_ctx)
+            unknown = [v for v in expr.free_symbols if v not in allowed_pol_syms]
+            if unknown:
+                raise ValueError(
+                    f"Unknown symbol(s) in horizon_choice.components.{comp}.policy_object: {[str(u) for u in unknown]}"
+                )
+            policy_funcs[comp] = lambdify(pol_args, expr, modules="numpy")
+
+        # Build the switching model.
+        from .endogenous_horizon_switching import EndogenousHorizonSwitchingModel
+
+        model_ref: Dict[str, Any] = {}
+
+        def solve_given_regime(params_vec: np.ndarray, regime: Tuple[int, ...]):
+            CC, TT, RR, QQ, DD, ZZ, HH = _full_mats_at_regime(params_vec, tuple(int(x) for x in regime))
+
+            Q = _controllable_subspace_basis(TT, RR, tol=basis_tol, max_steps=basis_max_steps)
+            r = int(Q.shape[1])
+            if r == 0:
+                raise ValueError("No stochastic controllable directions; cannot form reduced switching state.")
+
+            Qs = Q[np.asarray(sel_idx, dtype=int), :]
+            if _svd_rank(Qs, tol=basis_tol) != r:
+                raise ValueError(
+                    "Reduced switching state is not injective on reachable subspace for this regime."
+                )
+            G = Q @ np.linalg.pinv(Qs, rcond=basis_tol)
+
+            TT_red = TT[np.asarray(sel_idx, dtype=int), :] @ G
+            RR_red = RR[np.asarray(sel_idx, dtype=int), :]
+            ZZ_red = ZZ @ G
+            DD_red = np.asarray(DD, dtype=float).reshape(-1)
+            QQ = np.asarray(QQ, dtype=float)
+            HH = np.asarray(HH, dtype=float)
+            return TT_red, RR_red, ZZ_red, DD_red, QQ, HH
+
+        def info_func(x_t: np.ndarray, t: int, chosen):
+            x_t = np.asarray(x_t, dtype=float).reshape(-1)
+            if x_t.shape != (len(reduced_state_names),):
+                raise ValueError(
+                    f"Switching state must have shape ({len(reduced_state_names)},), got {x_t.shape}."
+                )
+            info = {"x": x_t, "t": int(t), "chosen": dict(chosen)}
+            for i, nm in enumerate(reduced_state_names):
+                info[nm] = float(x_t[i])
+            return info
+
+        def policy_object(params_vec: np.ndarray, info_t, component: str, k: int, chosen_regime):
+            m = model_ref.get("model")
+            if m is None:  # pragma: no cover
+                raise RuntimeError("Internal error: switching model not initialized.")
+            x_t = np.asarray(info_t["x"], dtype=float).reshape(-1)
+            k_by_comp = {c: int(chosen_regime.get(c, 0)) for c in components}
+            k_by_comp[str(component)] = int(k)
+            reg = tuple(int(k_by_comp[c]) for c in components)
+            TT, RR, ZZ, DD, QQ, HH = m.get_mats(params_vec, reg)
+            y_hat = ZZ @ x_t + np.asarray(DD, dtype=float).reshape(-1)
+            args = [*np.asarray(params_vec, dtype=float).reshape(-1).tolist(), *x_t.tolist(), *y_hat.tolist()]
+            return np.asarray(policy_funcs[str(component)](*args), dtype=float)
+
+        out_model = EndogenousHorizonSwitchingModel(
+            components=components,
+            k_max=k_max_by_comp,
+            cost_params={c: (a_by_comp[c], 0.0) for c in components},
+            lam=lam_by_comp,
+            solve_given_regime=solve_given_regime,
+            policy_object=policy_object,
+            info_func=info_func,
+            selection_order=selection_order,
+        )
+
+        model_ref["model"] = out_model
+
+        # Attach helpful metadata.
+        setattr(out_model, "fhp_model", self)
+        setattr(out_model, "state_names", list(reduced_state_names))
+        setattr(out_model, "obs_names", list(obs_names))
+        setattr(out_model, "shock_names", list(kernel.shock_names) if kernel.shock_names is not None else None)
+        setattr(out_model, "parameter_names", list(parameter_names))
+        setattr(out_model, "p0", p0)
+
+        return out_model

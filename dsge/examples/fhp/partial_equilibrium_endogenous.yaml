@@ -1,0 +1,60 @@
+declarations:
+  type: fhp
+  name: fhp_partial_equilibrium_endogenous
+  variables: [pi]
+  shocks: [y]
+  innovations: [e_y]
+  values: [vp]
+  value_updates: [vpe]
+  expectations: 0
+  parameters: [rho_y, sigma_y, beta, kappa, xi, theta, gamma, D_pp]
+
+  # Baseline fixed horizon (used only if horizon_choice is omitted).
+  k: 1
+
+  # Endogenous horizon choice: pricing chooses k_t in {0..k_max}.
+  # The horizon applies to the pi equation row (LHS 'pi') in both cycle and trend blocks.
+  horizon_choice:
+    components:
+      pricing:
+        k_max: 8
+        assign_lhs: [pi]
+        cost:
+          a: 1e-4
+        lambda: "(-D_pp)/(1-beta*theta)"
+        policy_object: "theta/(1-theta) * pi"
+
+model:
+  cycle:
+    terminal:
+      - pi = kappa*xi*y
+    plan:
+      - pi = beta*pi(+1) + kappa*xi*y
+
+  shocks:
+    - y = rho_y*y(-1) + sigma_y*e_y
+
+  trend:
+    terminal:
+      - pi = kappa*xi*y + beta*vp
+    plan:
+      - pi = beta*pi(+1) + kappa*xi*y
+
+  value:
+    function:
+      - vp = (1-gamma)*vp(-1) + gamma*vpe(-1)
+    update:
+      - vpe = pi
+
+calibration:
+  parameters:
+    rho_y: 0.85
+    sigma_y: 0.25
+    beta: 0.99
+    kappa: 0.05
+    xi: 1.0
+    theta: 0.75
+    gamma: 0.3
+    D_pp: -2.0
+  covariance:
+    e_y: 1

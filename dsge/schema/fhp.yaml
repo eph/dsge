@@ -60,6 +60,52 @@ declarations:
                 type: string
               valuesrules:
                 type: integer
+    horizon_choice:
+      type: dict
+      required: false
+      allow_unknown: false
+      schema:
+        selection_order:
+          type: list
+          schema:
+            type: string
+        components:
+          type: dict
+          required: true
+          keysrules:
+            type: string
+          valuesrules:
+            type: dict
+            allow_unknown: false
+            schema:
+              k_max:
+                type: integer
+                required: true
+              assign_lhs:
+                type: list
+                required: true
+                schema:
+                  type: string
+              cost:
+                type: dict
+                required: true
+                allow_unknown: false
+                schema:
+                  a:
+                    required: true
+                    anyof:
+                      - type: integer
+                      - type: float
+                      - type: string
+              lambda:
+                required: true
+                anyof:
+                  - type: integer
+                  - type: float
+                  - type: string
+              policy_object:
+                type: string
+                required: true
     observables:
       type: list
       schema:
