@@ -2,7 +2,7 @@
 *.o
 *.so
 *.mod
-.ipynb_checkpoints/*
+.ipynb_checkpoints/
 *.pyf
 /fortran/cholmod.f90~
 /build/
@@ -44,6 +44,8 @@ poetry.lock
 *.pickle
 *.log
 *.bak
+Untitled*.ipynb
+dsge/notebooks/
 
 # Project-specific temporary/export folders
 _tmp_cpp_export/
