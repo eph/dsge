@@ -197,10 +197,10 @@ class StateSpaceModel(object):
 
         lik = filt_func(
             np.ascontiguousarray(yy),
-            np.ascontiguousarray(CC),
-            np.ascontiguousarray(TT),
-            np.ascontiguousarray(RR),
-            np.ascontiguousarray(QQ),
+            np.ascontiguousarray(CC, dtype=float),
+            np.ascontiguousarray(TT, dtype=float),
+            np.ascontiguousarray(RR, dtype=float),
+            np.ascontiguousarray(QQ, dtype=float),
             np.ascontiguousarray(DD, dtype=float),
             np.ascontiguousarray(ZZ, dtype=float),
             np.ascontiguousarray(HH, dtype=float),
@@ -270,10 +270,10 @@ class StateSpaceModel(object):
 
         res = filter_and_smooth(
             np.asarray(yy),
-            np.ascontiguousarray(CC),
-            np.ascontiguousarray(TT),
-            np.ascontiguousarray(RR),
-            np.ascontiguousarray(QQ),
+            np.ascontiguousarray(CC, dtype=float),
+            np.ascontiguousarray(TT, dtype=float),
+            np.ascontiguousarray(RR, dtype=float),
+            np.ascontiguousarray(QQ, dtype=float),
             np.ascontiguousarray(DD, dtype=float),
             np.ascontiguousarray(ZZ, dtype=float),
             np.ascontiguousarray(HH, dtype=float),
