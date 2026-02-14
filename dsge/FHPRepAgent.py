@@ -33,6 +33,96 @@ from .Base import Base
 # Get module logger
 logger = get_logger("fhp")
 
+# --------------------------------------------------------------------
+# Horizon (k) parsing helpers
+# --------------------------------------------------------------------
+
+def _parse_k_spec(k_decl: Any) -> Dict[str, Any]:
+    """Parse declarations.k into a normalized spec.
+
+    Supported forms:
+      - int: scalar horizon (backward compatible)
+      - dict: {"default": int, "by_lhs": {lhs_name: int}}
+
+    Returns a dict with keys: default, by_lhs, k_max.
+    """
+    if isinstance(k_decl, (int, np.integer)):
+        k_default = int(k_decl)
+        if k_default < 0:
+            raise ValueError(f"declarations.k must be >= 0, got {k_default}")
+        return {"default": k_default, "by_lhs": {}, "k_max": k_default}
+
+    if isinstance(k_decl, dict):
+        allowed_keys = {"default", "by_lhs", "k_max"}
+        extra_keys = set(k_decl.keys()) - allowed_keys
+        if extra_keys:
+            raise ValueError(
+                "declarations.k dict supports only keys "
+                f"{sorted(allowed_keys)}, got extra keys {sorted(extra_keys)}"
+            )
+
+        if "default" not in k_decl:
+            raise ValueError("declarations.k dict must include a 'default' integer horizon")
+
+        k_default = int(k_decl["default"])
+        if k_default < 0:
+            raise ValueError(f"declarations.k.default must be >= 0, got {k_default}")
+
+        by_lhs_raw = k_decl.get("by_lhs", {}) or {}
+        if not isinstance(by_lhs_raw, dict):
+            raise ValueError("declarations.k.by_lhs must be a dict of {lhs_name: int}")
+
+        k_by_lhs: Dict[str, int] = {}
+        for lhs_name, k_val in by_lhs_raw.items():
+            k_int = int(k_val)
+            if k_int < 0:
+                raise ValueError(
+                    "declarations.k.by_lhs horizons must be >= 0, "
+                    f"got {lhs_name!r}: {k_int}"
+                )
+            k_by_lhs[str(lhs_name)] = k_int
+
+        k_max = max([k_default] + (list(k_by_lhs.values()) if k_by_lhs else []))
+        return {"default": k_default, "by_lhs": k_by_lhs, "k_max": k_max}
+
+    raise ValueError(
+        "declarations.k must be an integer, or a dict like "
+        "{default: <int>, by_lhs: {<lhs_name>: <int>, ...}}"
+    )
+
+
+def _align_terminal_equations_by_lhs_name(*, plan_dyn, term_dyn, block: str):
+    """Align terminal dynamic equations to plan dynamic equations by LHS variable name.
+
+    This is required for row-wise mixing of plan vs terminal equations.
+    """
+    def _lhs_name(eq, where: str) -> str:
+        lhs = eq.lhs
+        if not isinstance(lhs, Variable):
+            raise ValueError(f"{where} equation LHS must be a Variable, got {type(lhs).__name__}: {lhs}")
+        return lhs.name
+
+    plan_names = [_lhs_name(eq, f"{block}.plan") for eq in plan_dyn]
+    if len(set(plan_names)) != len(plan_names):
+        dupes = sorted({n for n in plan_names if plan_names.count(n) > 1})
+        raise ValueError(f"Duplicate LHS variable(s) in {block}.plan equations: {dupes}")
+
+    term_names = [_lhs_name(eq, f"{block}.terminal") for eq in term_dyn]
+    if len(set(term_names)) != len(term_names):
+        dupes = sorted({n for n in term_names if term_names.count(n) > 1})
+        raise ValueError(f"Duplicate LHS variable(s) in {block}.terminal equations: {dupes}")
+
+    term_map = {name: eq for name, eq in zip(term_names, term_dyn)}
+
+    missing = [name for name in plan_names if name not in term_map]
+    if missing:
+        raise ValueError(
+            f"Missing {block}.terminal equation(s) for plan LHS variable(s): {missing}"
+        )
+
+    return [term_map[name] for name in plan_names]
+
+
 # Define a new function
 def _print_Integer(self, expr):
     if expr == 0:
@@ -60,6 +150,8 @@ class LinearDSGEforFHPRepAgent(LinearDSGEModel):
         ZZ,
         HH,
         k,
+        k_cycle_row=None,
+        k_trend_row=None,
         t0=0,
         expectations=0,
         shock_names=None,
@@ -108,7 +200,9 @@ class LinearDSGEforFHPRepAgent(LinearDSGEModel):
         self.parameter_names = parameter_names
 
         self.prior = prior
-        self.k = k
+        self.k = int(k)
+        self.k_cycle_row = None if k_cycle_row is None else np.asarray(k_cycle_row, dtype=int)
+        self.k_trend_row = None if k_trend_row is None else np.asarray(k_trend_row, dtype=int)
 
     def system_matrices(self, p0):
 
@@ -149,30 +243,74 @@ class LinearDSGEforFHPRepAgent(LinearDSGEModel):
            A_trend_history[0] = A_trend.copy()
            B_trend_history[0] = B_trend.copy()
 
-       for k in range(1, self.k+1):
-           A_cycle_new = np.linalg.inv(alphaC_cycle - alphaF_cycle @ A_cycle) @ alphaB_cycle
-           B_cycle_new = np.linalg.inv(alphaC_cycle - alphaF_cycle @ A_cycle) @ (alphaF_cycle @ B_cycle @ P + betaS_cycle)
+       nvar = A_cycle.shape[0]
+       if self.k_cycle_row is None:
+           k_cycle_row = np.full((nvar,), self.k, dtype=int)
+       else:
+           k_cycle_row = np.asarray(self.k_cycle_row, dtype=int)
+           if k_cycle_row.shape != (nvar,):
+               raise ValueError(
+                   f"k_cycle_row must have shape ({nvar},), got {k_cycle_row.shape}"
+               )
 
-           A_trend_new = np.linalg.inv(alphaC_trend - alphaF_trend @ A_trend) @ alphaB_trend
-           B_trend_new = np.linalg.inv(alphaC_trend - alphaF_trend @ A_trend) @ (alphaF_trend @ B_trend)
+       if self.k_trend_row is None:
+           k_trend_row = np.full((nvar,), self.k, dtype=int)
+       else:
+           k_trend_row = np.asarray(self.k_trend_row, dtype=int)
+           if k_trend_row.shape != (nvar,):
+               raise ValueError(
+                   f"k_trend_row must have shape ({nvar},), got {k_trend_row.shape}"
+               )
+
+       for m in range(1, self.k + 1):
+           # Cycle: mix plan vs terminal rows based on m <= k_cycle_row[i]
+           alphaC_eff = alpha0_cycle.copy()
+           alphaF_eff = np.zeros_like(alphaF_cycle)
+           alphaB_eff = alpha1_cycle.copy()
+           betaS_eff = beta0_cycle.copy()
+
+           plan_rows = m <= k_cycle_row
+           alphaC_eff[plan_rows, :] = alphaC_cycle[plan_rows, :]
+           alphaF_eff[plan_rows, :] = alphaF_cycle[plan_rows, :]
+           alphaB_eff[plan_rows, :] = alphaB_cycle[plan_rows, :]
+           betaS_eff[plan_rows, :] = betaS_cycle[plan_rows, :]
+
+           inv_cycle = np.linalg.inv(alphaC_eff - alphaF_eff @ A_cycle)
+           A_cycle_new = inv_cycle @ alphaB_eff
+           B_cycle_new = inv_cycle @ (alphaF_eff @ B_cycle @ P + betaS_eff)
+
+           # Trend: mix plan vs terminal rows; terminal contributes value loading (betaV_trend)
+           alphaC_eff = alpha0_trend.copy()
+           alphaF_eff = np.zeros_like(alphaF_trend)
+           alphaB_eff = alpha1_trend.copy()
+           betaV_eff = betaV_trend.copy()
+
+           plan_rows = m <= k_trend_row
+           alphaC_eff[plan_rows, :] = alphaC_trend[plan_rows, :]
+           alphaF_eff[plan_rows, :] = alphaF_trend[plan_rows, :]
+           alphaB_eff[plan_rows, :] = alphaB_trend[plan_rows, :]
+           betaV_eff[plan_rows, :] = 0.0
+
+           inv_trend = np.linalg.inv(alphaC_eff - alphaF_eff @ A_trend)
+           A_trend_new = inv_trend @ alphaB_eff
+           B_trend_new = inv_trend @ (alphaF_eff @ B_trend + betaV_eff)
 
            A_cycle = A_cycle_new
            B_cycle = B_cycle_new
-
            A_trend = A_trend_new
            B_trend = B_trend_new
 
            if self.expectations > 0:
-               A_cycle_history[k] = A_cycle.copy()
-               B_cycle_history[k] = B_cycle.copy()
+               A_cycle_history[m] = A_cycle.copy()
+               B_cycle_history[m] = B_cycle.copy()
 
-               A_trend_history[k] = A_trend.copy()
-               B_trend_history[k] = B_trend.copy()
+               A_trend_history[m] = A_trend.copy()
+               B_trend_history[m] = B_trend.copy()
 
-           self.A_cycle = A_cycle
-           self.B_cycle = B_cycle
-           self.A_trend = A_trend
-           self.B_trend = B_trend
+       self.A_cycle = A_cycle
+       self.B_cycle = B_cycle
+       self.A_trend = A_trend
+       self.B_trend = B_trend
 
 
        nx = A_cycle.shape[0]
@@ -273,9 +411,9 @@ class FHPRepAgent(Base):
 
 
     def smc(self, k=None, t0=0, expectations=None):
-        k = self['k'] if k is None else k
+        k_in = self['k'] if k is None else k
         expectations = self['expectations'] if expectations is None else expectations
-        cmodel = self.compile_model(k=k, expectations=expectations)
+        cmodel = self.compile_model(k=k_in, expectations=expectations)
      
         npara = len(self['parameters'])
         para = sympy.IndexedBase("para", shape=(npara + 1,))
@@ -363,8 +501,10 @@ class FHPRepAgent(Base):
             nshock=len(self['shocks']),
             npara=len(self['parameters']),
             neps=len(self['innovations']),
-            k=k,
-            t0=0,
+            k=cmodel.k,
+            k_cycle_row=cmodel.k_cycle_row,
+            k_trend_row=cmodel.k_trend_row,
+            t0=t0,
             system=sims_mat,
             data=data_fortran,
             custom_prior_code=custom_prior_code,
@@ -611,6 +751,7 @@ class FHPRepAgent(Base):
             HH = from_dict_to_mat(me_dict, observables, context)
 
         # Create the model dictionary with all components
+        k_spec = _parse_k_spec(k if k is not None else dec["k"])
         model_dict = {
             'variables': variables,
             'values': values,
@@ -628,7 +769,10 @@ class FHPRepAgent(Base):
             'obs_equations': obs_equations,
             'QQ': QQ,
             'HH': HH,
-            'k': k if k is not None else dec['k']  # Allow k override from parameter
+            # Backward compatible scalar k for any callers that expect an integer.
+            'k': k_spec["k_max"],
+            # Rich horizon spec for equation-row horizons.
+            'k_spec': k_spec,
         }
 
         logger.info(f"FHP model creation complete: {len(variables)} variables, {len(parameters)} parameters")
@@ -636,32 +780,75 @@ class FHPRepAgent(Base):
 
     def compile_model(self, k=None,expectations=None):
 
-        k = self['k'] if k is None else k
+        k_spec = _parse_k_spec(self.get("k_spec", self["k"]) if k is None else k)
+        k = k_spec["k_max"]
         expectations = self['expectations'] if expectations is None else expectations
 
         nv = len(self['variables'])
         ns = len(self['shocks'])
         nval = len(self['values'])
         v = self['variables']
-        cycle_equation = self['equations']['cycle']['terminal'] + self['equations']['static']
-        self.alpha0_cycle = sympy.Matrix(nv, nv , lambda i, j: cycle_equation[i].set_eq_zero.diff(self['variables'][j]))
-        self.alpha1_cycle = sympy.Matrix(nv, nv , lambda i, j: -cycle_equation[i].set_eq_zero.diff(self['variables'][j](-1)))
-        self.beta0_cycle = sympy.Matrix(nv, ns , lambda i, j: -cycle_equation[i].set_eq_zero.diff(self['shocks'][j]))
 
-        cycle_equation = self['equations']['cycle']['plan'] + self['equations']['static']
-        self.alphaC_cycle = sympy.Matrix(nv, nv, lambda i, j: cycle_equation[i].set_eq_zero.diff(self['variables'][j]))
-        self.alphaF_cycle = sympy.Matrix(nv, nv, lambda i, j: -cycle_equation[i].set_eq_zero.diff(self['variables'][j](+1)))
-        self.alphaB_cycle = sympy.Matrix(nv, nv, lambda i, j: -cycle_equation[i].set_eq_zero.diff(self['variables'][j](-1)))
-        self.betaS_cycle = sympy.Matrix(nv, ns, lambda i ,j: -cycle_equation[i].set_eq_zero.diff(self['shocks'][j]))
-        trend_equation = self['equations']['trend']['terminal'] + self['equations']['static']
-        self.alpha0_trend = sympy.Matrix(nv, nv , lambda i, j: trend_equation[i].set_eq_zero.diff(self['variables'][j]))
-        self.alpha1_trend = sympy.Matrix(nv, nv , lambda i, j: -trend_equation[i].set_eq_zero.diff(self['variables'][j](-1)))
-        self.betaV_trend = sympy.Matrix(nv, nval , lambda i, j: -trend_equation[i].set_eq_zero.diff(self['values'][j]))
+        static_eqs = self["equations"]["static"]
 
-        trend_equation = self['equations']['trend']['plan'] + self['equations']['static']
-        self.alphaC_trend = sympy.Matrix(nv, nv, lambda i, j: trend_equation[i].set_eq_zero.diff(self['variables'][j]))
-        self.alphaF_trend = sympy.Matrix(nv, nv, lambda i, j: -trend_equation[i].set_eq_zero.diff(self['variables'][j](+1)))
-        self.alphaB_trend = sympy.Matrix(nv, nv, lambda i, j: -trend_equation[i].set_eq_zero.diff(self['variables'][j](-1)))
+        cycle_plan_dyn = self["equations"]["cycle"]["plan"]
+        cycle_term_dyn = self["equations"]["cycle"]["terminal"]
+        cycle_term_dyn_aligned = _align_terminal_equations_by_lhs_name(
+            plan_dyn=cycle_plan_dyn, term_dyn=cycle_term_dyn, block="cycle"
+        )
+        cycle_term_eqs = cycle_term_dyn_aligned + static_eqs
+        cycle_plan_eqs = cycle_plan_dyn + static_eqs
+
+        self.alpha0_cycle = sympy.Matrix(nv, nv , lambda i, j: cycle_term_eqs[i].set_eq_zero.diff(self['variables'][j]))
+        self.alpha1_cycle = sympy.Matrix(nv, nv , lambda i, j: -cycle_term_eqs[i].set_eq_zero.diff(self['variables'][j](-1)))
+        self.beta0_cycle = sympy.Matrix(nv, ns , lambda i, j: -cycle_term_eqs[i].set_eq_zero.diff(self['shocks'][j]))
+
+        self.alphaC_cycle = sympy.Matrix(nv, nv, lambda i, j: cycle_plan_eqs[i].set_eq_zero.diff(self['variables'][j]))
+        self.alphaF_cycle = sympy.Matrix(nv, nv, lambda i, j: -cycle_plan_eqs[i].set_eq_zero.diff(self['variables'][j](+1)))
+        self.alphaB_cycle = sympy.Matrix(nv, nv, lambda i, j: -cycle_plan_eqs[i].set_eq_zero.diff(self['variables'][j](-1)))
+        self.betaS_cycle = sympy.Matrix(nv, ns, lambda i ,j: -cycle_plan_eqs[i].set_eq_zero.diff(self['shocks'][j]))
+
+        trend_plan_dyn = self["equations"]["trend"]["plan"]
+        trend_term_dyn = self["equations"]["trend"]["terminal"]
+        trend_term_dyn_aligned = _align_terminal_equations_by_lhs_name(
+            plan_dyn=trend_plan_dyn, term_dyn=trend_term_dyn, block="trend"
+        )
+        trend_term_eqs = trend_term_dyn_aligned + static_eqs
+        trend_plan_eqs = trend_plan_dyn + static_eqs
+
+        all_var_names = {var.name for var in self["variables"]}
+        unknown_overrides = sorted(set(k_spec["by_lhs"].keys()) - all_var_names)
+        if unknown_overrides:
+            raise ValueError(
+                "declarations.k.by_lhs contains unknown variable name(s): "
+                f"{unknown_overrides}. Expected one of {sorted(all_var_names)}."
+            )
+
+        def _build_row_horizons(eq_list, block: str) -> np.ndarray:
+            if len(eq_list) != nv:
+                raise ValueError(
+                    f"Internal error: {block} equation list has {len(eq_list)} rows, expected {nv}"
+                )
+            out = np.zeros((nv,), dtype=int)
+            for i, eq in enumerate(eq_list):
+                lhs = eq.lhs
+                if not isinstance(lhs, Variable):
+                    raise ValueError(
+                        f"{block} equation row {i} LHS must be a Variable, got {type(lhs).__name__}: {lhs}"
+                    )
+                out[i] = k_spec["by_lhs"].get(lhs.name, k_spec["default"])
+            return out
+
+        k_cycle_row = _build_row_horizons(cycle_plan_eqs, "cycle.plan")
+        k_trend_row = _build_row_horizons(trend_plan_eqs, "trend.plan")
+
+        self.alpha0_trend = sympy.Matrix(nv, nv , lambda i, j: trend_term_eqs[i].set_eq_zero.diff(self['variables'][j]))
+        self.alpha1_trend = sympy.Matrix(nv, nv , lambda i, j: -trend_term_eqs[i].set_eq_zero.diff(self['variables'][j](-1)))
+        self.betaV_trend = sympy.Matrix(nv, nval , lambda i, j: -trend_term_eqs[i].set_eq_zero.diff(self['values'][j]))
+
+        self.alphaC_trend = sympy.Matrix(nv, nv, lambda i, j: trend_plan_eqs[i].set_eq_zero.diff(self['variables'][j]))
+        self.alphaF_trend = sympy.Matrix(nv, nv, lambda i, j: -trend_plan_eqs[i].set_eq_zero.diff(self['variables'][j](+1)))
+        self.alphaB_trend = sympy.Matrix(nv, nv, lambda i, j: -trend_plan_eqs[i].set_eq_zero.diff(self['variables'][j](-1)))
 
         value_equation = self['equations']['value']['function']
         lhs = sympy.Matrix(nval, nval, lambda i, j: value_equation[i].set_eq_zero.diff(self['values'][j]))
@@ -782,7 +969,10 @@ class FHPRepAgent(Base):
                                           beta0_cycle, alphaC_cycle, alphaF_cycle, alphaB_cycle, betaS_cycle,
                                           alpha0_trend, alpha1_trend, betaV_trend, alphaC_trend, alphaF_trend,
                                           alphaB_trend, value_gammaC, value_gamma, value_Cx, value_Cs, P, R, QQ, DD, ZZ,
-                                          HH, k, t0=0, expectations=expectations,
+                                          HH, k,
+                                          k_cycle_row=k_cycle_row,
+                                          k_trend_row=k_trend_row,
+                                          t0=0, expectations=expectations,
                                           shock_names=shock_names,
                                           state_names=state_names,
                                           obs_names=obs_names,

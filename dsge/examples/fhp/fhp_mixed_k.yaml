@@ -1,0 +1,146 @@
+declarations:
+  type: fhp
+  name: fhp_mixed_k
+  variables: [kp, c, pi, q, i, y, mc, r, y_lag]
+  shocks: [re, mu, chi, g, mp]
+  innovations: [e_re, e_mu, e_chi, e_g, e_mp]
+  values: [vh, vf, vk]
+  value_updates: [vhe, vfe, vke]
+  expectations: 0
+  parameters: [sigma, sg, phi_k, delta,
+               alpha, phi_pi, phi_y, kappa,
+               r_A, rho_mu, gamma, rho_re, rho_chi, rho_g, rho_mp, y_Q, pi_A,
+               sigma_mu, sigma_chi, sigma_g, sigma_mp, sigma_re]
+  auxiliary_parameters: [beta, sc, r_k]
+
+  # Mixed horizons:
+  # - firm pricing/inflation block (pi) uses k=1 (default)
+  # - household block (c, q) uses k=4
+  k:
+    default: 1
+    by_lhs:
+      c: 4
+      q: 4
+
+  observables: [ygr, pinf, nomr]
+
+model:
+  static:
+    - q = -mu + phi_k*(i - kp(-1))
+    - i = -mu + 1/delta *(kp - (1-delta)*kp(-1))
+    - y = sc*c + (1-sc-sg)*i + sg*g
+    - mc = 1/sigma*c + chi + alpha/(1-alpha)*(y - kp(-1))
+    - r = phi_pi*pi + phi_y*y + mp
+    - y_lag = y(-1)
+
+  cycle:
+    terminal:
+      - q = -(r - re)
+      - c = -sigma*(r - re)
+      - pi = kappa*mc
+
+    plan:
+      - q = -(r - pi(+1) - re) + beta*q(+1) + beta*r_k*(mc(+1) + y(+1) - kp) + beta*delta*rho_mu*mu
+      - c = c(+1) - sigma*(r - pi(+1) - re)
+      - pi = beta*pi(+1) + kappa*mc
+
+  shocks:
+    - re = rho_re*re(-1) + e_re
+    - mu = rho_mu*mu(-1) + e_mu
+    - chi = rho_chi*chi(-1) + e_chi
+    - g = rho_g*g(-1) + e_g
+    - mp = rho_mp*mp(-1) + e_mp
+
+  trend:
+    terminal:
+      - q = -r + 1/sigma*vh + vk
+      - c = -sigma*r + vh
+      - pi = kappa*mc + beta*vf
+    plan:
+      - q = -(r - pi(+1)) + beta*q(+1) + beta*r_k*(mc(+1) + y(+1) - kp)
+      - c = c(+1) - sigma*(r - pi(+1))
+      - pi = beta*pi(+1) + kappa*mc
+
+  value:
+    function:
+      - vk = (1-gamma)*vk(-1) + gamma*vke(-1)
+      - vf = (1-gamma)*vf(-1) + gamma*vfe(-1)
+      - vh = (1-gamma)*vh(-1) + gamma*vhe(-1)
+    update:
+      - vke = beta*q + beta*delta*mu + beta/alpha*r_k*(mc - (1-alpha)*chi) - (1 + beta*r_k*(1-alpha)/alpha)/sigma*c
+      - vhe = c + sigma*pi
+      - vfe = pi
+
+  observables:
+    ygr: y_Q + y - y_lag
+    pinf: pi_A + 4*pi
+    nomr: r_A + pi_A + 4*r
+
+calibration:
+
+  auxiliary_parameters:
+    beta: 1/(1+r_A/400)
+    sc: 1 - alpha*1/(1+r_A/400)*delta/(1-1/(1+r_A/400)*(1-delta)) - sg
+    r_k: 1/(1/(1+r_A/400))- (1 - delta)
+
+  parameters:
+    sigma: 1
+    sg: 0.15
+    phi_k: 1.0
+    delta: 0.025
+    alpha: 0.30
+    phi_pi: 1.5
+    phi_y: 0.125
+    kappa: 0.01
+    beta: 0.99
+    rho_mu: 0.7
+    gamma: 0.1
+    rho_re: 0.95
+    rho_chi: 0.7
+    rho_g: 0.95
+    rho_mp: 0.95
+    r_A: 2
+    y_Q: 0.45
+    pi_A: 2
+    sigma_mu: 1
+    sigma_chi: 1
+    sigma_g: 1
+    sigma_mp: 1
+    sigma_re: 1
+
+  covariance:
+    e_re: (sigma_re)**2
+    e_mu: (sigma_mu)**2
+    e_chi: (sigma_chi)**2
+    e_g: (sigma_g)**2
+    e_mp: (sigma_mp)**2
+
+estimation:
+  data:
+    file: dummy.csv
+    start: 1964Q1
+
+  prior:
+    sigma: [gamma, 2.0, 0.5]
+    r_A: [gamma, 2.0, 1]
+    pi_A: [normal, 4, 1]
+    y_Q: [normal, 0.5, 0.1]
+    gamma: [uniform, 0, 1]
+    kappa: [gamma, 0.05, 0.1]
+    phi_pi: [gamma, 1.5, 0.25]
+    phi_y: [gamma, 0.25, 0.25]
+    delta: [beta, 0.025, 0.01]
+    sg: [beta, 0.15, 0.025]
+    alpha: [beta, 0.5, 0.1]
+    sigma_mu: [inv_gamma, 1, 4]
+    sigma_chi: [inv_gamma, 1, 4]
+    sigma_g: [inv_gamma, 1, 4]
+    sigma_mp: [inv_gamma, 1, 4]
+    sigma_re: [inv_gamma, 1, 4]
+    rho_mu: [uniform, 0, 1]
+    rho_re: [uniform, 0, 1]
+    rho_chi: [uniform, 0, 1]
+    rho_g: [uniform, 0, 1]
+    rho_mp: [uniform, 0, 1]
+    phi_k: [gamma, 1, 1]
+

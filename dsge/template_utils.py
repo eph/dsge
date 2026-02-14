@@ -32,6 +32,8 @@ def build_fhp_placeholders(
     npara: int,
     neps: int,
     k: int,
+    k_cycle_row=None,
+    k_trend_row=None,
     t0: int,
     system: str,
     data: str = "",
@@ -39,6 +41,16 @@ def build_fhp_placeholders(
     p0: str = "",
 ) -> Dict[str, Any]:
     """Build the known placeholders used by templates/fhp.f90."""
+    def _fortran_int_array_literal(arr, *, n: int, fill: int) -> str:
+        if arr is None:
+            values = [fill] * n
+        else:
+            values = arr.tolist() if hasattr(arr, "tolist") else list(arr)
+            if len(values) != n:
+                raise ValueError(f"Expected array of length {n}, got {len(values)}")
+            values = [int(v) for v in values]
+        return "(/ " + ", ".join(str(v) for v in values) + " /)"
+
     return {
         '{cmodel.yy.shape[1]}': str(nobs),
         '{cmodel.yy.shape[0]}': str(T),
@@ -48,10 +60,11 @@ def build_fhp_placeholders(
         "{len(model['parameters'])}": str(npara),
         "{len(model['innovations'])}": str(neps),
         '{k}': str(k),
+        '{k_cycle_row}': _fortran_int_array_literal(k_cycle_row, n=nvar, fill=k),
+        '{k_trend_row}': _fortran_int_array_literal(k_trend_row, n=nvar, fill=k),
         '{p0}': p0,
         '{t0}': str(t0),
         '{system}': system,
         '{data}': data,
         '{custom_prior_code}': custom_prior_code,
     }
-

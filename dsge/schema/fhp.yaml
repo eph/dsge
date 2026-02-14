@@ -45,8 +45,21 @@ declarations:
       schema:
         type: string
     k:
-      type: integer
       required: true
+      anyof:
+        - type: integer
+        - type: dict
+          allow_unknown: false
+          schema:
+            default:
+              type: integer
+              required: true
+            by_lhs:
+              type: dict
+              keysrules:
+                type: string
+              valuesrules:
+                type: integer
     observables:
       type: list
       schema:

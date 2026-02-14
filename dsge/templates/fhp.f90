@@ -66,16 +66,22 @@ module model_t
 
     ! Declare dimensions first so they can be used in array bounds
     integer :: k, nvar, nval, nshock, nobs, neps
+    integer :: i
     integer :: info
     integer :: lwork
     integer, dimension(:), allocatable :: ipiv
     real(8), allocatable :: work(:)
+    integer, allocatable :: k_cycle_row(:), k_trend_row(:)
 
     ! Now use the dimension variables in array declarations
     double precision, allocatable :: alpha0_cycle(:,:), alpha1_cycle(:,:), beta0_cycle(:,:)
     double precision, allocatable :: alphaC_cycle(:,:), alphaF_cycle(:,:), alphaB_cycle(:,:), betaS_cycle(:,:)
     double precision, allocatable :: alpha0_trend(:,:), alpha1_trend(:,:), betaV_trend(:,:)
     double precision, allocatable :: alphaC_trend(:,:), alphaF_trend(:,:), alphaB_trend(:,:)
+    double precision, allocatable :: alpha0_cycle_term(:,:), alpha1_cycle_term(:,:), beta0_cycle_term(:,:)
+    double precision, allocatable :: alpha0_trend_term(:,:), alpha1_trend_term(:,:), betaV_trend_term(:,:)
+    double precision, allocatable :: alphaC_eff(:,:), alphaF_eff(:,:), alphaB_eff(:,:)
+    double precision, allocatable :: betaS_eff(:,:), betaV_eff(:,:)
     double precision, allocatable :: value_gammaC(:,:), value_gamma(:,:), value_Cx(:,:), value_Cs(:,:)
     double precision, allocatable :: P(:,:), R(:,:)
     double precision, allocatable :: DD2(:,:)
@@ -108,6 +114,11 @@ module model_t
     allocate(temp1(nvar, nvar))
     allocate(ipiv(nvar))
     allocate(work(lwork))
+    allocate(k_cycle_row(nvar), k_trend_row(nvar))
+    allocate(alpha0_cycle_term(nvar, nvar), alpha1_cycle_term(nvar, nvar), beta0_cycle_term(nvar, nshock))
+    allocate(alpha0_trend_term(nvar, nvar), alpha1_trend_term(nvar, nvar), betaV_trend_term(nvar, nval))
+    allocate(alphaC_eff(nvar, nvar), alphaF_eff(nvar, nvar), alphaB_eff(nvar, nvar))
+    allocate(betaS_eff(nvar, nshock), betaV_eff(nvar, nval))
 
     error = 0
 
@@ -118,6 +129,19 @@ module model_t
     self%HH = 0.0d0
 
     {system}
+
+    ! Store original (terminal) matrices before in-place inversions
+    alpha0_cycle_term = alpha0_cycle
+    alpha1_cycle_term = alpha1_cycle
+    beta0_cycle_term  = beta0_cycle
+
+    alpha0_trend_term = alpha0_trend
+    alpha1_trend_term = alpha1_trend
+    betaV_trend_term  = betaV_trend
+
+    ! Row-specific planning horizons (k_i) for cycle and trend blocks
+    k_cycle_row = {k_cycle_row}
+    k_trend_row = {k_trend_row}
 
     ! Initial calculations for A_cycle, B_cycle, A_trend, B_trend using LAPACK
     call dgetrf(nvar, nvar, alpha0_cycle, nvar, ipiv, info)
@@ -130,29 +154,53 @@ module model_t
     call dgemm('N', 'N', nvar, nvar, nvar, 1.0d0, alpha0_trend, nvar, alpha1_trend, nvar, 0.0d0, A_trend, nvar)
     call dgemm('N', 'N', nvar, nval, nvar, 1.0d0, alpha0_trend, nvar, betaV_trend, nvar, 0.0d0, B_trend, nvar)
 
-    ! ! Main loop for k
+    ! Main loop for k (row-specific horizons)
     do k = 1, {k}
-    !     ! Calculations for A_cycle_new
+         ! Cycle effective system for iteration k
+         alphaC_eff = alpha0_cycle_term
+         alphaF_eff = 0.0d0
+         alphaB_eff = alpha1_cycle_term
+         betaS_eff  = beta0_cycle_term
+
+         do i = 1, nvar
+            if (k <= k_cycle_row(i)) then
+               alphaC_eff(i,:) = alphaC_cycle(i,:)
+               alphaF_eff(i,:) = alphaF_cycle(i,:)
+               alphaB_eff(i,:) = alphaB_cycle(i,:)
+               betaS_eff(i,:)  = betaS_cycle(i,:)
+            end if
+         end do
+
          temp1 = 0.0d0
-         call dgemm('N', 'N', nvar, nvar, nvar, -1.0d0, alphaF_cycle, nvar, A_cycle, nvar, 1.0d0, temp1, nvar)
-         temp1 = temp1 + alphaC_cycle
+         call dgemm('N', 'N', nvar, nvar, nvar, -1.0d0, alphaF_eff, nvar, A_cycle, nvar, 0.0d0, temp1, nvar)
+         temp1 = temp1 + alphaC_eff
          call dgetrf(nvar, nvar, temp1, nvar, ipiv, info)
          call dgetri(nvar, temp1, nvar, ipiv, work, lwork, info)
-         call dgemm('N', 'N', nvar, nvar, nvar, 1.0d0, temp1, nvar, alphaB_cycle, nvar, 0.0d0, A_cycle_new, nvar)
-    !
-    !     ! ... (continue with all other calculations)
-         ! Calculations for B_cycle_new
+         call dgemm('N', 'N', nvar, nvar, nvar, 1.0d0, temp1, nvar, alphaB_eff, nvar, 0.0d0, A_cycle_new, nvar)
+         B_cycle_new = matmul(temp1, matmul(alphaF_eff, matmul(B_cycle, P)) + betaS_eff)
 
-         B_cycle_new = matmul(temp1, matmul(alphaF_cycle, matmul(B_cycle, P)) + betaS_cycle)
+         ! Trend effective system for iteration k (terminal rows load on betaV_trend_term)
+         alphaC_eff = alpha0_trend_term
+         alphaF_eff = 0.0d0
+         alphaB_eff = alpha1_trend_term
+         betaV_eff  = betaV_trend_term
 
-         ! Calculations for A_trend_new
+         do i = 1, nvar
+            if (k <= k_trend_row(i)) then
+               alphaC_eff(i,:) = alphaC_trend(i,:)
+               alphaF_eff(i,:) = alphaF_trend(i,:)
+               alphaB_eff(i,:) = alphaB_trend(i,:)
+               betaV_eff(i,:)  = 0.0d0
+            end if
+         end do
+
          temp1 = 0.0d0
-         call dgemm('N', 'N', nvar, nvar, nvar, -1.0d0, alphaF_trend, nvar, A_trend, nvar, 1.0d0, temp1, nvar)
-         temp1 = temp1 + alphaC_trend
+         call dgemm('N', 'N', nvar, nvar, nvar, -1.0d0, alphaF_eff, nvar, A_trend, nvar, 0.0d0, temp1, nvar)
+         temp1 = temp1 + alphaC_eff
          call dgetrf(nvar, nvar, temp1, nvar, ipiv, info)
          call dgetri(nvar, temp1, nvar, ipiv, work, lwork, info)
-         call dgemm('N', 'N', nvar, nvar, nvar, 1.0d0, temp1, nvar, alphaB_trend, nvar, 0.0d0, A_trend_new, nvar)
-         B_trend_new = matmul(temp1, matmul(alphaF_trend, B_trend))
+         call dgemm('N', 'N', nvar, nvar, nvar, 1.0d0, temp1, nvar, alphaB_eff, nvar, 0.0d0, A_trend_new, nvar)
+         B_trend_new = matmul(temp1, matmul(alphaF_eff, B_trend) + betaV_eff)
 
          ! Updating variables
          A_cycle = A_cycle_new
@@ -160,7 +208,6 @@ module model_t
          A_trend = A_trend_new
          B_trend = B_trend_new
 
-    !
     end do
  !   call write_array_to_file('A_cycle.txt', A_cycle)
  !   call write_array_to_file('B_cycle.txt', B_cycle)

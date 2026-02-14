@@ -21,5 +21,6 @@ def test_build_fhp_placeholders():
     assert ph['{cmodel.yy.shape[0]}'] == '3'
     assert ph["{len(model['variables'])}"] == '4'
     assert ph['{k}'] == '9'
+    assert ph['{k_cycle_row}'] == '(/ 9, 9, 9, 9 /)'
+    assert ph['{k_trend_row}'] == '(/ 9, 9, 9, 9 /)'
     assert ph['{system}'] == 'SYS'
-
