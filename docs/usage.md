@@ -8,6 +8,14 @@ lin = m.compile_model()
 CC, TT, RR, QQ, DD, ZZ, HH = lin.system_matrices(m.p0())
 ```
 
+## Endogenous horizons (switching FHP)
+If an FHP YAML includes `declarations.stopping_rule` (alias: `declarations.horizon_choice`), `read_yaml(...)` returns an `EndogenousHorizonSwitchingModel` (not an `FHPRepAgent`), so there is no `compile_model()` step:
+```python
+from dsge import read_yaml
+m = read_yaml('dsge/examples/fhp/partial_equilibrium_endogenous.yaml')
+sim = m.simulate(params=m.p0, T=200, seed=123)
+```
+
 ## Validate calibration and priors
 ```python
 from dsge.validation import validate_model

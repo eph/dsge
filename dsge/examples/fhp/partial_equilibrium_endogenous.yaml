@@ -9,12 +9,12 @@ declarations:
   expectations: 0
   parameters: [rho_y, sigma_y, beta, kappa, xi, theta, gamma, D_pp]
 
-  # Baseline fixed horizon (used only if horizon_choice is omitted).
+  # Baseline fixed horizon (used only if stopping_rule/horizon_choice is omitted).
   k: 1
 
   # Endogenous horizon choice: pricing chooses k_t in {0..k_max}.
   # The horizon applies to the pi equation row (LHS 'pi') in both cycle and trend blocks.
-  horizon_choice:
+  stopping_rule:
     components:
       pricing:
         k_max: 8

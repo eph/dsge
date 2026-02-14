@@ -1,6 +1,6 @@
 declarations:
   type: fhp
-  name: fhp
+  name: fhp_endogenous_two_component
   variables: [kp, c, pi, q, i, y, mc, r, y_lag]
   shocks: [re, mu, chi, g, mp]
   innovations: [e_re, e_mu, e_chi, e_g, e_mp]
@@ -9,11 +9,35 @@ declarations:
   expectations: 0
   parameters: [sigma, sg, phi_k, delta,
                alpha, phi_pi, phi_y, kappa,
-               r_A, rho_mu, gamma, rho_re, rho_chi, rho_g, rho_mp, y_Q, pi_A,
+               r_A, rho_mu, gamma, rho_re, rho_chi, rho_g, rho_mp,
                sigma_mu, sigma_chi, sigma_g, sigma_mp, sigma_re]
   auxiliary_parameters: [beta, sc, r_k]
+
+  # Baseline fixed horizon (used only if stopping_rule/horizon_choice is omitted).
   k: 1
-  observables: [ygr, pinf, nomr]
+
+  # Endogenous horizon choice (illustration):
+  # - hh chooses a common k for rows c and q
+  # - pricing chooses a k for the pi row
+  #
+  # Note: this example omits declarations.observables, so FHP uses variables as observables
+  # (identity mapping). That allows policy_object to reference c/q/pi directly.
+  stopping_rule:
+    selection_order: [pricing, hh]
+    components:
+      hh:
+        k_max: 4
+        assign_lhs: [c, q]
+        cost: { a: 1e-4 }
+        lambda: 1.0
+        policy_object: "c + q"
+      pricing:
+        k_max: 10
+        assign_lhs: [pi]
+        cost: { a: 1e-4 }
+        lambda: 1.0
+        policy_object: "pi"
+
 model:
   static:
     - q = -mu + phi_k*(i - kp(-1))
@@ -61,13 +85,7 @@ model:
       - vhe = c + sigma*pi
       - vfe = pi
 
-  observables:
-    ygr : y_Q + y - y_lag
-    pinf : pi_A + 4*pi
-    nomr : r_A + pi_A + 4*r
-
 calibration:
-
   auxiliary_parameters:
     beta: 1/(1+r_A/400)
     sc : 1 - alpha*1/(1+r_A/400)*delta/(1-1/(1+r_A/400)*(1-delta)) - sg
@@ -90,8 +108,6 @@ calibration:
     rho_g: 0.95
     rho_mp: 0.95
     r_A : 2
-    y_Q : 0.45
-    pi_A : 2
     sigma_mu : 1
     sigma_chi : 1
     sigma_g : 1
@@ -104,28 +120,3 @@ calibration:
     e_chi: (sigma_chi)**2
     e_g: (sigma_g)**2
     e_mp: (sigma_mp)**2
-
-estimation:
-  prior:
-    sigma: [gamma, 2.0, 0.5]
-    r_A: [gamma, 2.0, 1]
-    pi_A: [normal, 4, 1]
-    y_Q: [normal, 0.5, 0.1]
-    gamma: [uniform, 0, 1]
-    kappa: [gamma, 0.05, 0.1]
-    phi_pi: [gamma, 1.5, 0.25]
-    phi_y: [gamma, 0.25, 0.25]
-    delta: [beta, 0.025, 0.01]
-    sg: [beta, 0.15, 0.025]
-    alpha: [beta, 0.5, 0.1]
-    sigma_mu :   [inv_gamma, 1, 4]
-    sigma_chi :  [inv_gamma, 1, 4]
-    sigma_g :    [inv_gamma, 1, 4]
-    sigma_mp :   [inv_gamma, 1, 4]
-    sigma_re :   [inv_gamma, 1, 4]
-    rho_mu  : [uniform, 0, 1]
-    rho_re  : [uniform, 0, 1]
-    rho_chi : [uniform, 0, 1]
-    rho_g   : [uniform, 0, 1]
-    rho_mp  : [uniform, 0, 1]
-    phi_k : [gamma, 1, 1]

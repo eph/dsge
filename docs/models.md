@@ -54,7 +54,14 @@ declarations:
   parameters: [sigma, sg, phi_k, delta, alpha, phi_pi, phi_y, kappa, r_A, rho_mu, gamma, rho_re, rho_chi, rho_g, rho_mp, y_Q, pi_A,
                sigma_mu, sigma_chi, sigma_g, sigma_mp, sigma_re]
   auxiliary_parameters: [beta, sc, r_k]
+  # Finite-horizon depth for forward-looking recursion.
+  # Either a scalar (applies to all forward-looking equation rows)...
   k: 1
+  # ...or a row-specific spec keyed by equation LHS variable name:
+  # k:
+  #   default: 4
+  #   by_lhs:
+  #     pi: 1
 model:
   static:
     - q = -mu + phi_k*(i - kp(-1))
@@ -91,6 +98,49 @@ calibration:
   parameters: { sigma: 1, sg: 0.15, phi_k: 1.0, delta: 0.025, alpha: 0.30, phi_pi: 1.5, phi_y: 0.125, kappa: 0.01, gamma: 0.1, r_A: 2 }
   covariance: { e_re: 1, e_mu: 1, e_chi: 1, e_g: 1, e_mp: 1 }
 ```
+
+### Mixed horizons (row-specific `k`)
+If `declarations.k` is a dict with `default` and `by_lhs`, the recursion uses a per-equation-row horizon `k_i`:
+- Each `by_lhs` key must match the LHS variable name in your YAML equation (e.g. `pi = ...`).
+- Internally, the model still stores a scalar `k = max_i k_i` for backward compatibility, plus `k_spec`.
+
+Example: firms price with short horizon, households plan longer:
+```yaml
+declarations:
+  k:
+    default: 4
+    by_lhs:
+      pi: 1
+```
+
+See `dsge/examples/fhp/fhp_mixed_k.yaml`.
+
+### Endogenous horizons (state-dependent switching)
+You can optionally add an endogenous stopping rule that selects a discrete horizon each period for one or more components.
+
+In FHP YAML this lives under `declarations.stopping_rule` (alias: `declarations.horizon_choice`) and defines:
+- components (e.g. `pricing`, `hh`), each with a `k_max` and a list of equation rows (`assign_lhs`)
+- a constant marginal cost `a` and a curvature/normalization `lambda`
+- a `policy_object` (an expression evaluated on model observables + a reduced switching state)
+
+Example (partial equilibrium pricing block):
+```yaml
+declarations:
+  stopping_rule:
+    components:
+      pricing:
+        k_max: 8
+        assign_lhs: [pi]
+        cost: { a: 1e-4 }
+        lambda: "(-D_pp)/(1-beta*theta)"
+        policy_object: "theta/(1-theta) * pi"
+```
+
+`policy_object` may reference any declared parameter plus observable names. If you declare no observables, FHP defaults to using the model variables as observables (identity mapping).
+
+Important: when `stopping_rule`/`horizon_choice` is present, `read_yaml(...)` returns an `EndogenousHorizonSwitchingModel` (piecewise-linear, regime-dependent matrices), not a fixed-regime `FHPRepAgent`. Use simulation / particle filtering rather than standard linear IRFs.
+
+See `dsge/examples/fhp/partial_equilibrium_endogenous.yaml` and `dsge/tests/test_fhp_endogenous_horizon_pe_yaml.py`.
 
 Notes: Validators forbid future‑dated shocks and check dimensions/usage; see `dsge/tests/test_fhp.py` and `dsge/tests/test_fhp_validation.py`.
 

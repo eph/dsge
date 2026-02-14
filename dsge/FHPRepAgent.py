@@ -834,6 +834,13 @@ class FHPRepAgent(Base):
 
         # Create the model dictionary with all components
         k_spec = _parse_k_spec(k if k is not None else dec["k"])
+
+        if "horizon_choice" in dec and "stopping_rule" in dec:
+            raise ValueError("Use only one of declarations.horizon_choice or declarations.stopping_rule.")
+        horizon_choice = dec.get("horizon_choice", None)
+        if horizon_choice is None:
+            horizon_choice = dec.get("stopping_rule", None)
+
         model_dict = {
             'variables': variables,
             'values': values,
@@ -856,7 +863,7 @@ class FHPRepAgent(Base):
             # Rich horizon spec for equation-row horizons.
             'k_spec': k_spec,
             # Optional endogenous horizon-choice configuration.
-            'horizon_choice': dec.get('horizon_choice', None),
+            'horizon_choice': horizon_choice,
         }
 
         logger.info(f"FHP model creation complete: {len(variables)} variables, {len(parameters)} parameters")
@@ -1072,7 +1079,8 @@ class FHPRepAgent(Base):
         basis_max_steps: Optional[int] = None,
     ):
         """
-        Compile an endogenous-horizon switching model from an FHP YAML with declarations.horizon_choice.
+        Compile an endogenous-horizon switching model from an FHP YAML with
+        declarations.stopping_rule (or declarations.horizon_choice).
 
         Returns an EndogenousHorizonSwitchingModel whose state is a reduced set of
         predetermined variables (selected components of the full FHP state). The
@@ -1081,7 +1089,7 @@ class FHPRepAgent(Base):
         """
         hc = self.get("horizon_choice", None)
         if hc is None:
-            raise ValueError("Missing declarations.horizon_choice in FHP YAML.")
+            raise ValueError("Missing declarations.stopping_rule (or declarations.horizon_choice) in FHP YAML.")
 
         expectations = self["expectations"] if expectations is None else int(expectations)
 
@@ -1097,11 +1105,14 @@ class FHPRepAgent(Base):
 
         hc_components = hc.get("components", {}) or {}
         if not isinstance(hc_components, dict) or not hc_components:
-            raise ValueError("declarations.horizon_choice.components must be a non-empty dict.")
+            raise ValueError("declarations.stopping_rule.components (or declarations.horizon_choice.components) must be a non-empty dict.")
 
         components = [str(c) for c in hc_components.keys()]
         if len(set(components)) != len(components):
-            raise ValueError(f"Duplicate components in declarations.horizon_choice.components: {components}")
+            raise ValueError(
+                "Duplicate components in declarations.stopping_rule.components (or declarations.horizon_choice.components): "
+                f"{components}"
+            )
 
         selection_order = hc.get("selection_order", None)
         if selection_order is None:
@@ -1109,7 +1120,10 @@ class FHPRepAgent(Base):
         else:
             selection_order = [str(c) for c in selection_order]
             if set(selection_order) != set(components):
-                raise ValueError("declarations.horizon_choice.selection_order must be a permutation of components.")
+                raise ValueError(
+                    "declarations.stopping_rule.selection_order (or declarations.horizon_choice.selection_order) "
+                    "must be a permutation of components."
+                )
 
         # Validate LHS assignments and build per-component configs.
         cycle_plan_dyn = self["equations"]["cycle"]["plan"]
@@ -1352,8 +1366,37 @@ class FHPRepAgent(Base):
         pol_ctx = {"exp": sympy.exp, "log": sympy.log, "sqrt": sympy.sqrt, "Abs": sympy.Abs, **param_syms, **state_syms, **obs_syms}
         allowed_pol_syms = set(param_syms.values()) | set(state_syms.values()) | set(obs_syms.values())
 
+        overlap_param_state = sorted(set(parameter_names) & set(reduced_state_names))
+        if overlap_param_state:
+            raise ValueError(
+                "Parameter name(s) collide with switching-state name(s): "
+                f"{overlap_param_state}. Rename one side to avoid ambiguity."
+            )
+        overlap_param_obs = sorted(set(parameter_names) & set(obs_names))
+        if overlap_param_obs:
+            raise ValueError(
+                "Parameter name(s) collide with observable name(s): "
+                f"{overlap_param_obs}. Rename one side to avoid ambiguity."
+            )
+
         policy_funcs = {}
-        pol_args = [param_syms[n] for n in parameter_names] + [state_syms[nm] for nm in reduced_state_names] + [obs_syms[nm] for nm in obs_names]
+        # Build a de-duplicated lambdify argument list.
+        #
+        # This matters when observables overlap in name with state entries (e.g. when
+        # you omit declarations.observables and FHP defaults to identity observables).
+        pol_args_all = (
+            [param_syms[n] for n in parameter_names]
+            + [state_syms[nm] for nm in reduced_state_names]
+            + [obs_syms[nm] for nm in obs_names]
+        )
+        pol_args = []
+        seen = set()
+        for s in pol_args_all:
+            if s in seen:
+                continue
+            pol_args.append(s)
+            seen.add(s)
+
         for comp in components:
             expr_raw = hc_components[comp]["policy_object"]
             expr = sympy.sympify(str(expr_raw), locals=pol_ctx)
@@ -1413,7 +1456,19 @@ class FHPRepAgent(Base):
             reg = tuple(int(k_by_comp[c]) for c in components)
             TT, RR, ZZ, DD, QQ, HH = m.get_mats(params_vec, reg)
             y_hat = ZZ @ x_t + np.asarray(DD, dtype=float).reshape(-1)
-            args = [*np.asarray(params_vec, dtype=float).reshape(-1).tolist(), *x_t.tolist(), *y_hat.tolist()]
+
+            # Map symbol -> numeric value; if a name overlaps between state and
+            # observables, the observable value wins.
+            val_by_sym = {}
+            params_vec = np.asarray(params_vec, dtype=float).reshape(-1)
+            for i, nm in enumerate(parameter_names):
+                val_by_sym[param_syms[nm]] = float(params_vec[i])
+            for i, nm in enumerate(reduced_state_names):
+                val_by_sym.setdefault(state_syms[nm], float(x_t[i]))
+            for i, nm in enumerate(obs_names):
+                val_by_sym[obs_syms[nm]] = float(y_hat[i])
+
+            args = [val_by_sym[s] for s in pol_args]
             return np.asarray(policy_funcs[str(component)](*args), dtype=float)
 
         out_model = EndogenousHorizonSwitchingModel(

@@ -11,6 +11,9 @@ def main() -> None:
     p0 = m.p0()
 
     settings = {
+        "mixed_pi10_hh2": {"default": 2, "by_lhs": {"pi": 10}},
+        "scalar_k2": 2,
+        "scalar_k10": 10,
         "scalar_k4": 4,
         "mixed_pi1": {"default": 4, "by_lhs": {"pi": 1}},
         "mixed_pi0": {"default": 4, "by_lhs": {"pi": 0}},
@@ -34,4 +37,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
