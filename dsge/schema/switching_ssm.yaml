@@ -1,0 +1,153 @@
+declarations:
+  type: dict
+  required: true
+  schema:
+    name:
+      type: string
+      required: true
+    type:
+      type: string
+      allowed: ['switching_ssm']
+      required: true
+    components:
+      type: list
+      required: true
+      schema:
+        type: string
+    states:
+      type: list
+      required: true
+      schema:
+        type: string
+    shocks:
+      type: list
+      required: true
+      schema:
+        type: string
+    observables:
+      type: list
+      required: true
+      schema:
+        type: string
+    parameters:
+      type: list
+      schema:
+        type: string
+    horizon_choice:
+      type: dict
+      required: true
+      allow_unknown: false
+      schema:
+        selection_order:
+          type: list
+          schema:
+            type: string
+        components:
+          type: dict
+          required: true
+          keysrules:
+            type: string
+          valuesrules:
+            type: dict
+            allow_unknown: false
+            schema:
+              k_max:
+                type: integer
+                required: true
+              cost:
+                type: dict
+                required: true
+                allow_unknown: false
+                schema:
+                  a:
+                    required: true
+                    anyof:
+                      - type: integer
+                      - type: float
+                      - type: string
+              lambda:
+                required: true
+                anyof:
+                  - type: integer
+                  - type: float
+                  - type: string
+              policy_object:
+                type: string
+                required: true
+
+model:
+  type: dict
+  required: true
+  allow_unknown: false
+  schema:
+    definitions:
+      type: dict
+      keysrules:
+        type: string
+      valuesrules:
+        anyof:
+          - type: string
+          - type: integer
+          - type: float
+    TT:
+      type: list
+      required: true
+      schema:
+        type: list
+        schema:
+          anyof:
+            - type: string
+            - type: integer
+            - type: float
+    RR:
+      type: list
+      required: true
+      schema:
+        type: list
+        schema:
+          anyof:
+            - type: string
+            - type: integer
+            - type: float
+    ZZ:
+      type: list
+      required: true
+      schema:
+        type: list
+        schema:
+          anyof:
+            - type: string
+            - type: integer
+            - type: float
+    DD:
+      type: list
+      required: true
+      schema:
+        anyof:
+          - type: string
+          - type: integer
+          - type: float
+    QQ:
+      type: list
+      required: true
+      schema:
+        type: list
+        schema:
+          anyof:
+            - type: string
+            - type: integer
+            - type: float
+    HH:
+      type: list
+      required: true
+      schema:
+        type: list
+        schema:
+          anyof:
+            - type: string
+            - type: integer
+            - type: float
+
+calibration: !include common.yaml#calibration
+
+estimation: !include common.yaml#estimation

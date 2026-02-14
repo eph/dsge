@@ -1,0 +1,46 @@
+declarations:
+  type: switching_ssm
+  name: pe_pricing_switching
+  components: [pricing]
+  states: [y, pi_bar]
+  shocks: [e_y]
+  observables: [pi]
+  parameters: [rho_y, sigma_y, beta, kappa, xi, theta, gamma, D_pp]
+  horizon_choice:
+    components:
+      pricing:
+        k_max: 8
+        cost:
+          a: 1e-4
+        lambda: "(-D_pp)/(1-beta*theta)"
+        policy_object: "theta/(1-theta) * pi"
+
+model:
+  definitions:
+    A: "(1 - (beta*rho_y)**(k_pricing + 1)) / (1 - beta*rho_y)"
+    b_j: "kappa*xi*A"
+    q_j: "beta**(k_pricing + 1)"
+  TT:
+    - ["rho_y", "0"]
+    - ["gamma*b_j", "1 - gamma + gamma*q_j"]
+  RR:
+    - ["sigma_y"]
+    - ["0"]
+  ZZ:
+    - ["b_j", "q_j"]
+  DD: ["0"]
+  QQ:
+    - ["1"]
+  HH:
+    - ["0"]
+
+calibration:
+  parameters:
+    rho_y: 0.85
+    sigma_y: 0.25
+    beta: 0.99
+    kappa: 0.05
+    xi: 1.0
+    theta: 0.75
+    gamma: 0.3
+    D_pp: -2.0

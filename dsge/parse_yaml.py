@@ -134,7 +134,7 @@ _VALIDATORS = None
 def get_validators():
     global _VALIDATORS
     if _VALIDATORS is None:
-        vals = {model: Validator(load_schema(model)) for model in ['fhp','lre','si']}
+        vals = {model: Validator(load_schema(model)) for model in ['fhp', 'lre', 'si', 'switching_ssm']}
         vals['dsge'] = vals['lre']
         vals['sticky-information'] = vals['si']
         _VALIDATORS = vals
@@ -245,6 +245,11 @@ def read_yaml(yaml_file: Union[str,IO[str]],
         elif kind == 'fhp':
             logger.debug("Creating FHP Representative Agent model")
             model_obj = FHPRepAgent.read(yaml_dict)
+        elif kind == "switching_ssm":
+            logger.debug("Creating switching state-space model")
+            from .switching_ssm import read_switching_ssm
+
+            model_obj = read_switching_ssm(yaml_dict)
         elif kind == 'si' or kind == 'sticky-information':
             logger.debug("Creating Sticky Information DSGE model")
             model_obj = read_si(yaml_dict)
