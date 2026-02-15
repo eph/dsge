@@ -253,6 +253,11 @@ def read_yaml(yaml_file: Union[str,IO[str]],
             logger.debug("Creating switching state-space model")
             from .switching_ssm import read_switching_ssm
 
+            warnings.warn(
+                "YAML type 'switching_ssm' is experimental and may be removed in a future release. "
+                "Prefer FHP models with declarations.stopping_rule for endogenous horizons when possible.",
+                DeprecationWarning,
+            )
             model_obj = read_switching_ssm(yaml_dict)
         elif kind == 'si' or kind == 'sticky-information':
             logger.debug("Creating Sticky Information DSGE model")
