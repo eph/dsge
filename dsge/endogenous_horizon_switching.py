@@ -237,6 +237,8 @@ class EndogenousHorizonSwitchingModel:
         k_max: Mapping[str, int] | int,
         cost_params: Mapping[str, Tuple[float, float]] | Tuple[float, float],
         lam: Mapping[str, float] | float,
+        cost_func: Callable[[np.ndarray, str], Any] | None = None,
+        lam_func: Callable[[np.ndarray, str], Any] | None = None,
         solve_given_regime: Callable[[np.ndarray, Tuple[int, ...]], Tuple[np.ndarray, ...]],
         policy_object: Callable[[np.ndarray, Any, str, int, Mapping[str, int]], Any],
         info_func: Optional[Callable[[np.ndarray, int, Mapping[str, int]], Any]] = None,
@@ -285,6 +287,12 @@ class EndogenousHorizonSwitchingModel:
             if not (v > 0):
                 raise ValueError(f"Λ for component {c!r} must be > 0, got {v}")
 
+        self._cost_func = cost_func
+        self._lam_func = lam_func
+        self._cost_cache: Dict[Tuple[str, str], LinearMarginalCostSchedule] = {}
+        self._lam_cache: Dict[Tuple[str, str], float] = {}
+        self._mb_is_default = mb_func is None
+
         self.policy_object = policy_object
         self.info_func = info_func or (lambda x_t, t, chosen: {"x": x_t, "t": t, "chosen": dict(chosen)})
         if mb_func is None:
@@ -301,6 +309,43 @@ class EndogenousHorizonSwitchingModel:
             self.mb = mb_func
 
         self._cache = RegimeSolutionCache(solve_given_regime=solve_given_regime)
+
+    def _cost_for_component(
+        self,
+        params: np.ndarray,
+        component: str,
+        *,
+        params_key: str,
+    ) -> LinearMarginalCostSchedule:
+        if self._cost_func is None:
+            return self.cost[component]
+        key = (params_key, component)
+        cached = self._cost_cache.get(key)
+        if cached is not None:
+            return cached
+
+        raw = self._cost_func(np.asarray(params, dtype=float), str(component))
+        if isinstance(raw, (int, float, np.number)):
+            a, b = float(raw), 0.0
+        else:
+            a, b = raw  # type: ignore[misc]
+            a, b = float(a), float(b)
+        sched = LinearMarginalCostSchedule(a, b)
+        self._cost_cache[key] = sched
+        return sched
+
+    def _lam_for_component(self, params: np.ndarray, component: str, *, params_key: str) -> float:
+        if self._lam_func is None:
+            return self.lam[component]
+        key = (params_key, component)
+        cached = self._lam_cache.get(key)
+        if cached is not None:
+            return cached
+        v = float(self._lam_func(np.asarray(params, dtype=float), str(component)))
+        if not (v > 0):
+            raise ValueError(f"Λ for component {component!r} must be > 0, got {v}")
+        self._lam_cache[key] = v
+        return v
 
     def pack_regime(self, k_by_component: Mapping[str, int]) -> Tuple[int, ...]:
         return pack_regime(self.components, k_by_component)
@@ -332,7 +377,30 @@ class EndogenousHorizonSwitchingModel:
         x_t: np.ndarray,
         *,
         t: int,
+        params_key: str | None = None,
     ) -> Tuple[int, ...]:
+        if params_key is None:
+            params_key = _params_cache_key(params)
+
+        if self._lam_func is not None and self._mb_is_default:
+            # When Λ is param-dependent, build a per-call MB closure to avoid hashing
+            # params on each MB evaluation.
+            def mb_dyn(params_vec, info_t, component, k_plus_1, chosen):
+                lam_val = self._lam_for_component(params_vec, component, params_key=params_key)
+                return mb_quadratic_policy_diff(
+                    params=params_vec,
+                    info_t=info_t,
+                    component=component,
+                    k_plus_1=k_plus_1,
+                    chosen=chosen,
+                    policy_object=self.policy_object,
+                    lam=lam_val,
+                )
+
+            mb_use = mb_dyn
+        else:
+            mb_use = self.mb
+
         chosen: MutableMapping[str, int] = {}
         for comp in self.selection_order:
             info_t = self.info_func(x_t, int(t), chosen)
@@ -341,8 +409,8 @@ class EndogenousHorizonSwitchingModel:
                 info_t=info_t,
                 component=comp,
                 k_max=self.k_max[comp],
-                mb=self.mb,
-                cost=self.cost[comp],
+                mb=mb_use,
+                cost=self._cost_for_component(params, comp, params_key=params_key),
                 chosen=chosen,
             )
         return self.pack_regime(chosen)
@@ -378,7 +446,7 @@ class EndogenousHorizonSwitchingModel:
         x_path[0] = x_t
 
         for t in range(T):
-            s_t = self.choose_regime(params, x_t, t=t)
+            s_t = self.choose_regime(params, x_t, t=t, params_key=pkey)
             TT, RR, ZZ, DD, QQ, HH = self.get_mats(params, s_t, params_key=pkey)
 
             mean_y = ZZ @ x_t + np.asarray(DD, dtype=float).reshape(-1)
@@ -397,6 +465,120 @@ class EndogenousHorizonSwitchingModel:
             x_t = x_next
 
         return {"x_path": x_path, "y_path": y_path, "s_path": s_path}
+
+    def girf(
+        self,
+        params: np.ndarray,
+        *,
+        shock: str | int | None = None,
+        h: int = 20,
+        reps: int = 200,
+        shock_size: float = 1.0,
+        seed: int | None = None,
+        x0: Optional[np.ndarray] = None,
+        obs_subset: Optional[Sequence[str]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Generalized impulse response (GIRF) for endogenous regime switching.
+
+        Implementation: Monte Carlo with common random numbers baseline vs shocked,
+        applying the shock as an innovation at t=0 (so effects appear starting at t=1).
+
+        Returns a dict with keys:
+          - girf: DataFrame (h x nobs), mean(y_shocked - y_base)
+          - k_base_mean, k_shocked_mean: DataFrame (h x ncomp), mean chosen horizons
+        """
+        params = np.asarray(params, dtype=float)
+        pkey = _params_cache_key(params)
+        rng = np.random.default_rng(seed)
+
+        regime0 = tuple(0 for _ in self.components)
+        TT0, RR0, ZZ0, DD0, QQ0, HH0 = self.get_mats(params, regime0, params_key=pkey)
+        QQ0 = np.asarray(QQ0, dtype=float)
+
+        nstate = int(TT0.shape[0])
+        nshock = int(QQ0.shape[0])
+        nobs = int(ZZ0.shape[0])
+
+        x0_vec = np.zeros((nstate,), dtype=float) if x0 is None else np.asarray(x0, dtype=float).reshape(-1)
+        if x0_vec.shape != (nstate,):
+            raise ValueError(f"x0 must have shape ({nstate},), got {x0_vec.shape}")
+
+        shock_names = getattr(self, "shock_names", None)
+        if shock_names is None:
+            shock_names = [f"shock{i}" for i in range(nshock)]
+
+        if shock is None:
+            shock_idx = 0
+            shock_name = shock_names[0]
+        elif isinstance(shock, int):
+            shock_idx = int(shock)
+            if not (0 <= shock_idx < nshock):
+                raise ValueError(f"shock index must be in [0,{nshock}), got {shock_idx}")
+            shock_name = shock_names[shock_idx]
+        else:
+            shock_name = str(shock)
+            if shock_name not in list(shock_names):
+                raise ValueError(f"Unknown shock {shock_name!r}. Expected one of {list(shock_names)}.")
+            shock_idx = int(list(shock_names).index(shock_name))
+
+        var0 = float(QQ0[shock_idx, shock_idx])
+        shock_delta = np.zeros((nshock,), dtype=float)
+        shock_delta[shock_idx] = float(shock_size) * (np.sqrt(var0) if var0 > 0 else 1.0)
+
+        cholQQ = _cov_factor_psd(QQ0)
+
+        y_diff_sum = np.zeros((h, nobs), dtype=float)
+        k_base_sum = np.zeros((h, len(self.components)), dtype=float)
+        k_shock_sum = np.zeros((h, len(self.components)), dtype=float)
+
+        def _simulate_eps(*, eps_path: np.ndarray, shock_delta_t0: np.ndarray | None):
+            x_t = x0_vec.copy()
+            y_path = np.zeros((h, nobs), dtype=float)
+            s_path = np.zeros((h, len(self.components)), dtype=int)
+            for t in range(h):
+                s_t = self.choose_regime(params, x_t, t=t, params_key=pkey)
+                TT, RR, ZZ, DD, QQ, HH = self.get_mats(params, s_t, params_key=pkey)
+                y_path[t, :] = ZZ @ x_t + np.asarray(DD, dtype=float).reshape(-1)
+                s_path[t, :] = np.asarray(s_t, dtype=int)
+                eps_t = eps_path[t, :]
+                if t == 0 and shock_delta_t0 is not None:
+                    eps_t = eps_t + shock_delta_t0
+                x_t = TT @ x_t + RR @ eps_t
+            return y_path, s_path
+
+        for _ in range(int(reps)):
+            z = rng.standard_normal(size=(h, nshock))
+            eps = z @ cholQQ.T
+
+            y_base, s_base = _simulate_eps(eps_path=eps, shock_delta_t0=None)
+            y_shock, s_shock = _simulate_eps(eps_path=eps, shock_delta_t0=shock_delta)
+
+            y_diff_sum += y_shock - y_base
+            k_base_sum += s_base
+            k_shock_sum += s_shock
+
+        obs_names = getattr(self, "obs_names", None)
+        if obs_names is None:
+            obs_names = [f"obs{i}" for i in range(nobs)]
+
+        girf = p.DataFrame(y_diff_sum / float(reps), columns=list(obs_names))
+        k_base_mean = p.DataFrame(k_base_sum / float(reps), columns=list(self.components))
+        k_shocked_mean = p.DataFrame(k_shock_sum / float(reps), columns=list(self.components))
+
+        if obs_subset is not None:
+            want = [str(v) for v in obs_subset]
+            missing = sorted(set(want) - set(girf.columns))
+            if missing:
+                raise ValueError(f"obs_subset has unknown names: {missing}. Available: {list(girf.columns)}.")
+            girf = girf[want]
+
+        return {
+            "shock": shock_name,
+            "girf": girf,
+            "k_base_mean": k_base_mean,
+            "k_shocked_mean": k_shocked_mean,
+        }
 
     def pf_loglik(
         self,
@@ -444,7 +626,7 @@ class EndogenousHorizonSwitchingModel:
 
         for t in range(Tobs):
             # Choose regime per particle.
-            regimes = [self.choose_regime(params, x[i, :], t=t) for i in range(nparticles)]
+            regimes = [self.choose_regime(params, x[i, :], t=t, params_key=pkey) for i in range(nparticles)]
             regimes_arr = np.asarray(regimes, dtype=int)
 
             # Measurement update.

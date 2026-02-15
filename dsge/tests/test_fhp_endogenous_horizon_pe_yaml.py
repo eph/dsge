@@ -159,3 +159,91 @@ def test_fhp_endogenous_pe_yaml_matches_analytic():
 
     assert np.array_equal(out["j"], ana["j"])
     assert_allclose(out["pi"], ana["pi"], rtol=0, atol=1e-12)
+
+
+def test_fhp_endogenous_pe_yaml_lambda_depends_on_params_vector():
+    params = {
+        "rho_y": 0.85,
+        "sigma_y": 0.25,
+        "beta": 0.99,
+        "kappa": 0.05,
+        "xi": 1.0,
+        "theta": 0.75,
+        "gamma": 0.3,
+        "D_pp": -200.0,
+    }
+    T = 40
+    seed = 123
+    Jmax = 8
+    a = 1e-4
+
+    ana = _simulate_analytic(T=T, seed=seed, Jmax=Jmax, a=a, params=params)
+
+    yaml_path = files("dsge") / "examples" / "fhp" / "partial_equilibrium_endogenous.yaml"
+    model = read_yaml(str(yaml_path))
+
+    idx_vp = model.state_names.index("vp")
+    idx_y = model.state_names.index("y")
+    x0 = np.zeros((len(model.state_names),), dtype=float)
+    x0[idx_vp] = ana["pi_bar"][0]
+    x0[idx_y] = ana["y"][0]
+
+    # Modify params_vec away from calibration to ensure cost/lambda are evaluated at runtime.
+    params_vec = np.asarray(model.p0, dtype=float).copy()
+    idx_Dpp = model.parameter_names.index("D_pp")
+    params_vec[idx_Dpp] = params["D_pp"]
+
+    out = _simulate_engine_with_given_shocks(model=model, T=T, eps=ana["eps"], params_vec=params_vec, x0=x0)
+
+    assert np.array_equal(out["j"], ana["j"])
+    assert_allclose(out["pi"], ana["pi"], rtol=0, atol=1e-12)
+
+
+def test_fhp_endogenous_pe_yaml_cost_a_can_be_param_expression():
+    import copy
+    import io
+    import yaml as _yaml
+
+    base = _yaml.safe_load((files("dsge") / "examples" / "fhp" / "partial_equilibrium_endogenous.yaml").read_text())
+    d = copy.deepcopy(base)
+    d["declarations"]["parameters"] = list(d["declarations"]["parameters"]) + ["a_cost"]
+    d["calibration"]["parameters"]["a_cost"] = 1e-4
+    d["declarations"]["stopping_rule"]["components"]["pricing"]["cost"]["a"] = "a_cost"
+
+    model = read_yaml(io.StringIO(_yaml.safe_dump(d)))
+
+    params = {
+        "rho_y": 0.85,
+        "sigma_y": 0.25,
+        "beta": 0.99,
+        "kappa": 0.05,
+        "xi": 1.0,
+        "theta": 0.75,
+        "gamma": 0.3,
+        "D_pp": -2.0,
+    }
+    T = 40
+    seed = 123
+    Jmax = 8
+
+    # Baseline a_cost from calibration.
+    ana = _simulate_analytic(T=T, seed=seed, Jmax=Jmax, a=1e-4, params=params)
+
+    idx_vp = model.state_names.index("vp")
+    idx_y = model.state_names.index("y")
+    x0 = np.zeros((len(model.state_names),), dtype=float)
+    x0[idx_vp] = ana["pi_bar"][0]
+    x0[idx_y] = ana["y"][0]
+
+    out = _simulate_engine_with_given_shocks(model=model, T=T, eps=ana["eps"], params_vec=model.p0, x0=x0)
+    assert np.array_equal(out["j"], ana["j"])
+    assert_allclose(out["pi"], ana["pi"], rtol=0, atol=1e-12)
+
+    # Raise marginal costs: should stop earlier (weakly smaller j*), and match analytic.
+    params_hi_cost = dict(params)
+    ana_hi = _simulate_analytic(T=T, seed=seed, Jmax=Jmax, a=1e-2, params=params_hi_cost)
+    params_vec = np.asarray(model.p0, dtype=float).copy()
+    params_vec[model.parameter_names.index("a_cost")] = 1e-2
+    out_hi = _simulate_engine_with_given_shocks(model=model, T=T, eps=ana_hi["eps"], params_vec=params_vec, x0=x0)
+    assert np.array_equal(out_hi["j"], ana_hi["j"])
+    assert_allclose(out_hi["pi"], ana_hi["pi"], rtol=0, atol=1e-12)

@@ -138,6 +138,8 @@ declarations:
 
 `policy_object` may reference any declared parameter plus observable names. If you declare no observables, FHP defaults to using the model variables as observables (identity mapping).
 
+`cost.a` and `lambda` can be numbers or parameter-only expressions; they are evaluated at the parameter vector passed to `choose_regime(...)` / `simulate(...)` / `pf_loglik(...)`.
+
 Important: when `stopping_rule`/`horizon_choice` is present, `read_yaml(...)` returns an `EndogenousHorizonSwitchingModel` (piecewise-linear, regime-dependent matrices), not a fixed-regime `FHPRepAgent`. Use simulation / particle filtering rather than standard linear IRFs.
 
 See `dsge/examples/fhp/partial_equilibrium_endogenous.yaml` and `dsge/tests/test_fhp_endogenous_horizon_pe_yaml.py`.

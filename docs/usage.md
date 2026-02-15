@@ -14,6 +14,7 @@ If an FHP YAML includes `declarations.stopping_rule` (alias: `declarations.horiz
 from dsge import read_yaml
 m = read_yaml('dsge/examples/fhp/partial_equilibrium_endogenous.yaml')
 sim = m.simulate(params=m.p0, T=200, seed=123)
+girf = m.girf(m.p0, shock='e_y', h=20, reps=200, seed=123)
 ```
 
 ## Validate calibration and priors

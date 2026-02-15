@@ -1156,7 +1156,8 @@ class FHPRepAgent(Base):
 
         a_by_comp: Dict[str, float] = {}
         lam_by_comp: Dict[str, float] = {}
-        policy_expr_by_comp: Dict[str, sympy.Expr] = {}
+        a_func_by_comp: Dict[str, Any] = {}
+        lam_func_by_comp: Dict[str, Any] = {}
 
         for comp in components:
             cfg = hc_components[comp]
@@ -1198,18 +1199,23 @@ class FHPRepAgent(Base):
             if "cost" not in cfg or not isinstance(cfg["cost"], dict) or "a" not in cfg["cost"]:
                 raise ValueError(f"horizon_choice.components.{comp}.cost.a is required.")
             a_expr = _parse_param_expr(cfg["cost"]["a"], where=f"horizon_choice.components.{comp}.cost.a")
-            a_val = float(sympy.lambdify(list(param_syms.values()), a_expr, modules="numpy")(*p0.tolist()))
+            a_func_by_comp[comp] = sympy.lambdify(
+                [param_syms[n] for n in parameter_names], a_expr, modules="numpy"
+            )
+            a_val = float(a_func_by_comp[comp](*p0.tolist()))
             a_by_comp[comp] = a_val
 
             lam_expr = _parse_param_expr(cfg["lambda"], where=f"horizon_choice.components.{comp}.lambda")
-            lam_val = float(sympy.lambdify(list(param_syms.values()), lam_expr, modules="numpy")(*p0.tolist()))
+            lam_func_by_comp[comp] = sympy.lambdify(
+                [param_syms[n] for n in parameter_names], lam_expr, modules="numpy"
+            )
+            lam_val = float(lam_func_by_comp[comp](*p0.tolist()))
             lam_by_comp[comp] = lam_val
 
             pol = cfg.get("policy_object", None)
             if not isinstance(pol, str) or not pol.strip():
                 raise ValueError(f"horizon_choice.components.{comp}.policy_object must be a non-empty string.")
             # Parsed later once reduced state/observable symbols are known.
-            policy_expr_by_comp[comp] = sympy.sympify(pol, locals={})
 
         global_k_max = max([k_base_spec["k_max"]] + [k_max_by_comp[c] for c in components])
 
@@ -1471,11 +1477,21 @@ class FHPRepAgent(Base):
             args = [val_by_sym[s] for s in pol_args]
             return np.asarray(policy_funcs[str(component)](*args), dtype=float)
 
+        def cost_func(params_vec: np.ndarray, component: str):
+            params_vec = np.asarray(params_vec, dtype=float).reshape(-1)
+            return float(a_func_by_comp[str(component)](*params_vec.tolist())), 0.0
+
+        def lam_func(params_vec: np.ndarray, component: str):
+            params_vec = np.asarray(params_vec, dtype=float).reshape(-1)
+            return float(lam_func_by_comp[str(component)](*params_vec.tolist()))
+
         out_model = EndogenousHorizonSwitchingModel(
             components=components,
             k_max=k_max_by_comp,
             cost_params={c: (a_by_comp[c], 0.0) for c in components},
             lam=lam_by_comp,
+            cost_func=cost_func,
+            lam_func=lam_func,
             solve_given_regime=solve_given_regime,
             policy_object=policy_object,
             info_func=info_func,

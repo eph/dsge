@@ -359,6 +359,8 @@ def read_switching_ssm(model_yaml: Mapping[str, Any]) -> EndogenousHorizonSwitch
         k_max=k_max,
         cost_params=cost_params,
         lam=lam,
+        cost_func=lambda params_vec, component: (float(a_func_by_comp[str(component)](*np.asarray(params_vec, dtype=float).reshape(-1).tolist())), 0.0),
+        lam_func=lambda params_vec, component: float(lam_func_by_comp[str(component)](*np.asarray(params_vec, dtype=float).reshape(-1).tolist())),
         solve_given_regime=solve_given_regime,
         policy_object=policy_object,
         info_func=info_func,
