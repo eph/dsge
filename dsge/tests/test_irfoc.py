@@ -99,6 +99,73 @@ def test_irfoc_affine_rule_with_lagged_variable():
     assert float(np.max(np.abs(resid))) < 1e-7
 
 
+def test_irfoc_lagged_rule_returns_residuals():
+    import io
+
+    m = read_yaml(io.StringIO(_simple_nk_yaml()))
+    lin = m.compile_model()
+    p0 = m.p0()
+
+    T = 20
+    baseline = lin.impulse_response(p0, h=T - 1)["er"].loc[:, ["pi", "y", "i"]]
+
+    irfoc = IRFOC(m, baseline, instrument_shocks="em", p0=p0, compiled_model=lin)
+    res = irfoc.simulate("i = 0.5*i(-1)", return_details=True)
+
+    assert res.residuals.shape == (T, 1)
+    assert float(np.max(np.abs(res.residuals.to_numpy()))) < 1e-9
+
+
+def test_irfoc_explicit_lag_matches_alias_on_shifted_baseline():
+    import io
+
+    m = read_yaml(io.StringIO(_simple_nk_yaml()))
+    lin = m.compile_model()
+    p0 = m.p0()
+
+    full = lin.impulse_response(p0, h=12)["er"].loc[:, ["pi", "y", "i", "ilag"]]
+    baseline = full.iloc[1:].copy()
+    baseline.index = range(len(baseline))
+    baseline["ilag"] = full["i"].iloc[:-1].to_numpy()
+
+    irfoc = IRFOC(m, baseline, instrument_shocks="em", p0=p0, compiled_model=lin)
+    explicit = irfoc.simulate("i = 0.5*i(-1)")
+    alias = irfoc.simulate("i = 0.5*ilag")
+
+    np.testing.assert_allclose(
+        explicit[["pi", "y", "i", "ilag"]].to_numpy(),
+        alias[["pi", "y", "i", "ilag"]].to_numpy(),
+        rtol=0.0,
+        atol=1e-9,
+    )
+
+
+def test_irfoc_piecewise_explicit_lag_matches_alias_on_shifted_baseline():
+    import io
+
+    m = read_yaml(io.StringIO(_simple_nk_yaml()))
+    lin = m.compile_model()
+    p0 = m.p0()
+
+    full = lin.impulse_response(p0, h=12)["er"].loc[:, ["pi", "y", "i", "ilag"]]
+    baseline = full.iloc[1:].copy()
+    baseline.index = range(len(baseline))
+    baseline["ilag"] = full["i"].iloc[:-1].to_numpy()
+
+    irfoc = IRFOC(m, baseline, instrument_shocks="em", p0=p0, compiled_model=lin)
+    explicit = irfoc.simulate("i = max(0.001, 0.5*i(-1))", return_details=True)
+    alias = irfoc.simulate("i = max(0.001, 0.5*ilag)", return_details=True)
+
+    np.testing.assert_allclose(
+        explicit.simulation[["pi", "y", "i", "ilag"]].to_numpy(),
+        alias.simulation[["pi", "y", "i", "ilag"]].to_numpy(),
+        rtol=0.0,
+        atol=1e-9,
+    )
+    assert explicit.residuals.shape == (len(baseline), 1)
+    assert float(np.max(np.abs(explicit.residuals.to_numpy()))) < 1e-9
+
+
 def test_irfoc_max_min_not_implemented():
     import io
 

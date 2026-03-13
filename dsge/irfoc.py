@@ -198,6 +198,7 @@ class IRFOC:
                 self._baseline_col_index_by_name[v.name] = j
             else:
                 self._baseline_col_index_by_name[str(v)] = j
+        self._time_shift_alias_cols = self._build_time_shift_alias_cols()
 
         self._M_perfect_foresight_cache: dict[tuple[tuple[str, ...], int, tuple[str, ...]], np.ndarray] = {}
         self.M = self._build_M()
@@ -205,6 +206,111 @@ class IRFOC:
     @property
     def baseline_variables(self) -> list[sympy.Expr]:
         return list(self._baseline_variables)
+
+    def _build_time_shift_alias_cols(self) -> dict[tuple[str, int], int]:
+        aliases: dict[tuple[str, int], int] = {}
+        try:
+            equations = list(self.model["equations"])
+        except Exception:
+            equations = []
+
+        for eq in equations:
+            lhs = getattr(eq, "lhs", None)
+            rhs = getattr(eq, "rhs", None)
+            if not isinstance(lhs, Variable) or getattr(lhs, "date", 0) != 0:
+                continue
+            if not isinstance(rhs, Variable) or getattr(rhs, "date", 0) == 0:
+                continue
+
+            col_idx = self._baseline_col_index_by_name.get(lhs.name)
+            if col_idx is None:
+                col_idx = self._baseline_col_index_by_name.get(str(lhs))
+            if col_idx is None:
+                continue
+
+            aliases[(rhs.name, int(getattr(rhs, "date", 0)))] = col_idx
+        return aliases
+
+    def _baseline_lin_expr(self, var: Variable, t: int, nu: int) -> "IRFOC._LinExpr":
+        if not isinstance(var, Variable):
+            raise TypeError("Expected a Variable.")
+
+        alias_col = self._time_shift_alias_cols.get((var.name, int(getattr(var, "date", 0))))
+        if alias_col is not None:
+            a_u = np.asarray(self.M[t * self.n + alias_col, :], dtype=float)
+            c = float(self.baseline.iloc[t, alias_col])
+            return IRFOC._LinExpr(a_u=a_u, c=c)
+
+        if var.name not in self._baseline_col_index_by_name:
+            raise ValueError(f"Variable {var!r} not found in baseline columns.")
+
+        j = self._baseline_col_index_by_name[var.name]
+        tt = int(t + getattr(var, "date", 0))
+        if tt < 0 or tt >= self.T:
+            return IRFOC._LinExpr(a_u=np.zeros(nu, dtype=float), c=0.0)
+
+        a_u = np.asarray(self.M[tt * self.n + j, :], dtype=float)
+        c = float(self.baseline.iloc[tt, j])
+        return IRFOC._LinExpr(a_u=a_u, c=c)
+
+    def _eval_expr_on_sim(self, expr: sympy.Expr, sim: pd.DataFrame, t: int) -> float:
+        if expr.is_number:
+            return float(expr)
+        if isinstance(expr, Variable):
+            alias_col = self._time_shift_alias_cols.get((expr.name, int(getattr(expr, "date", 0))))
+            if alias_col is not None:
+                return float(sim.iloc[t, alias_col])
+            if expr.name not in self._baseline_col_index_by_name:
+                raise ValueError(f"Variable {expr!r} not found in simulation columns.")
+            tt = int(t + getattr(expr, "date", 0))
+            if tt < 0 or tt >= self.T:
+                return 0.0
+            return float(sim.iloc[tt, self._baseline_col_index_by_name[expr.name]])
+        if expr.func is sympy.Add:
+            return float(sum(self._eval_expr_on_sim(arg, sim, t) for arg in expr.args))
+        if expr.func is sympy.Mul:
+            out = 1.0
+            for arg in expr.args:
+                out *= self._eval_expr_on_sim(arg, sim, t)
+            return float(out)
+        if expr.func is sympy.Pow:
+            base, power = expr.args
+            return float(self._eval_expr_on_sim(base, sim, t) ** self._eval_expr_on_sim(power, sim, t))
+        if expr.func is sympy.Max:
+            return float(max(self._eval_expr_on_sim(arg, sim, t) for arg in expr.args))
+        if expr.func is sympy.Min:
+            return float(min(self._eval_expr_on_sim(arg, sim, t) for arg in expr.args))
+        if expr.func is INDICATOR_FN:
+            if len(expr.args) != 1:
+                raise ValueError("indicator(cond) takes exactly one argument.")
+            return float(1.0 if self._eval_condition_on_sim(expr.args[0], sim, t) else 0.0)
+        raise ValueError(f"Unsupported expression in rule evaluation: {expr.func}")
+
+    def _eval_condition_on_sim(self, cond: sympy.Expr, sim: pd.DataFrame, t: int) -> bool:
+        if not isinstance(cond, Relational):
+            raise ValueError("indicator(cond) requires a relational condition.")
+        lhs = self._eval_expr_on_sim(cond.lhs, sim, t)
+        rhs = self._eval_expr_on_sim(cond.rhs, sim, t)
+        if cond.rel_op == "<":
+            return lhs < rhs
+        if cond.rel_op == "<=":
+            return lhs <= rhs
+        if cond.rel_op == ">":
+            return lhs > rhs
+        if cond.rel_op == ">=":
+            return lhs >= rhs
+        if cond.rel_op == "==":
+            return lhs == rhs
+        raise ValueError(f"Unsupported relational operator: {cond.rel_op}")
+
+    def _residuals_from_equations(self, sim: pd.DataFrame, eqs: Iterable[Equation]) -> pd.DataFrame:
+        eqs = list(eqs)
+        vals = np.zeros((self.T, len(eqs)), dtype=float)
+        for t in range(self.T):
+            for j, eq in enumerate(eqs):
+                vals[t, j] = self._eval_expr_on_sim(eq.lhs, sim, t) - self._eval_expr_on_sim(eq.rhs, sim, t)
+        names = [str(eq.set_eq_zero) for eq in eqs]
+        return pd.DataFrame(vals, columns=names, index=sim.index)
 
     def _build_M(self) -> np.ndarray:
         # Historically, M was built by repeatedly calling `anticipated_impulse_response(anticipated_h=t)`
@@ -415,22 +521,13 @@ class IRFOC:
         ncons = len(eqs) * self.T
         A_u = np.zeros((ncons, nu), dtype=float)
         rhs = np.zeros((ncons,), dtype=float)
+        cvec = np.zeros((ncons,), dtype=float)
 
         def const_expr(x: float) -> "IRFOC._LinExpr":
             return IRFOC._LinExpr(a_u=np.zeros(nu, dtype=float), c=float(x))
 
         def baseline_var_expr(var: Variable, t: int) -> "IRFOC._LinExpr":
-            if not isinstance(var, Variable):
-                raise TypeError("Expected a Variable.")
-            if var.name not in self._baseline_col_index_by_name:
-                raise ValueError(f"Variable {var!r} not found in baseline columns.")
-            j = self._baseline_col_index_by_name[var.name]
-            tt = int(t + getattr(var, "date", 0))
-            if tt < 0 or tt >= self.T:
-                return const_expr(0.0)
-            a_u = np.asarray(self.M[tt * self.n + j, :], dtype=float)
-            c = float(self.baseline.iloc[tt, j])
-            return IRFOC._LinExpr(a_u=a_u, c=c)
+            return self._baseline_lin_expr(var, t, nu)
 
         def compile_affine(expr: sympy.Expr, t: int) -> "IRFOC._LinExpr":
             if expr.is_number:
@@ -470,6 +567,7 @@ class IRFOC:
                 if form.a_w or form.a_z:
                     raise RuntimeError("Internal error: affine compiler produced noncontinuous terms.")
                 A_u[row, :] = form.a_u
+                cvec[row] = form.c
                 rhs[row] = -form.c
                 row += 1
 
@@ -492,7 +590,11 @@ class IRFOC:
             return sim
 
         shocks = self._u_to_df(u)
-        resid = pd.DataFrame(index=sim.index)
+        resid = pd.DataFrame(
+            (A_u @ u + cvec).reshape(self.T, len(eqs)),
+            columns=[str(eq.set_eq_zero) for eq in eqs],
+            index=sim.index,
+        )
         return IRFOCResult(simulation=sim, shocks=shocks, residuals=resid)
 
     def simulate_optimal_control(
@@ -748,15 +850,7 @@ class IRFOC:
         def baseline_var_expr(var: sympy.Expr, t: int) -> "IRFOC._LinExpr":
             if not isinstance(var, Variable):
                 raise ValueError(f"Unsupported variable type in rule: {var!r}")
-            if var.name not in self._baseline_col_index_by_name:
-                raise ValueError(f"Variable {var!r} not found in baseline columns.")
-            j = self._baseline_col_index_by_name[var.name]
-            tt = int(t + getattr(var, "date", 0))
-            if tt < 0 or tt >= self.T:
-                return IRFOC._LinExpr(a_u=np.zeros(nu, dtype=float), c=0.0)
-            a_u = np.asarray(self.M[tt * self.n + j, :], dtype=float)
-            c = float(self.baseline.iloc[tt, j])
-            return IRFOC._LinExpr(a_u=a_u, c=c)
+            return self._baseline_lin_expr(var, t, nu)
 
         def const_expr(x: float) -> "IRFOC._LinExpr":
             return IRFOC._LinExpr(a_u=np.zeros(nu, dtype=float), c=float(x))
@@ -1013,7 +1107,7 @@ class IRFOC:
             return sim
 
         shocks = self._u_to_df(u)
-        resid = pd.DataFrame(index=sim.index)
+        resid = self._residuals_from_equations(sim, eqs)
         return IRFOCResult(simulation=sim, shocks=shocks, residuals=resid)
 
     def _expand_u_bounds(
