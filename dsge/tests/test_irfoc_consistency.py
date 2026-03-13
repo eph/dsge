@@ -48,6 +48,15 @@ def _yaml_with_policy_params(rho: float, gamma_pi: float, gamma_y: float) -> str
     )
 
 
+def _one_shot_shock_path(model, para, shock_name: str, horizon: int) -> np.ndarray:
+    _, _, _, QQ, _, _, _ = tuple(model.system_matrices(para))
+    shock_names = list(model.shock_names)
+    shock_idx = shock_names.index(shock_name)
+    eps = np.zeros((horizon + 1, len(shock_names)))
+    eps[0, shock_idx] = np.sqrt(QQ[shock_idx, shock_idx])
+    return eps
+
+
 class TestIRFOCConsistency(TestCase):
     def test_irfoc_matches_recompiled_model_with_changed_rule(self):
         """
@@ -97,3 +106,43 @@ class TestIRFOCConsistency(TestCase):
         sim = irfoc.simulate(rule)
 
         assert_allclose(sim[cols].to_numpy(), target1[cols].to_numpy(), rtol=0.0, atol=1e-5)
+
+    def test_irfoc_sw_parameter_change_tracks_state_space_counterfactual(self):
+        from dsge.examples import sw
+
+        model = sw
+        compiled = model.compile_model()
+        p0 = np.array(model.p0(), dtype=float)
+        p1 = p0.copy()
+        param_idx = {name: i for i, name in enumerate(compiled.parameter_names)}
+        p1[param_idx["crr"]] = 0.70
+        p1[param_idx["crpi"]] = 2.40
+        p1[param_idx["cry"]] = 0.15
+        p1[param_idx["crdy"]] = 0.05
+
+        h_full = 60
+        h_compare = 20
+        cols = ["r", "y", "yf", "pinf", "lab", "flexgap", "robs"]
+        rule = "r = 0.70*r(-1) + (1-0.70)*(2.40*pinf + 0.15*flexgap) + 0.05*(flexgap-flexgap(-1))"
+
+        eps_base = _one_shot_shock_path(compiled, p0, "ea", h_full)
+        baseline = compiled.perfect_foresight(p0, eps_base, include_observables=False)["states"]
+        target = compiled.perfect_foresight(p1, eps_base, include_observables=False)["states"]
+
+        irfoc = IRFOC(model, baseline, instrument_shocks="em", p0=p0, compiled_model=compiled)
+        res = irfoc.simulate(rule, return_details=True)
+
+        # Large SW counterfactuals are close, but not machine-precision identical, to the
+        # direct perfect-foresight state-space solution under the changed rule parameters.
+        max_rule_resid = float(np.max(np.abs(res.residuals.to_numpy())))
+        max_path_diff = float(
+            np.max(
+                np.abs(
+                    res.simulation.iloc[: h_compare + 1][cols].to_numpy()
+                    - target.iloc[: h_compare + 1][cols].to_numpy()
+                )
+            )
+        )
+
+        self.assertLess(max_rule_resid, 1e-10)
+        self.assertLess(max_path_diff, 3e-2)
