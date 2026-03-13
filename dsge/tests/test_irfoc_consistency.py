@@ -132,8 +132,9 @@ class TestIRFOCConsistency(TestCase):
         irfoc = IRFOC(model, baseline, instrument_shocks="em", p0=p0, compiled_model=compiled)
         res = irfoc.simulate(rule, return_details=True)
 
-        # Large SW counterfactuals are close, but not machine-precision identical, to the
-        # direct perfect-foresight state-space solution under the changed rule parameters.
+        # This is an approximate cross-check, not an identity: IRFOC works inside the
+        # finite-horizon anticipated em-shock span of the baseline dynamics, while the
+        # direct state-space target is the recompiled changed-parameter model.
         max_rule_resid = float(np.max(np.abs(res.residuals.to_numpy())))
         max_path_diff = float(
             np.max(
