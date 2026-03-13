@@ -21,3 +21,6 @@ Use the left navigation to explore guides and the API reference.
 
 - See Parsing DSL: `docs/parsing.md` for supported syntax in YAML equations.
 - See Second Order (LRE): `docs/second-order.md` for `order=2` solving/likelihood.
+- See IRFOC: `docs/irfoc.md` for policy-rule counterfactuals and piecewise rules.
+- See Optimal Control: `docs/optimal-control.md` for commitment/discretion workflows.
+- See Endogenous Horizons: `docs/endogenous-horizons.md` for switching FHP models with `stopping_rule`.

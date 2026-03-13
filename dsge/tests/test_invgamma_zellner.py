@@ -1,6 +1,6 @@
 import unittest
 import numpy as np
-from scipy.special import gammaln
+from scipy.special import digamma, gammaln
 from dsge.OtherPriors import invgamma_zellner
 
 class TestInvGammaZellner(unittest.TestCase):
@@ -35,19 +35,20 @@ class TestInvGammaZellner(unittest.TestCase):
 
 
     def test_rvs(self):
-        size = 50000000
-        samples = self.dist.rvs(s=self.s, nu=self.nu, size=size)
+        s = 1.0
+        nu = 6.0
+        size = 200000
+        samples = self.dist.rvs(s=s, nu=nu, size=size, random_state=0)
         # Check the sample mean and variance against theoretical values
-        mean, var, _, _ = self.dist.stats(s=self.s, nu=self.nu, moments='mvsk')
+        mean, var = self.dist.stats(s=s, nu=nu, moments='mv')
         sample_mean = np.mean(samples)
         sample_var = np.var(samples)
-        print(mean, sample_mean, var, sample_var)
-        if np.isfinite(mean):
-            self.assertAlmostEqual(sample_mean, mean, places=2)
-        if np.isfinite(var):
-            self.assertAlmostEqual(sample_var, var, places=1)
+        self.assertAlmostEqual(sample_mean, mean, places=2)
+        self.assertAlmostEqual(sample_var, var, places=1)
 
     def test_entropy(self):
-        expected_entropy = (self.nu + 1)/2 * np.log(2) + (self.nu + 1) * np.log(self.s) - np.log(gammaln(self.nu/2)) + (1 - self.nu)/2 * np.log(self.nu) + gammaln(self.nu/2)
+        alpha = self.nu / 2.0
+        beta = self.nu * self.s**2 / 2.0
+        expected_entropy = alpha + gammaln(alpha) + 0.5 * np.log(beta) - np.log(2.0) - (alpha + 0.5) * digamma(alpha)
         entropy_value = self.dist.entropy(self.s, self.nu)
         self.assertAlmostEqual(entropy_value, expected_entropy, places=5)

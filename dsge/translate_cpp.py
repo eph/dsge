@@ -11,6 +11,19 @@ import numpy as np
 import sympy
 from .symbols import Parameter
 
+
+def _prior_dist_name(rv):
+    return rv.dist.name.lower()
+
+
+def _unsupported_prior_error(rv, *, index: int, context: str) -> NotImplementedError:
+    dist_name = _prior_dist_name(rv)
+    supported = ", ".join(["beta", "gamma", "invgamma", "invgamma_zellner", "norm", "uniform"])
+    return NotImplementedError(
+        f"Unsupported prior distribution '{dist_name}' for C++ {context} at parameter index {index}. "
+        f"Supported distributions: {supported}."
+    )
+
 # C++ template for the FHP model
 cpp_model = """
 /**
@@ -272,7 +285,7 @@ def generate_dsge_logprior(prior_list):
     
     for i, rv in enumerate(prior_list):
         # The distribution name might be something like 'norm', 'gamma', 'beta', etc.
-        dist_name = rv.dist.name.lower()  # e.g. 'norm'
+        dist_name = _prior_dist_name(rv)
         
         # Each SciPy frozen distribution has parameters accessible in different ways.
         # For example, a normal has rv.kwds['loc'], rv.kwds['scale'].
@@ -290,7 +303,6 @@ def generate_dsge_logprior(prior_list):
             # Alternatively you can do alpha = a, beta = 1/scale.
             # So if in SciPy you used gamma(a=5, scale=2),
             # that implies shape=5, scale=2 => rate=1/2
-            print(rv.kwds)
             shape = rv.args[0]
             scale = rv.kwds.get('scale', 1.0)
             rate = 1.0 / scale
@@ -317,12 +329,13 @@ def generate_dsge_logprior(prior_list):
             nu = rv.args[1]
             S = rv.args[0]
             code_lines.append(f"    lp += ig_lpdf(para[{i}], {S}, {nu});")
+        elif dist_name == 'invgamma':
+            alpha = rv.args[0]
+            beta = rv.kwds.get("scale", 1.0)
+            code_lines.append(f"    lp += inv_gamma_lpdf(para[{i}], T({alpha}), T({beta}));")
         
         else:
-            # Fallback: either raise an exception or insert a comment so you can see
-            # where you need to add code for other distributions.
-            code_lines.append(f'    // TODO: distribution "{dist_name}" is not yet handled.')
-            code_lines.append(f'    // Manually add the log-pdf call for para[{i}].')
+            raise _unsupported_prior_error(rv, index=i, context="log-prior generation")
     
     code_lines.append("    return lp;")
     code_lines.append("}")
@@ -357,7 +370,7 @@ def generate_dsge_prior_draws(prior_list):
 
     code_lines.append("    for (int i = 0; i < nsim; ++i) {")
     for j, rv in enumerate(prior_list):
-        dist_name = rv.dist.name.lower()
+        dist_name = _prior_dist_name(rv)
 
         if dist_name == 'norm':
             mu = rv.kwds['loc']
@@ -385,10 +398,13 @@ def generate_dsge_prior_draws(prior_list):
             S = rv.args[0]
             nu = rv.args[1]
             code_lines.append(f"        draws[i][{j}] = ig_rng({S}, static_cast<int>({nu}), rng);")
+        elif dist_name == 'invgamma':
+            alpha = rv.args[0]
+            beta = rv.kwds.get("scale", 1.0)
+            code_lines.append(f"        draws[i][{j}] = inv_gamma_rng({alpha}, {beta}, rng);")
 
         else:
-            code_lines.append(f'        // TODO: Distribution "{dist_name}" not handled.')
-            code_lines.append(f'        // draws[i][{j}] = ???;')
+            raise _unsupported_prior_error(rv, index=j, context="prior-draw generation")
 
     code_lines.append("    }")
     code_lines.append("    return draws;")

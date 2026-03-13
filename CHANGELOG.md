@@ -4,6 +4,11 @@ This project uses `setuptools_scm` (version comes from git tags).
 
 ## Unreleased
 
+- Docs: add dedicated guides for IRFOC, optimal control, and endogenous-horizon workflows
+- Dynare integration: add opt-in first-order parity checks alongside the existing second-order coverage
+- C++ export: fail loudly on unsupported prior distributions and support SciPy `invgamma` in prior codegen
+- Tests/docs hygiene: remove warning noise from the pytest suite and strict MkDocs build; stabilize reported filter standard deviations against tiny negative covariance drift
+
 ## 0.3.0 (2026-03-13)
 
 - Big-model YAML load speed: use `xreplace` for lag/lead symbol rewrites (avoid expensive SymPy `subs`)

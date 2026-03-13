@@ -27,11 +27,11 @@ class TestReadDataFile(unittest.TestCase):
 
     def test_dict_input(self):
         data = read_data_file({"file": os.path.join(self.data_dir, 'test_with_header.csv'), "start": '2023-Q1'}, ["A", "B", "C"])
-        print(data)
         self.assertEqual(data.shape, (2, 3))  # adjust to your test file's size
 
     def test_non_existent_file(self):
-        data = read_data_file('non_existent.csv', ["A", "B", "C"])
+        with self.assertWarns(UserWarning):
+            data = read_data_file('non_existent.csv', ["A", "B", "C"])
         self.assertTrue(np.isnan(data.values).all())
 
 if __name__ == '__main__':

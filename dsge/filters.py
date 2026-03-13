@@ -6,6 +6,16 @@ except Exception:  # pragma: no cover
     njit = None  # type: ignore
 
 
+def _std_from_cov_diag(cov, *, atol: float = 1e-12):
+    """Return standard deviations while clipping tiny negative PSD drift."""
+    diag = np.asarray(np.diag(cov), dtype=float)
+    scale = max(1.0, float(np.max(np.abs(diag)))) if diag.size else 1.0
+    tol = atol * scale
+    clipped = diag.copy()
+    clipped[(clipped < 0.0) & (clipped > -tol)] = 0.0
+    return np.sqrt(clipped)
+
+
 def _symmetrize_inplace(a):
     n = a.shape[0]
     for i in range(n):
@@ -208,7 +218,7 @@ def filter_and_smooth(y, CC, TT, RR, QQ, DD, ZZ, HH, A0, P0, t0=0):
         nact = np.sum(observed)
 
         forecast_means[i] = At
-        forecast_stds[i] = np.sqrt(np.diag(Pt))
+        forecast_stds[i] = _std_from_cov_diag(Pt)
         forecast_cov[i] = 0.5 * (Pt + Pt.T)
 
         if nact > 0:
@@ -247,7 +257,7 @@ def filter_and_smooth(y, CC, TT, RR, QQ, DD, ZZ, HH, A0, P0, t0=0):
             Pt1 = Pt
 
         filtered_means[i] = At1
-        filtered_stds[i] = np.sqrt(np.diag(Pt1))
+        filtered_stds[i] = _std_from_cov_diag(Pt1)
         filtered_cov[i] = 0.5 * (Pt1 + Pt1.T)
 
         # forecast
@@ -268,7 +278,7 @@ def filter_and_smooth(y, CC, TT, RR, QQ, DD, ZZ, HH, A0, P0, t0=0):
 
         N = ZtiFtZ[i] + Lmat[i].T @ N @ Lmat[i]
         smoothed_cov[i] = forecast_cov[i] - forecast_cov[i] @ N @ forecast_cov[i].T
-        smoothed_stds[i] = np.sqrt(np.diag(smoothed_cov[i]))
+        smoothed_stds[i] = _std_from_cov_diag(smoothed_cov[i])
 
     return (
         liks,

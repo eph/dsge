@@ -1,5 +1,6 @@
 import numpy as np
 from numpy.testing import assert_allclose
+import pytest
 
 from importlib.resources import files
 
@@ -146,7 +147,8 @@ def test_switching_ssm_yaml_pe_matches_analytic():
     ana = _simulate_analytic(T=T, seed=seed, Jmax=Jmax, a=a, params=params)
 
     yaml_path = files("dsge") / "examples" / "switching" / "pe_pricing_switching.yaml"
-    model = read_yaml(str(yaml_path))
+    with pytest.warns(DeprecationWarning, match="YAML type 'switching_ssm' is experimental"):
+        model = read_yaml(str(yaml_path))
 
     out = _simulate_engine_with_given_shocks(model=model, T=T, eps=ana["eps"], params_vec=model.p0)
 

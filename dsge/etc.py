@@ -35,7 +35,7 @@ $s$ and $\nu$, where $p(\sigma|\nu, s)\propto \sigma^{-\nu-1}e^{-\nu s^2/2\sigma
     for prior_group_header, prior_group in prior_dict.items():
 
         if len(prior_group_header) > 0:
-            rows.append('   & \multicolumn{%d}{c}{%s} \\' % (3*ncols, prior_group_header))
+            rows.append(r'   & \multicolumn{%d}{c}{%s} \\' % (3*ncols, prior_group_header))
 
         for para_row in zip(*[iter(prior_group)]*ncols):
             row = []

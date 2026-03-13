@@ -1,9 +1,9 @@
 import numpy as np
 from scipy.stats import rv_continuous
-from scipy.special import gammaln, gammaincc, gammaincinv, gamma
+from scipy.special import digamma, gammaln, gammaincc, gammaincinv, gamma
 
 class invgamma_zellner_gen(rv_continuous):
-    """
+    r"""
     An inverse gamma random variable as detailed in Zellner (1971). 
 
     A variable sigma follows an inverse gamma (s, nu) if it has the pdf:
@@ -59,7 +59,12 @@ class invgamma_zellner_gen(rv_continuous):
         return mean, variance, skewness, kurtosis
 
     def _entropy(self, s, nu):
-        return (nu + 1)/2 * np.log(2) + (nu + 1) * np.log(s) - np.log(gammaln(nu/2)) + (1 - nu)/2 * np.log(nu) + gammaln(nu/2)
+        alpha = nu / 2.0
+        beta = nu * s**2 / 2.0
+        return alpha + gammaln(alpha) + 0.5 * np.log(beta) - np.log(2.0) - (alpha + 0.5) * digamma(alpha)
+
+    def entropy(self, s, nu):
+        return self._entropy(s, nu)
 
     def _rvs(self, s, nu, size=None, random_state=None):
         if size is None:

@@ -33,7 +33,10 @@ nav:
   - Quickstart: quickstart.md
   - State-Space: state-space.md
   - Second Order (LRE): second-order.md
+  - IRFOC: irfoc.md
+  - Optimal Control: optimal-control.md
   - Usage: usage.md
+  - Endogenous Horizons: endogenous-horizons.md
   - Parsing DSL: parsing.md
   - OBC (ZLB): obc.md
   - Models: models.md
