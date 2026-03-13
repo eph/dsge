@@ -2,7 +2,9 @@
 
 This project uses `setuptools_scm` (version comes from git tags).
 
-## 0.3.0 (Unreleased)
+## Unreleased
+
+## 0.3.0 (2026-03-13)
 
 - Big-model YAML load speed: use `xreplace` for lag/lead symbol rewrites (avoid expensive SymPy `subs`)
 - Big-model compile speed: `python_sims_matrices(method="auto")` now avoids the full Jacobian backend on large systems
