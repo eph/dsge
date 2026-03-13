@@ -36,6 +36,37 @@ calibration:
 """
 
 
+def _simple_nk_yaml_with_extra_lag_aliases() -> str:
+    return """
+declarations:
+  name: irfoc_smoke_extra_lags
+  variables: [pi, y, i, u, re, ilag, pilag, ylag]
+  parameters: [beta, kappa, sigma, rho, gamma_pi, gamma_y, rho_u, rho_r]
+  shocks: [eu, er, em]
+
+equations:
+  - pi = beta*pi(+1) + kappa*y + u
+  - y = y(+1) - sigma*(i - pi(+1) - re)
+  - i = rho*i(-1) + (1-rho)*(gamma_pi*pi + gamma_y*y) + em
+  - u = rho_u*u(-1) + eu
+  - re = rho_r*re(-1) + er
+  - ilag = i(-1)
+  - pilag = pi(-1)
+  - ylag = y(-1)
+
+calibration:
+  parameters:
+    beta: 0.99
+    kappa: 0.024
+    sigma: 6.25
+    rho: 0.85
+    gamma_pi: 1.50
+    gamma_y: 0.15
+    rho_u: 0.6
+    rho_r: 0.6
+"""
+
+
 def test_irfoc_enforces_affine_rule():
     import io
 
@@ -99,6 +130,31 @@ def test_irfoc_affine_rule_with_lagged_variable():
     assert float(np.max(np.abs(resid))) < 1e-7
 
 
+@pytest.mark.parametrize(
+    "rule",
+    [
+        "i = 1.2*pi(-1) + 0.3*y",
+        "i = 0.7*y(-1) + 0.2*pi + 0.5*i(-1)",
+        "i = 0.4*pi(-2) + 0.3*y",
+    ],
+)
+def test_irfoc_affine_rule_with_lagged_other_endogenous_variables(rule):
+    import io
+
+    m = read_yaml(io.StringIO(_simple_nk_yaml()))
+    lin = m.compile_model()
+    p0 = m.p0()
+
+    T = 20
+    baseline = lin.impulse_response(p0, h=T - 1)["er"].loc[:, ["pi", "y", "i", "ilag"]]
+
+    irfoc = IRFOC(m, baseline, instrument_shocks="em", p0=p0, compiled_model=lin)
+    res = irfoc.simulate(rule, return_details=True)
+
+    assert res.residuals.shape == (T, 1)
+    assert float(np.max(np.abs(res.residuals.to_numpy()))) < 1e-9
+
+
 def test_irfoc_lagged_rule_returns_residuals():
     import io
 
@@ -135,6 +191,32 @@ def test_irfoc_explicit_lag_matches_alias_on_shifted_baseline():
     np.testing.assert_allclose(
         explicit[["pi", "y", "i", "ilag"]].to_numpy(),
         alias[["pi", "y", "i", "ilag"]].to_numpy(),
+        rtol=0.0,
+        atol=1e-9,
+    )
+
+
+def test_irfoc_explicit_other_lags_match_aliases_on_shifted_baseline():
+    import io
+
+    m = read_yaml(io.StringIO(_simple_nk_yaml_with_extra_lag_aliases()))
+    lin = m.compile_model()
+    p0 = m.p0()
+
+    full = lin.impulse_response(p0, h=12)["er"].loc[:, ["pi", "y", "i", "ilag", "pilag", "ylag"]]
+    baseline = full.iloc[1:].copy()
+    baseline.index = range(len(baseline))
+    baseline["ilag"] = full["i"].iloc[:-1].to_numpy()
+    baseline["pilag"] = full["pi"].iloc[:-1].to_numpy()
+    baseline["ylag"] = full["y"].iloc[:-1].to_numpy()
+
+    irfoc = IRFOC(m, baseline, instrument_shocks="em", p0=p0, compiled_model=lin)
+    explicit = irfoc.simulate("i = 0.5*pi(-1) + 0.2*y(-1) + 0.1*i(-1)")
+    alias = irfoc.simulate("i = 0.5*pilag + 0.2*ylag + 0.1*ilag")
+
+    np.testing.assert_allclose(
+        explicit[["pi", "y", "i", "ilag", "pilag", "ylag"]].to_numpy(),
+        alias[["pi", "y", "i", "ilag", "pilag", "ylag"]].to_numpy(),
         rtol=0.0,
         atol=1e-9,
     )
