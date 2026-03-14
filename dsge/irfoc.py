@@ -192,12 +192,15 @@ class IRFOC:
 
         self._variable_context = context
         self._baseline_variables = [sympy.sympify(str(c), locals=context) for c in self.columns]
-        self._baseline_col_index_by_name: dict[str, int] = {}
+        # Map baseline columns by their full string form, not just `v.name`.
+        #
+        # Why: compiled model `state_names` can include time-shifted variables like `pi(1)`.
+        # Those are distinct columns, but they share the same `.name` ("pi") and would collide
+        # if we keyed only by name. That collision can silently make rules referencing `pi`
+        # bind on the wrong column (`pi(1)`), producing incorrect counterfactuals.
+        self._baseline_col_index_by_str: dict[str, int] = {}
         for j, v in enumerate(self._baseline_variables):
-            if isinstance(v, Variable):
-                self._baseline_col_index_by_name[v.name] = j
-            else:
-                self._baseline_col_index_by_name[str(v)] = j
+            self._baseline_col_index_by_str[str(v)] = j
         self._time_shift_alias_cols = self._build_time_shift_alias_cols()
 
         self._M_perfect_foresight_cache: dict[tuple[tuple[str, ...], int, tuple[str, ...]], np.ndarray] = {}
@@ -222,9 +225,7 @@ class IRFOC:
             if not isinstance(rhs, Variable) or getattr(rhs, "date", 0) == 0:
                 continue
 
-            col_idx = self._baseline_col_index_by_name.get(lhs.name)
-            if col_idx is None:
-                col_idx = self._baseline_col_index_by_name.get(str(lhs))
+            col_idx = self._baseline_col_index_by_str.get(str(lhs))
             if col_idx is None:
                 continue
 
@@ -235,16 +236,24 @@ class IRFOC:
         if not isinstance(var, Variable):
             raise TypeError("Expected a Variable.")
 
+        # If the baseline includes an explicit column for this time-shifted variable
+        # (e.g. `pi(1)`), treat it as a direct series and do not time-shift again.
+        direct_col = self._baseline_col_index_by_str.get(str(var))
+        if direct_col is not None:
+            a_u = np.asarray(self.M[t * self.n + direct_col, :], dtype=float)
+            c = float(self.baseline.iloc[t, direct_col])
+            return IRFOC._LinExpr(a_u=a_u, c=c)
+
         alias_col = self._time_shift_alias_cols.get((var.name, int(getattr(var, "date", 0))))
         if alias_col is not None:
             a_u = np.asarray(self.M[t * self.n + alias_col, :], dtype=float)
             c = float(self.baseline.iloc[t, alias_col])
             return IRFOC._LinExpr(a_u=a_u, c=c)
 
-        if var.name not in self._baseline_col_index_by_name:
+        base_col = self._baseline_col_index_by_str.get(var.name)
+        if base_col is None:
             raise ValueError(f"Variable {var!r} not found in baseline columns.")
-
-        j = self._baseline_col_index_by_name[var.name]
+        j = base_col
         tt = int(t + getattr(var, "date", 0))
         if tt < 0 or tt >= self.T:
             return IRFOC._LinExpr(a_u=np.zeros(nu, dtype=float), c=0.0)
@@ -257,15 +266,19 @@ class IRFOC:
         if expr.is_number:
             return float(expr)
         if isinstance(expr, Variable):
+            direct_col = self._baseline_col_index_by_str.get(str(expr))
+            if direct_col is not None:
+                return float(sim.iloc[t, direct_col])
             alias_col = self._time_shift_alias_cols.get((expr.name, int(getattr(expr, "date", 0))))
             if alias_col is not None:
                 return float(sim.iloc[t, alias_col])
-            if expr.name not in self._baseline_col_index_by_name:
-                raise ValueError(f"Variable {expr!r} not found in simulation columns.")
             tt = int(t + getattr(expr, "date", 0))
             if tt < 0 or tt >= self.T:
                 return 0.0
-            return float(sim.iloc[tt, self._baseline_col_index_by_name[expr.name]])
+            base_col = self._baseline_col_index_by_str.get(expr.name)
+            if base_col is None:
+                raise ValueError(f"Variable {expr!r} not found in simulation columns.")
+            return float(sim.iloc[tt, base_col])
         if expr.func is sympy.Add:
             return float(sum(self._eval_expr_on_sim(arg, sim, t) for arg in expr.args))
         if expr.func is sympy.Mul:

@@ -85,6 +85,33 @@ class TestIRFOCConsistency(TestCase):
         # This is an identity in exact arithmetic; allow tiny numerical error from repeated solves/IRF construction.
         assert_allclose(sim[cols].to_numpy(), target1[cols].to_numpy(), rtol=0.0, atol=1e-5)
 
+    def test_irfoc_rule_rewrite_is_invariant_to_lead_columns_in_baseline(self):
+        """
+        Some compiled models include explicit lead/lag columns in `state_names` (e.g. `pi(1)`).
+        IRFOC must not confuse `pi` with `pi(1)` when baselines include those columns.
+        """
+        m0 = read_yaml(io.StringIO(_yaml_with_policy_params(0.85, 1.50, 0.50)))
+        m1 = read_yaml(io.StringIO(_yaml_with_policy_params(0.70, 2.00, 0.25)))
+
+        lin0 = m0.compile_model()
+        lin1 = m1.compile_model()
+        p0 = m0.p0()
+        p1 = m1.p0()
+
+        T = 25
+        shock_size = -2.0
+        cols_all = list(lin0.state_names)
+
+        baseline0 = shock_size * lin0.impulse_response(p0, h=T - 1)["er"].loc[:, cols_all]
+        target1 = shock_size * lin1.impulse_response(p1, h=T - 1)["er"].loc[:, cols_all]
+
+        irfoc = IRFOC(m0, baseline0, instrument_shocks="em", p0=p0, compiled_model=lin0)
+        rule = "i = 0.70*ilag + (1-0.70)*(2.0*pi + 0.25*y)"
+        sim = irfoc.simulate(rule)
+
+        cols_compare = ["pi", "y", "i", "ilag"]
+        assert_allclose(sim[cols_compare].to_numpy(), target1[cols_compare].to_numpy(), rtol=0.0, atol=1e-5)
+
     def test_irfoc_matches_recompiled_model_for_another_shock(self):
         m0 = read_yaml(io.StringIO(_yaml_with_policy_params(0.85, 1.50, 0.50)))
         m1 = read_yaml(io.StringIO(_yaml_with_policy_params(0.70, 2.00, 0.25)))
