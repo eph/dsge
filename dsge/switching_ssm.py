@@ -280,6 +280,8 @@ def read_switching_ssm(model_yaml: Mapping[str, Any]) -> EndogenousHorizonSwitch
         )
 
     selection_order = hc.get("selection_order", None)
+    selection_mode = str(hc.get("selection_mode", "sequential"))
+    equilibrium_selection = str(hc.get("equilibrium_selection", "error"))
 
     k_max: Dict[str, int] = {}
     cost_params: Dict[str, Tuple[float, float]] = {}
@@ -365,6 +367,8 @@ def read_switching_ssm(model_yaml: Mapping[str, Any]) -> EndogenousHorizonSwitch
         policy_object=policy_object,
         info_func=info_func,
         selection_order=selection_order,
+        selection_mode=selection_mode,
+        equilibrium_selection=equilibrium_selection,
     )
 
     model_ref["model"] = out_model

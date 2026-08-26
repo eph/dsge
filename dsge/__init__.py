@@ -13,6 +13,13 @@ from .logging_config import configure_logging, get_logger
 from .DSGE import DSGE
 from .FHPRepAgent import FHPRepAgent
 from .SIDSGE import SIDSGE
+from .endogenous_horizon_switching import (
+    EndogenousHorizonSwitchingModel,
+    MultipleHorizonEquilibriaError,
+    NoPureHorizonEquilibriumError,
+    SimultaneousHorizonDiagnostics,
+    SimultaneousHorizonSelectionError,
+)
 
 # YAML parsing and utilities
 from .parse_yaml import read_yaml

@@ -122,6 +122,8 @@ In FHP YAML this lives under `declarations.stopping_rule` (alias: `declarations.
 - components (e.g. `pricing`, `hh`), each with a `k_max` and a list of equation rows (`assign_lhs`)
 - a constant marginal cost `a` and a curvature/normalization `lambda`
 - a `policy_object` (an expression evaluated on model observables + a reduced switching state)
+- `selection_mode`, either the backward-compatible `sequential` default or an
+  exhaustive mutual-best-response search with `simultaneous`
 
 Example (partial equilibrium pricing block):
 ```yaml
@@ -139,6 +141,14 @@ declarations:
 `policy_object` may reference any declared parameter plus observable names. If you declare no observables, FHP defaults to using the model variables as observables (identity mapping).
 
 `cost.a` and `lambda` can be numbers or parameter-only expressions; they are evaluated at the parameter vector passed to `choose_regime(...)` / `simulate(...)` / `pf_loglik(...)`.
+
+With `selection_mode: simultaneous`, `selection_order` is unused. The model
+enumerates the finite component-horizon grid and keeps profiles at which every
+component's incremental-rule choice is a best response to the other coordinates.
+Multiple profiles raise an error unless `equilibrium_selection` is explicitly
+set to `lexicographic_min` or `lexicographic_max`; no pure profile also raises an
+error with finite-grid diagnostics. See `docs/endogenous-horizons.md` and the
+two-component `dsge/examples/fhp/fhp_endogenous_two_component.yaml` example.
 
 Important: when `stopping_rule`/`horizon_choice` is present, `read_yaml(...)` returns an `EndogenousHorizonSwitchingModel` (piecewise-linear, regime-dependent matrices), not a fixed-regime `FHPRepAgent`. Use simulation / particle filtering rather than standard linear IRFs.
 

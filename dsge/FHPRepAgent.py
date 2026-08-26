@@ -1114,6 +1114,9 @@ class FHPRepAgent(Base):
                 f"{components}"
             )
 
+        selection_mode = str(hc.get("selection_mode", "sequential"))
+        equilibrium_selection = str(hc.get("equilibrium_selection", "error"))
+
         selection_order = hc.get("selection_order", None)
         if selection_order is None:
             selection_order = components
@@ -1496,6 +1499,8 @@ class FHPRepAgent(Base):
             policy_object=policy_object,
             info_func=info_func,
             selection_order=selection_order,
+            selection_mode=selection_mode,
+            equilibrium_selection=equilibrium_selection,
         )
 
         model_ref["model"] = out_model
