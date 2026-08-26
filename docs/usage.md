@@ -17,6 +17,17 @@ sim = m.simulate(params=m.p0, T=200, seed=123)
 girf = m.girf(m.p0, shock='e_y', h=20, reps=200, seed=123)
 ```
 
+Multi-component models may opt into simultaneous fixed-point selection:
+```yaml
+stopping_rule:
+  selection_mode: simultaneous
+  equilibrium_selection: error  # default; explicit min/max policies are available
+  components:
+    # ...
+```
+The sequential mode remains the default. See `docs/endogenous-horizons.md` for
+the fixed-point API, multiplicity policies, and nonexistence diagnostics.
+
 ## Validate calibration and priors
 ```python
 from dsge.validation import validate_model

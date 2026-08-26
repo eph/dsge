@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 from itertools import product
-from typing import Any, Callable, Dict, Iterable, Mapping, MutableMapping, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, Mapping, MutableMapping, Optional, Sequence, Tuple
 
 import numpy as np
 import pandas as p
@@ -126,6 +126,48 @@ class LinearMarginalCostSchedule:
                 )
 
 
+@dataclass(frozen=True)
+class SimultaneousHorizonDiagnostics:
+    """Finite-grid diagnostics for simultaneous horizon selection.
+
+    Regime tuples use ``components`` order. ``profiles`` and
+    ``best_responses`` are aligned, so entry ``i`` records the proposed profile
+    and the profile of component-wise incremental-rule best responses evaluated
+    while holding all other coordinates fixed.
+    """
+
+    components: Tuple[str, ...]
+    profiles: Tuple[Tuple[int, ...], ...]
+    best_responses: Tuple[Tuple[int, ...], ...]
+    equilibria: Tuple[Tuple[int, ...], ...]
+
+    @property
+    def n_profiles(self) -> int:
+        return len(self.profiles)
+
+    def as_mapping(self, regime: Sequence[int]) -> Dict[str, int]:
+        return unpack_regime(self.components, regime)
+
+    def equilibrium_mappings(self) -> Tuple[Dict[str, int], ...]:
+        return tuple(self.as_mapping(regime) for regime in self.equilibria)
+
+
+class SimultaneousHorizonSelectionError(ValueError):
+    """Base error carrying finite-grid simultaneous-selection diagnostics."""
+
+    def __init__(self, message: str, diagnostics: SimultaneousHorizonDiagnostics):
+        super().__init__(message)
+        self.diagnostics = diagnostics
+
+
+class NoPureHorizonEquilibriumError(SimultaneousHorizonSelectionError):
+    """Raised when the finite horizon game has no pure fixed point."""
+
+
+class MultipleHorizonEquilibriaError(SimultaneousHorizonSelectionError):
+    """Raised when multiplicity is present and no selection policy was chosen."""
+
+
 def pack_regime(components: Sequence[str], k_by_component: Mapping[str, int]) -> Tuple[int, ...]:
     return tuple(int(k_by_component[c]) for c in components)
 
@@ -225,6 +267,11 @@ class EndogenousHorizonSwitchingModel:
     """
     Endogenous regime switching where the regime is a vector of per-component horizons.
 
+    ``selection_mode='sequential'`` preserves the historical one-pass choice in
+    ``selection_order``. ``selection_mode='simultaneous'`` exhaustively finds
+    mutual incremental-rule best responses; ``equilibrium_selection`` controls
+    the explicitly requested policy when more than one fixed point exists.
+
     Conditional on regime s_t, the system is linear-Gaussian:
       x_{t+1} = T(s_t) x_t + R(s_t) eps_{t+1},  eps ~ N(0,Q)
       y_t     = Z(s_t) x_t + D(s_t) + eta_t,    eta ~ N(0,H)
@@ -244,6 +291,8 @@ class EndogenousHorizonSwitchingModel:
         info_func: Optional[Callable[[np.ndarray, int, Mapping[str, int]], Any]] = None,
         mb_func: Optional[Callable[[np.ndarray, Any, str, int, Mapping[str, int]], float]] = None,
         selection_order: Optional[Sequence[str]] = None,
+        selection_mode: str = "sequential",
+        equilibrium_selection: str = "error",
     ):
         self.components = list(components)
         if not self.components:
@@ -254,6 +303,25 @@ class EndogenousHorizonSwitchingModel:
         self.selection_order = list(selection_order) if selection_order is not None else list(self.components)
         if set(self.selection_order) != set(self.components):
             raise ValueError("selection_order must be a permutation of components")
+
+        self.selection_mode = str(selection_mode)
+        if self.selection_mode not in {"sequential", "simultaneous"}:
+            raise ValueError(
+                "selection_mode must be 'sequential' or 'simultaneous', "
+                f"got {self.selection_mode!r}"
+            )
+
+        self.equilibrium_selection = str(equilibrium_selection)
+        allowed_equilibrium_selection = {
+            "error",
+            "lexicographic_min",
+            "lexicographic_max",
+        }
+        if self.equilibrium_selection not in allowed_equilibrium_selection:
+            raise ValueError(
+                "equilibrium_selection must be one of "
+                f"{sorted(allowed_equilibrium_selection)}, got {self.equilibrium_selection!r}"
+            )
 
         if isinstance(k_max, int):
             self.k_max = {c: int(k_max) for c in self.components}
@@ -309,6 +377,31 @@ class EndogenousHorizonSwitchingModel:
             self.mb = mb_func
 
         self._cache = RegimeSolutionCache(solve_given_regime=solve_given_regime)
+
+    def _mb_for_params(
+        self,
+        params: np.ndarray,
+        *,
+        params_key: str,
+    ) -> Callable[[np.ndarray, Any, str, int, Mapping[str, int]], float]:
+        if self._lam_func is None or not self._mb_is_default:
+            return self.mb
+
+        # When Λ is parameter-dependent, use the already-computed parameter key
+        # rather than hashing params on each marginal-benefit evaluation.
+        def mb_dyn(params_vec, info_t, component, k_plus_1, chosen):
+            lam_val = self._lam_for_component(params_vec, component, params_key=params_key)
+            return mb_quadratic_policy_diff(
+                params=params_vec,
+                info_t=info_t,
+                component=component,
+                k_plus_1=k_plus_1,
+                chosen=chosen,
+                policy_object=self.policy_object,
+                lam=lam_val,
+            )
+
+        return mb_dyn
 
     def _cost_for_component(
         self,
@@ -371,6 +464,225 @@ class EndogenousHorizonSwitchingModel:
     ) -> Tuple[np.ndarray, ...]:
         return self._cache.get_mats(params, regime, params_key=params_key)
 
+    def _component_best_response(
+        self,
+        params: np.ndarray,
+        x_t: np.ndarray,
+        *,
+        t: int,
+        component: str,
+        other_horizons: Mapping[str, int],
+        params_key: str,
+        mb_use: Callable[[np.ndarray, Any, str, int, Mapping[str, int]], float],
+    ) -> int:
+        component = str(component)
+        if component not in self.components:
+            raise ValueError(f"Unknown component {component!r}. Expected one of {self.components}.")
+
+        expected_others = set(self.components) - {component}
+        normalized_others = {str(c): value for c, value in other_horizons.items()}
+        supplied_others = set(normalized_others)
+        if supplied_others != expected_others:
+            missing = sorted(expected_others - supplied_others)
+            extra = sorted(supplied_others - expected_others)
+            raise ValueError(
+                f"other_horizons for component {component!r} must contain every other component "
+                f"exactly once; missing={missing}, extra={extra}."
+            )
+
+        # Canonical insertion order ensures that custom info/MB functions receive
+        # the same mapping regardless of component declaration order.
+        fixed = {c: int(normalized_others[c]) for c in sorted(expected_others)}
+        for c, k in fixed.items():
+            if not (0 <= k <= self.k_max[c]):
+                raise ValueError(
+                    f"other_horizons[{c!r}] must be in [0, {self.k_max[c]}], got {k}"
+                )
+
+        info_t = self.info_func(x_t, int(t), fixed)
+        return choose_k_star(
+            params=params,
+            info_t=info_t,
+            component=component,
+            k_max=self.k_max[component],
+            mb=mb_use,
+            cost=self._cost_for_component(params, component, params_key=params_key),
+            chosen=fixed,
+        )
+
+    def component_best_response(
+        self,
+        params: np.ndarray,
+        x_t: np.ndarray,
+        *,
+        t: int,
+        component: str,
+        other_horizons: Mapping[str, int],
+        params_key: str | None = None,
+    ) -> int:
+        """Return one component's incremental-rule best response.
+
+        ``other_horizons`` must specify every *other* component and must omit the
+        component being optimized. This makes the conditioning profile explicit
+        and prevents a proposed component horizon from affecting its own best
+        response through a custom ``info_func`` or ``mb_func``.
+        """
+        params = np.asarray(params, dtype=float)
+        if params_key is None:
+            params_key = _params_cache_key(params)
+        return self._component_best_response(
+            params,
+            x_t,
+            t=t,
+            component=component,
+            other_horizons=other_horizons,
+            params_key=params_key,
+            mb_use=self._mb_for_params(params, params_key=params_key),
+        )
+
+    def simultaneous_regime_diagnostics(
+        self,
+        params: np.ndarray,
+        x_t: np.ndarray,
+        *,
+        t: int,
+        params_key: str | None = None,
+    ) -> SimultaneousHorizonDiagnostics:
+        """Enumerate the finite grid and return all mutual best-response profiles.
+
+        Best responses are cached by ``(component, other_horizons)`` within the
+        call. A component's own proposed coordinate cannot affect its best
+        response, so this avoids repeated work without changing the exhaustive
+        fixed-point check.
+        """
+        params = np.asarray(params, dtype=float)
+        if params_key is None:
+            params_key = _params_cache_key(params)
+        mb_use = self._mb_for_params(params, params_key=params_key)
+
+        canonical_components = tuple(sorted(self.components))
+        grid = [range(self.k_max[c] + 1) for c in canonical_components]
+        best_response_cache: Dict[Tuple[str, Tuple[Tuple[str, int], ...]], int] = {}
+        profiles = []
+        best_responses = []
+        equilibria = []
+
+        for values in product(*grid):
+            candidate = {c: int(k) for c, k in zip(canonical_components, values)}
+            response: Dict[str, int] = {}
+            for component in canonical_components:
+                others_tuple = tuple(
+                    (c, candidate[c]) for c in canonical_components if c != component
+                )
+                cache_key = (component, others_tuple)
+                if cache_key not in best_response_cache:
+                    best_response_cache[cache_key] = self._component_best_response(
+                        params,
+                        x_t,
+                        t=t,
+                        component=component,
+                        other_horizons=dict(others_tuple),
+                        params_key=params_key,
+                        mb_use=mb_use,
+                    )
+                response[component] = best_response_cache[cache_key]
+
+            packed_candidate = self.pack_regime(candidate)
+            packed_response = self.pack_regime(response)
+            profiles.append(packed_candidate)
+            best_responses.append(packed_response)
+            if packed_candidate == packed_response:
+                equilibria.append(packed_candidate)
+
+        return SimultaneousHorizonDiagnostics(
+            components=tuple(self.components),
+            profiles=tuple(profiles),
+            best_responses=tuple(best_responses),
+            equilibria=tuple(equilibria),
+        )
+
+    def find_simultaneous_regimes(
+        self,
+        params: np.ndarray,
+        x_t: np.ndarray,
+        *,
+        t: int,
+        params_key: str | None = None,
+    ) -> Tuple[Tuple[int, ...], ...]:
+        """Return every pure simultaneous horizon equilibrium on the finite grid."""
+        return self.simultaneous_regime_diagnostics(
+            params,
+            x_t,
+            t=t,
+            params_key=params_key,
+        ).equilibria
+
+    def _format_regime(self, regime: Sequence[int]) -> str:
+        by_component = self.unpack_regime(regime)
+        body = ", ".join(f"{c}={by_component[c]}" for c in sorted(self.components))
+        return "{" + body + "}"
+
+    def _choose_simultaneous_regime(
+        self,
+        params: np.ndarray,
+        x_t: np.ndarray,
+        *,
+        t: int,
+        params_key: str,
+    ) -> Tuple[int, ...]:
+        diagnostics = self.simultaneous_regime_diagnostics(
+            params,
+            x_t,
+            t=t,
+            params_key=params_key,
+        )
+        equilibria = diagnostics.equilibria
+        if len(equilibria) == 1:
+            return equilibria[0]
+
+        if not equilibria:
+            mismatch_counts = [
+                sum(int(a != b) for a, b in zip(profile, response))
+                for profile, response in zip(diagnostics.profiles, diagnostics.best_responses)
+            ]
+            min_mismatches = min(mismatch_counts)
+            closest = [i for i, n in enumerate(mismatch_counts) if n == min_mismatches]
+            details = []
+            for i in closest[:8]:
+                profile = diagnostics.profiles[i]
+                response = diagnostics.best_responses[i]
+                profile_map = diagnostics.as_mapping(profile)
+                response_map = diagnostics.as_mapping(response)
+                deviators = [
+                    c for c in sorted(self.components) if profile_map[c] != response_map[c]
+                ]
+                details.append(
+                    f"{self._format_regime(profile)} -> {self._format_regime(response)} "
+                    f"(deviating: {', '.join(deviators)})"
+                )
+            suffix = "" if len(closest) <= 8 else f"; {len(closest) - 8} more in diagnostics"
+            message = (
+                f"No pure simultaneous horizon equilibrium exists among "
+                f"{diagnostics.n_profiles} candidate profiles. Every profile changes under at "
+                f"least one component's incremental-rule best response. Closest candidate(s): "
+                + "; ".join(details)
+                + suffix
+            )
+            raise NoPureHorizonEquilibriumError(message, diagnostics)
+
+        if self.equilibrium_selection == "lexicographic_min":
+            return equilibria[0]
+        if self.equilibrium_selection == "lexicographic_max":
+            return equilibria[-1]
+
+        candidates = ", ".join(self._format_regime(regime) for regime in equilibria)
+        message = (
+            f"Found {len(equilibria)} simultaneous horizon equilibria: {candidates}. "
+            "Set equilibrium_selection='lexicographic_min' or 'lexicographic_max' "
+            "to opt into a deterministic multiplicity policy."
+        )
+        raise MultipleHorizonEquilibriaError(message, diagnostics)
+
     def choose_regime(
         self,
         params: np.ndarray,
@@ -382,24 +694,15 @@ class EndogenousHorizonSwitchingModel:
         if params_key is None:
             params_key = _params_cache_key(params)
 
-        if self._lam_func is not None and self._mb_is_default:
-            # When Λ is param-dependent, build a per-call MB closure to avoid hashing
-            # params on each MB evaluation.
-            def mb_dyn(params_vec, info_t, component, k_plus_1, chosen):
-                lam_val = self._lam_for_component(params_vec, component, params_key=params_key)
-                return mb_quadratic_policy_diff(
-                    params=params_vec,
-                    info_t=info_t,
-                    component=component,
-                    k_plus_1=k_plus_1,
-                    chosen=chosen,
-                    policy_object=self.policy_object,
-                    lam=lam_val,
-                )
+        if self.selection_mode == "simultaneous":
+            return self._choose_simultaneous_regime(
+                params,
+                x_t,
+                t=t,
+                params_key=params_key,
+            )
 
-            mb_use = mb_dyn
-        else:
-            mb_use = self.mb
+        mb_use = self._mb_for_params(params, params_key=params_key)
 
         chosen: MutableMapping[str, int] = {}
         for comp in self.selection_order:

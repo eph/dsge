@@ -38,6 +38,12 @@ declarations:
       required: true
       allow_unknown: false
       schema:
+        selection_mode:
+          type: string
+          allowed: ['sequential', 'simultaneous']
+        equilibrium_selection:
+          type: string
+          allowed: ['error', 'lexicographic_min', 'lexicographic_max']
         selection_order:
           type: list
           schema:

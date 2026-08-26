@@ -23,7 +23,10 @@ declarations:
   # Note: this example omits declarations.observables, so FHP uses variables as observables
   # (identity mapping). That allows policy_object to reference c/q/pi directly.
   stopping_rule:
-    selection_order: [pricing, hh]
+    # Solve for a mutual-best-response horizon profile. Component order is irrelevant.
+    selection_mode: simultaneous
+    # Raise if the model has multiple pure profiles instead of silently selecting one.
+    equilibrium_selection: error
     components:
       hh:
         k_max: 4

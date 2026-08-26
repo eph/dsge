@@ -4,6 +4,7 @@ This project uses `setuptools_scm` (version comes from git tags).
 
 ## Unreleased
 
+- Endogenous horizons: add opt-in simultaneous mutual-best-response selection with explicit multiplicity policies and finite-grid diagnostics
 - IRFOC: fix explicit lag handling at nonzero-history boundaries so `i(-1)` reuses exact lag alias columns like `ilag` when available
 - Docs: add dedicated guides for IRFOC, optimal control, and endogenous-horizon workflows
 - Dynare integration: add opt-in first-order parity checks alongside the existing second-order coverage
