@@ -154,7 +154,8 @@ module model_t
     call dgemm('N', 'N', nvar, nvar, nvar, 1.0d0, alpha0_trend, nvar, alpha1_trend, nvar, 0.0d0, A_trend, nvar)
     call dgemm('N', 'N', nvar, nval, nvar, 1.0d0, alpha0_trend, nvar, betaV_trend, nvar, 0.0d0, B_trend, nvar)
 
-    ! Main loop for k (row-specific horizons)
+    ! Main loop for k (row-specific periods remaining).  At backward step k,
+    ! row i has max(k_i - (K-k), 0) periods remaining and plans iff positive.
     do k = 1, {k}
          ! Cycle effective system for iteration k
          alphaC_eff = alpha0_cycle_term
@@ -163,7 +164,7 @@ module model_t
          betaS_eff  = beta0_cycle_term
 
          do i = 1, nvar
-            if (k <= k_cycle_row(i)) then
+            if (k > {k} - k_cycle_row(i)) then
                alphaC_eff(i,:) = alphaC_cycle(i,:)
                alphaF_eff(i,:) = alphaF_cycle(i,:)
                alphaB_eff(i,:) = alphaB_cycle(i,:)
@@ -186,7 +187,7 @@ module model_t
          betaV_eff  = betaV_trend_term
 
          do i = 1, nvar
-            if (k <= k_trend_row(i)) then
+            if (k > {k} - k_trend_row(i)) then
                alphaC_eff(i,:) = alphaC_trend(i,:)
                alphaF_eff(i,:) = alphaF_trend(i,:)
                alphaB_eff(i,:) = alphaB_trend(i,:)

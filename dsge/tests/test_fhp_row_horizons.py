@@ -134,6 +134,107 @@ def test_fhp_rowwise_mixing_uses_plan_vs_terminal_rows():
     assert_allclose(betaV_eff[c_idx, :], 0.0, rtol=0, atol=1e-12)
 
 
+def _compile_horizon_pair(base, *, short: int, long: int, expectations: int = 0):
+    """Compile a model where pi owns the short counter and all other rows the long one."""
+
+    spec = copy.deepcopy(base)
+    spec["declarations"]["k"] = {"default": long, "by_lhs": {"pi": short}}
+    model = _read_from_dict(spec)
+    compiled = model.compile_model(expectations=expectations)
+    matrices = compiled.system_matrices(model.p0())
+    return model, compiled, matrices
+
+
+def test_fhp_unequal_positive_horizons_use_saturated_predecessor():
+    """At (1, 2), every positive owner plans today against policy (0, 1)."""
+
+    base = yaml.safe_load(Path("dsge/examples/fhp/fhp.yaml").read_text())
+    model, current, _ = _compile_horizon_pair(base, short=1, long=2)
+    _, predecessor, _ = _compile_horizon_pair(base, short=0, long=1)
+    p0 = model.p0()
+
+    alphaC_cycle = current.alphaC_cycle(p0)
+    alphaF_cycle = current.alphaF_cycle(p0)
+    alphaB_cycle = current.alphaB_cycle(p0)
+    betaS_cycle = current.betaS_cycle(p0)
+    cycle_coefficient = alphaC_cycle - alphaF_cycle @ predecessor.A_cycle
+
+    cycle_state_residual = cycle_coefficient @ current.A_cycle - alphaB_cycle
+    cycle_shock_residual = (
+        cycle_coefficient @ current.B_cycle
+        - alphaF_cycle @ predecessor.B_cycle @ current.P(p0)
+        - betaS_cycle
+    )
+
+    alphaC_trend = current.alphaC_trend(p0)
+    alphaF_trend = current.alphaF_trend(p0)
+    alphaB_trend = current.alphaB_trend(p0)
+    trend_coefficient = alphaC_trend - alphaF_trend @ predecessor.A_trend
+
+    trend_state_residual = trend_coefficient @ current.A_trend - alphaB_trend
+    trend_value_residual = (
+        trend_coefficient @ current.B_trend - alphaF_trend @ predecessor.B_trend
+    )
+
+    # q, c, and pi are the dynamic rows.  Their current counters are all
+    # positive at (1, 2), so every one must satisfy its planning equation.
+    for residual in (
+        cycle_state_residual,
+        cycle_shock_residual,
+        trend_state_residual,
+        trend_value_residual,
+    ):
+        assert_allclose(residual[:3], 0.0, rtol=0, atol=1e-12)
+
+
+def test_fhp_mixed_horizon_expectations_follow_saturated_history():
+    """Forecast histories decay (1, 2) to (0, 1), then saturate at (0, 0)."""
+
+    base = yaml.safe_load(Path("dsge/examples/fhp/fhp.yaml").read_text())
+    model, current, matrices = _compile_horizon_pair(
+        base, short=1, long=2, expectations=2
+    )
+    _, predecessor, _ = _compile_horizon_pair(base, short=0, long=1)
+    _, terminal, _ = _compile_horizon_pair(base, short=0, long=0)
+
+    _, TT, RR, _, _, _, _ = matrices
+    p0 = model.p0()
+    P = current.P(p0)
+    nx = len(model["variables"])
+    nv = len(model["values"])
+    ns = len(model["shocks"])
+    base_states = 3 * nx + nv + ns
+    tilde_columns = slice(nx, 2 * nx)
+    trend_columns = slice(2 * nx, 3 * nx)
+
+    expected_cycle = predecessor.A_cycle @ current.A_cycle
+    expected_cycle_shocks = (
+        predecessor.A_cycle @ current.B_cycle + predecessor.B_cycle @ P
+    )
+    expected_trend = predecessor.A_trend @ current.A_trend
+
+    first_rows = base_states
+    first_tilde = slice(first_rows + nx, first_rows + 2 * nx)
+    first_trend = slice(first_rows + 2 * nx, first_rows + 3 * nx)
+    assert_allclose(TT[first_tilde, tilde_columns], expected_cycle, rtol=0, atol=1e-12)
+    assert_allclose(RR[first_tilde, :], expected_cycle_shocks, rtol=0, atol=1e-12)
+    assert_allclose(TT[first_trend, trend_columns], expected_trend, rtol=0, atol=1e-12)
+
+    expected_cycle = terminal.A_cycle @ expected_cycle
+    expected_cycle_shocks = (
+        terminal.A_cycle @ expected_cycle_shocks
+        + terminal.B_cycle @ np.linalg.matrix_power(P, 2)
+    )
+    expected_trend = terminal.A_trend @ expected_trend
+
+    second_rows = base_states + 3 * nx
+    second_tilde = slice(second_rows + nx, second_rows + 2 * nx)
+    second_trend = slice(second_rows + 2 * nx, second_rows + 3 * nx)
+    assert_allclose(TT[second_tilde, tilde_columns], expected_cycle, rtol=0, atol=1e-12)
+    assert_allclose(RR[second_tilde, :], expected_cycle_shocks, rtol=0, atol=1e-12)
+    assert_allclose(TT[second_trend, trend_columns], expected_trend, rtol=0, atol=1e-12)
+
+
 def test_fhp_terminal_equation_order_does_not_matter():
     base = yaml.safe_load(Path("dsge/examples/fhp/fhp.yaml").read_text())
 

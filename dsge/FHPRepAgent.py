@@ -345,13 +345,17 @@ class LinearDSGEforFHPRepAgent(LinearDSGEModel):
                )
 
        for m in range(1, self.k + 1):
-           # Cycle: mix plan vs terminal rows based on m <= k_cycle_row[i]
+           # At backward step m, row i has
+           # max(k_cycle_row[i] - (self.k - m), 0) periods remaining.
+           # It therefore uses its planning equation exactly when that counter
+           # is positive.  This orders unequal positive horizons along their
+           # saturated predecessor path instead of reversing the shorter row.
            alphaC_eff = alpha0_cycle.copy()
            alphaF_eff = np.zeros_like(alphaF_cycle)
            alphaB_eff = alpha1_cycle.copy()
            betaS_eff = beta0_cycle.copy()
 
-           plan_rows = m <= k_cycle_row
+           plan_rows = m > self.k - k_cycle_row
            alphaC_eff[plan_rows, :] = alphaC_cycle[plan_rows, :]
            alphaF_eff[plan_rows, :] = alphaF_cycle[plan_rows, :]
            alphaB_eff[plan_rows, :] = alphaB_cycle[plan_rows, :]
@@ -361,13 +365,14 @@ class LinearDSGEforFHPRepAgent(LinearDSGEModel):
            A_cycle_new = inv_cycle @ alphaB_eff
            B_cycle_new = inv_cycle @ (alphaF_eff @ B_cycle @ P + betaS_eff)
 
-           # Trend: mix plan vs terminal rows; terminal contributes value loading (betaV_trend)
+           # Trend uses the same remaining-horizon counters; terminal rows
+           # contribute their value loading (betaV_trend).
            alphaC_eff = alpha0_trend.copy()
            alphaF_eff = np.zeros_like(alphaF_trend)
            alphaB_eff = alpha1_trend.copy()
            betaV_eff = betaV_trend.copy()
 
-           plan_rows = m <= k_trend_row
+           plan_rows = m > self.k - k_trend_row
            alphaC_eff[plan_rows, :] = alphaC_trend[plan_rows, :]
            alphaF_eff[plan_rows, :] = alphaF_trend[plan_rows, :]
            alphaB_eff[plan_rows, :] = alphaB_trend[plan_rows, :]
@@ -416,8 +421,8 @@ class LinearDSGEforFHPRepAgent(LinearDSGEModel):
                   zeroV.T @ zeroS,
                   R]
 
-       # compute expectations
-       # all of the A_matrices are already at k
+       # Compute expectations.  History index self.k - h is the policy with
+       # every row horizon reduced by h and saturated at zero.
 
        C_cycle, D_cycle = A_cycle, B_cycle
        C_trend, D_trend = A_trend, B_trend

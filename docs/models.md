@@ -103,6 +103,14 @@ calibration:
 If `declarations.k` is a dict with `default` and `by_lhs`, the recursion uses a per-equation-row horizon `k_i`:
 - Each `by_lhs` key must match the LHS variable name in your YAML equation (e.g. `pi = ...`).
 - Internally, the model still stores a scalar `k = max_i k_i` for backward compatibility, plus `k_spec`.
+- Horizons count periods remaining.  If `K = max_i k_i`, backward step `m`
+  uses the planning equation in row `i` when `m > K - k_i`.  Equivalently,
+  the row's current counter is `max(k_i - (K - m), 0)` and it plans exactly
+  when that counter is positive.
+- A one-period forecast uses the saturated predecessor vector
+  `max(k_i - 1, 0)`.  For horizons `(1, 2)`, the recursion is therefore
+  `(0, 0) -> (0, 1) -> (1, 2)`: both positive-horizon rows plan today, while
+  only the longer row plans in the one-step-ahead policy.
 
 Example: firms price with short horizon, households plan longer:
 ```yaml
