@@ -7,6 +7,7 @@ import numpy as np
 import sympy as sp
 
 from .endogenous_horizon_switching import EndogenousHorizonSwitchingModel
+from .planning_costs import MarginalCostSchedule, compile_cost_schedule
 
 
 def _expr_str(x: Any) -> str:
@@ -284,7 +285,7 @@ def read_switching_ssm(model_yaml: Mapping[str, Any]) -> EndogenousHorizonSwitch
     equilibrium_selection = str(hc.get("equilibrium_selection", "error"))
 
     k_max: Dict[str, int] = {}
-    cost_params: Dict[str, Tuple[float, float]] = {}
+    cost_params: Dict[str, MarginalCostSchedule] = {}
     lam: Dict[str, float] = {}
     policy_exprs: Dict[str, sp.Expr] = {}
 
@@ -297,7 +298,10 @@ def read_switching_ssm(model_yaml: Mapping[str, Any]) -> EndogenousHorizonSwitch
     lam_arg_syms = [param_syms[p] for p in parameter_names]
 
     lam_func_by_comp: Dict[str, Any] = {}
-    a_func_by_comp: Dict[str, Any] = {}
+    cost_func_by_comp = {}
+
+    def parse_cost_expr(expr, *, where):
+        return _parse_expr(expr, ctx=lam_ctx, allowed_symbols=lam_allowed, where=where)
 
     for comp in components:
         cfg = hc_components[comp]
@@ -305,11 +309,13 @@ def read_switching_ssm(model_yaml: Mapping[str, Any]) -> EndogenousHorizonSwitch
         if k_max[comp] < 0:
             raise ValueError(f"horizon_choice.components.{comp}.k_max must be >= 0, got {k_max[comp]}")
 
-        # Cost: for now, constant marginal costs Δτ_{k+1} = a.
-        a_expr = _parse_expr(cfg["cost"]["a"], ctx=lam_ctx, allowed_symbols=lam_allowed, where=f"horizon_choice.components.{comp}.cost.a")
-        a_func_by_comp[comp] = sp.lambdify(lam_arg_syms, a_expr, modules="numpy")
-        a_val = float(a_func_by_comp[comp](*p0.tolist()))
-        cost_params[comp] = (a_val, 0.0)
+        cost_func_by_comp[comp] = compile_cost_schedule(
+            cfg.get("cost"),
+            parameter_symbols=lam_arg_syms,
+            parse_expr=parse_cost_expr,
+            where=f"horizon_choice.components.{comp}.cost",
+        )
+        cost_params[comp] = cost_func_by_comp[comp](p0)
 
         lam_expr = _parse_expr(cfg["lambda"], ctx=lam_ctx, allowed_symbols=lam_allowed, where=f"horizon_choice.components.{comp}.lambda")
         lam_func_by_comp[comp] = sp.lambdify(lam_arg_syms, lam_expr, modules="numpy")
@@ -361,7 +367,7 @@ def read_switching_ssm(model_yaml: Mapping[str, Any]) -> EndogenousHorizonSwitch
         k_max=k_max,
         cost_params=cost_params,
         lam=lam,
-        cost_func=lambda params_vec, component: (float(a_func_by_comp[str(component)](*np.asarray(params_vec, dtype=float).reshape(-1).tolist())), 0.0),
+        cost_func=lambda params_vec, component: cost_func_by_comp[str(component)](params_vec),
         lam_func=lambda params_vec, component: float(lam_func_by_comp[str(component)](*np.asarray(params_vec, dtype=float).reshape(-1).tolist())),
         solve_given_regime=solve_given_regime,
         policy_object=policy_object,

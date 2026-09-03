@@ -21,6 +21,9 @@ from .endogenous_horizon_switching import (
     SimultaneousHorizonSelectionError,
 )
 
+# Marginal planning-cost schedules
+from .planning_costs import ExponentialMarginalCostSchedule, LinearMarginalCostSchedule
+
 # YAML parsing and utilities
 from .parse_yaml import read_yaml
 from .read_mod import read_mod

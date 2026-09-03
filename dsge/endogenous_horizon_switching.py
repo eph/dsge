@@ -8,6 +8,14 @@ from typing import Any, Callable, Dict, Mapping, MutableMapping, Optional, Seque
 import numpy as np
 import pandas as p
 
+from .planning_costs import (
+    CostInput,
+    ExponentialMarginalCostSchedule,
+    LinearMarginalCostSchedule,
+    MarginalCostSchedule,
+    as_cost_schedule,
+)
+
 
 def _as_2d_array(y):
     if isinstance(y, p.DataFrame):
@@ -93,40 +101,6 @@ def _params_cache_key(params: np.ndarray) -> str:
 
 
 @dataclass(frozen=True)
-class LinearMarginalCostSchedule:
-    """
-    Linear marginal planning costs: Δτ_{k+1} = a + b (k+1), with a>0, b>=0.
-    """
-
-    a: float
-    b: float = 0.0
-
-    def __post_init__(self):
-        if not (self.a > 0):
-            raise ValueError(f"Cost schedule requires a>0, got a={self.a}")
-        if not (self.b >= 0):
-            raise ValueError(f"Cost schedule requires b>=0, got b={self.b}")
-
-    def delta_tau(self, k_plus_1: int) -> float:
-        k_plus_1 = int(k_plus_1)
-        if k_plus_1 < 1:
-            raise ValueError(f"k_plus_1 must be >= 1, got {k_plus_1}")
-        return float(self.a + self.b * k_plus_1)
-
-    def validate_positive(self, k_max: int) -> None:
-        # Validate positivity for k in [0..k_max] (i.e. k_plus_1 in [1..k_max+1]).
-        k_max = int(k_max)
-        if k_max < 0:
-            raise ValueError(f"k_max must be >= 0, got {k_max}")
-        for k_plus_1 in range(1, k_max + 2):
-            val = self.delta_tau(k_plus_1)
-            if not (val > 0):
-                raise ValueError(
-                    f"Cost schedule must have Δτ(k+1)>0. Got Δτ({k_plus_1})={val}."
-                )
-
-
-@dataclass(frozen=True)
 class SimultaneousHorizonDiagnostics:
     """Finite-grid diagnostics for simultaneous horizon selection.
 
@@ -185,7 +159,7 @@ def choose_k_star(
     component: str,
     k_max: int,
     mb: Callable[[np.ndarray, Any, str, int, Mapping[str, int]], float],
-    cost: LinearMarginalCostSchedule,
+    cost: MarginalCostSchedule,
     chosen: Mapping[str, int] | None = None,
 ) -> int:
     """
@@ -202,8 +176,8 @@ def choose_k_star(
     for k in range(0, k_max):
         k_plus_1 = k + 1
         mb_val = float(mb(params, info_t, component, k_plus_1, chosen))
-        if mb_val < 0:
-            raise ValueError(f"MB must be nonnegative, got {mb_val} for {component} at k+1={k_plus_1}")
+        if not np.isfinite(mb_val) or mb_val < 0:
+            raise ValueError(f"MB must be finite and nonnegative, got {mb_val} for {component} at k+1={k_plus_1}")
         if mb_val < cost.delta_tau(k_plus_1):
             return k
     return k_max
@@ -282,7 +256,7 @@ class EndogenousHorizonSwitchingModel:
         *,
         components: Sequence[str],
         k_max: Mapping[str, int] | int,
-        cost_params: Mapping[str, Tuple[float, float]] | Tuple[float, float],
+        cost_params: Mapping[str, CostInput] | CostInput,
         lam: Mapping[str, float] | float,
         cost_func: Callable[[np.ndarray, str], Any] | None = None,
         lam_func: Callable[[np.ndarray, str], Any] | None = None,
@@ -331,16 +305,16 @@ class EndogenousHorizonSwitchingModel:
             if km < 0:
                 raise ValueError(f"k_max[{c!r}] must be >= 0, got {km}")
 
-        if isinstance(cost_params, tuple):
-            default_cost = LinearMarginalCostSchedule(*cost_params)
+        if not isinstance(cost_params, Mapping):
+            default_cost = as_cost_schedule(cost_params)
             self.cost = {c: default_cost for c in self.components}
         else:
             self.cost = {}
             for c in self.components:
                 if c in cost_params:
-                    self.cost[c] = LinearMarginalCostSchedule(*cost_params[c])
+                    self.cost[c] = as_cost_schedule(cost_params[c])
                 elif "default" in cost_params:
-                    self.cost[c] = LinearMarginalCostSchedule(*cost_params["default"])  # type: ignore[index]
+                    self.cost[c] = as_cost_schedule(cost_params["default"])  # type: ignore[index]
                 else:
                     raise ValueError(f"Missing cost_params for component {c!r} (and no 'default').")
 
@@ -357,7 +331,7 @@ class EndogenousHorizonSwitchingModel:
 
         self._cost_func = cost_func
         self._lam_func = lam_func
-        self._cost_cache: Dict[Tuple[str, str], LinearMarginalCostSchedule] = {}
+        self._cost_cache: Dict[Tuple[str, str], MarginalCostSchedule] = {}
         self._lam_cache: Dict[Tuple[str, str], float] = {}
         self._mb_is_default = mb_func is None
 
@@ -409,7 +383,7 @@ class EndogenousHorizonSwitchingModel:
         component: str,
         *,
         params_key: str,
-    ) -> LinearMarginalCostSchedule:
+    ) -> MarginalCostSchedule:
         if self._cost_func is None:
             return self.cost[component]
         key = (params_key, component)
@@ -418,12 +392,7 @@ class EndogenousHorizonSwitchingModel:
             return cached
 
         raw = self._cost_func(np.asarray(params, dtype=float), str(component))
-        if isinstance(raw, (int, float, np.number)):
-            a, b = float(raw), 0.0
-        else:
-            a, b = raw  # type: ignore[misc]
-            a, b = float(a), float(b)
-        sched = LinearMarginalCostSchedule(a, b)
+        sched = as_cost_schedule(raw)
         self._cost_cache[key] = sched
         return sched
 
