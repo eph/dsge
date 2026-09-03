@@ -11,6 +11,69 @@ Each component applies the incremental stopping rule
 k* = min { k >= 0 : MB(k + 1) < Δτ(k + 1) }, capped at k_max.
 ```
 
+## Exponential planning costs
+
+Each component can use its own cost schedule. Existing `cost: {a: ...}` models
+retain flat marginal costs. For exponential marginal costs, write:
+
+```yaml
+cost:
+  type: exponential
+  a: household_cost / (beta*sigma)
+  growth: cost_growth
+lambda: 1 / (beta*sigma)
+```
+
+At added planning stage `j = k + 1`, the cost is
+`Δτ(j) = a * exp(growth * (j - 1))`. Thus `a` is the cost of moving from horizon
+zero to horizon one, and `growth` is a log growth rate: `growth: 0.31` multiplies
+each successive marginal cost by `exp(0.31)`. Zero growth exactly recovers flat
+costs. If total cost is instead specified as `B*(exp(b*k)-1)`, its marginal cost
+corresponds to `a = B*(exp(b)-1)` and `growth = b`.
+
+Both fields accept numbers or parameter-only expressions. They are recomputed
+and cached for each parameter vector used by horizon selection, simulation,
+GIRFs, and particle filtering. `a` must be finite and positive; `growth` must be
+finite and nonnegative. The strict stopping comparison is unchanged: equality
+continues planning. The finite search still ends at `k_max`; hitting that cap
+does not establish that the unconstrained optimal horizon is finite.
+
+The example `dsge/examples/fhp/nk_endogenous_exponential_costs.yaml` uses the
+own-horizon GE projection with separate household and pricing objectives:
+
+```python
+from importlib.resources import files
+import numpy as np
+from dsge import read_yaml
+
+path = files("dsge") / "examples/fhp/nk_endogenous_exponential_costs.yaml"
+model = read_yaml(str(path))
+params = np.array(model.p0, copy=True)
+x = np.array([0.0025])  # 25 bp rate cut
+model.choose_regime(params, x, t=0)  # (28, 59), growth = 0.31
+params[model.parameter_names.index("cost_growth")] = 0.29
+model.choose_regime(params, x, t=0)  # (59, 59)
+```
+
+The example sets shock persistence to one and caps both horizons at 59 to
+represent the announcement impact of a 60-period peg. It does not encode the
+peg's subsequent calendar-time exit. At this calibration the benefit-growth
+threshold is approximately `0.30042`; the household stops at 28 above it.
+Pricing reaches the example's cap in both cases. This is a linear-model
+illustration, with very large responses at long horizons.
+
+For linear marginal costs, `cost: {type: linear, a: ..., b: ...}` implements
+`Δτ(j) = a + b*j` with `b >= 0`. Omitting `type` selects `linear`, and omitting
+`b` sets it to zero. These schedules also work in `type: switching_ssm` YAML.
+In the Python API, `cost_params` and `cost_func` accept
+`ExponentialMarginalCostSchedule(a, growth)` or
+`LinearMarginalCostSchedule(a, b)` objects; historical scalar and `(a, b)`
+inputs remain supported. Import either schedule from `dsge`.
+
+Costs that exceed floating-point range evaluate to positive infinity and stop
+any finite marginal benefit. Nonfinite marginal benefits raise an error rather
+than silently selecting a capped horizon.
+
 ## Beliefs about other components
 
 The optional `belief_mode` determines which continuation a component uses when

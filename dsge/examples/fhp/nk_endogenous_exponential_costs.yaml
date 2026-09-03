@@ -1,0 +1,73 @@
+# At d=0.0025, growth=0.31 selects (household, pricing)=(28, 59).
+# Setting cost_growth=0.29 selects (59, 59). The cap binds for pricing
+# in both cases; this example is the announcement impact of a 60-period peg,
+# with no useful planning beyond k=59, not its calendar-time transition path.
+declarations:
+  type: fhp
+  name: nk_endogenous_exponential_costs
+  variables: [y, pi]
+  shocks: [d]
+  innovations: [e_d]
+  values: []
+  value_updates: []
+  expectations: 0
+  parameters: [beta, sigma, kappa, rho_d, household_cost, pricing_cost, cost_growth]
+  k: 0
+
+  stopping_rule:
+    # A component evaluating k believes every private component also uses k.
+    # Realized household and pricing horizons may nevertheless differ.
+    belief_mode: own_horizon_projection
+    # Best responses are independent under own-horizon projection, so sequential
+    # and simultaneous selection give the same unique profile away from ties.
+    selection_mode: sequential
+    equilibrium_selection: error
+    components:
+      household:
+        k_max: 59
+        assign_lhs: [y]
+        cost: {type: exponential, a: "household_cost/(beta*sigma)", growth: cost_growth}
+        lambda: "1/(beta*sigma)"
+        policy_object: y
+      pricing:
+        k_max: 59
+        assign_lhs: [pi]
+        cost: {type: exponential, a: pricing_cost, growth: cost_growth}
+        lambda: 1.0
+        policy_object: pi
+
+model:
+  cycle:
+    terminal:
+      - y = sigma*d
+      - pi = kappa*y
+    plan:
+      - y = y(+1) + sigma*pi(+1) + sigma*d
+      - pi = kappa*y + beta*pi(+1)
+
+  shocks:
+    - d = rho_d*d(-1) + e_d
+
+  trend:
+    terminal:
+      - y = sigma*d
+      - pi = kappa*y
+    plan:
+      - y = y(+1) + sigma*pi(+1) + sigma*d
+      - pi = kappa*y + beta*pi(+1)
+
+  value:
+    function: []
+    update: []
+
+calibration:
+  parameters:
+    beta: 0.99
+    sigma: 1.0
+    kappa: 0.024
+    rho_d: 1.0
+    household_cost: 0.000001
+    pricing_cost: 0.000000001
+    cost_growth: 0.31
+  covariance:
+    e_d: 1.0

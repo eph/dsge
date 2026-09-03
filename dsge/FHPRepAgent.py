@@ -23,6 +23,7 @@ from .Prior import construct_prior
 from .data import read_data_file
 from .StateSpaceModel import LinearDSGEModel
 from .parsing_tools import from_dict_to_mat, construct_equation_list, parse_expression, build_symbolic_context
+from .planning_costs import compile_cost_schedule
 from .validation import check_for_future_shocks
 from .logging_config import get_logger
 
@@ -1245,9 +1246,9 @@ class FHPRepAgent(Base):
                 raise ValueError(f"Unknown symbol(s) in {where} expression {s!r}: {[str(u) for u in unknown]}")
             return out
 
-        a_by_comp: Dict[str, float] = {}
+        cost_by_comp = {}
         lam_by_comp: Dict[str, float] = {}
-        a_func_by_comp: Dict[str, Any] = {}
+        cost_func_by_comp = {}
         lam_func_by_comp: Dict[str, Any] = {}
 
         for comp in components:
@@ -1287,14 +1288,13 @@ class FHPRepAgent(Base):
                 lhs_owner[nm] = comp
             assign_lhs_by_comp[comp] = lhs_names
 
-            if "cost" not in cfg or not isinstance(cfg["cost"], dict) or "a" not in cfg["cost"]:
-                raise ValueError(f"horizon_choice.components.{comp}.cost.a is required.")
-            a_expr = _parse_param_expr(cfg["cost"]["a"], where=f"horizon_choice.components.{comp}.cost.a")
-            a_func_by_comp[comp] = sympy.lambdify(
-                [param_syms[n] for n in parameter_names], a_expr, modules="numpy"
+            cost_func_by_comp[comp] = compile_cost_schedule(
+                cfg.get("cost"),
+                parameter_symbols=[param_syms[n] for n in parameter_names],
+                parse_expr=_parse_param_expr,
+                where=f"horizon_choice.components.{comp}.cost",
             )
-            a_val = float(a_func_by_comp[comp](*p0.tolist()))
-            a_by_comp[comp] = a_val
+            cost_by_comp[comp] = cost_func_by_comp[comp](p0)
 
             lam_expr = _parse_param_expr(cfg["lambda"], where=f"horizon_choice.components.{comp}.lambda")
             lam_func_by_comp[comp] = sympy.lambdify(
@@ -1606,8 +1606,7 @@ class FHPRepAgent(Base):
             return np.asarray(policy_funcs[str(component)](*args), dtype=float)
 
         def cost_func(params_vec: np.ndarray, component: str):
-            params_vec = np.asarray(params_vec, dtype=float).reshape(-1)
-            return float(a_func_by_comp[str(component)](*params_vec.tolist())), 0.0
+            return cost_func_by_comp[str(component)](params_vec)
 
         def lam_func(params_vec: np.ndarray, component: str):
             params_vec = np.asarray(params_vec, dtype=float).reshape(-1)
@@ -1616,7 +1615,7 @@ class FHPRepAgent(Base):
         out_model = EndogenousHorizonSwitchingModel(
             components=components,
             k_max=k_max_by_comp,
-            cost_params={c: (a_by_comp[c], 0.0) for c in components},
+            cost_params=cost_by_comp,
             lam=lam_by_comp,
             cost_func=cost_func,
             lam_func=lam_func,

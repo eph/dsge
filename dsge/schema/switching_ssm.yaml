@@ -71,6 +71,19 @@ declarations:
                       - type: integer
                       - type: float
                       - type: string
+                  type:
+                    type: string
+                    allowed: ['linear', 'exponential']
+                  b:
+                    anyof:
+                      - type: integer
+                      - type: float
+                      - type: string
+                  growth:
+                    anyof:
+                      - type: integer
+                      - type: float
+                      - type: string
               lambda:
                 required: true
                 anyof:

@@ -128,7 +128,7 @@ You can optionally add an endogenous stopping rule that selects a discrete horiz
 
 In FHP YAML this lives under `declarations.stopping_rule` (alias: `declarations.horizon_choice`) and defines:
 - components (e.g. `pricing`, `hh`), each with a `k_max` and a list of equation rows (`assign_lhs`)
-- a constant marginal cost `a` and a curvature/normalization `lambda`
+- a marginal `cost` schedule and a curvature/normalization `lambda`
 - a `policy_object` (an expression evaluated on model observables + a reduced switching state)
 - `selection_mode`, either the backward-compatible `sequential` default or an
   exhaustive mutual-best-response search with `simultaneous`
@@ -148,7 +148,19 @@ declarations:
 
 `policy_object` may reference any declared parameter plus observable names. If you declare no observables, FHP defaults to using the model variables as observables (identity mapping).
 
-`cost.a` and `lambda` can be numbers or parameter-only expressions; they are evaluated at the parameter vector passed to `choose_regime(...)` / `simulate(...)` / `pf_loglik(...)`.
+`cost: {a: ...}` preserves constant marginal costs. Set
+`cost: {type: exponential, a: ..., growth: ...}` for
+`Δτ(j) = a * exp(growth * (j - 1))`, where `j = 1` is the first additional
+planning stage. Alternatively, `cost: {type: linear, a: ..., b: ...}` gives
+`Δτ(j) = a + b*j`; `linear` and `b: 0` are the defaults.
+
+`cost.a`, `cost.b`, `cost.growth`, and `lambda` can be numbers or parameter-only
+expressions; they are evaluated at the parameter vector passed to
+`choose_regime(...)`, `simulate(...)`, `girf(...)`, or `pf_loglik(...)`.
+Cost levels must be finite and positive, and slopes finite and nonnegative.
+Exponential costs require an explicit `growth`; schedule-specific fields cannot
+be mixed. The same cost syntax is supported by `type: switching_ssm` YAML.
+See `docs/endogenous-horizons.md` for indexing and a runnable GE example.
 
 With `selection_mode: simultaneous`, `selection_order` is unused. The model
 enumerates the finite component-horizon grid and keeps profiles at which every
