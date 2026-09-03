@@ -68,6 +68,9 @@ declarations:
         selection_mode:
           type: string
           allowed: ['sequential', 'simultaneous']
+        belief_mode:
+          type: string
+          allowed: ['correct', 'own_horizon_projection']
         equilibrium_selection:
           type: string
           allowed: ['error', 'lexicographic_min', 'lexicographic_max']
@@ -120,6 +123,9 @@ declarations:
         selection_mode:
           type: string
           allowed: ['sequential', 'simultaneous']
+        belief_mode:
+          type: string
+          allowed: ['correct', 'own_horizon_projection']
         equilibrium_selection:
           type: string
           allowed: ['error', 'lexicographic_min', 'lexicographic_max']

@@ -1,0 +1,68 @@
+declarations:
+  type: fhp
+  name: nk_endogenous_own_horizon_projection
+  variables: [y, pi]
+  shocks: [d]
+  innovations: [e_d]
+  values: []
+  value_updates: []
+  expectations: 0
+  parameters: [beta, sigma, kappa, rho_d, household_cost, pricing_cost]
+  k: 0
+
+  stopping_rule:
+    # A component evaluating k believes every private component also uses k.
+    # Realized household and pricing horizons may nevertheless differ.
+    belief_mode: own_horizon_projection
+    # Best responses are independent under own-horizon projection, so sequential
+    # and simultaneous selection give the same unique profile away from ties.
+    selection_mode: simultaneous
+    equilibrium_selection: error
+    components:
+      household:
+        k_max: 2
+        assign_lhs: [y]
+        cost: {a: household_cost}
+        lambda: 1.0
+        policy_object: y
+      pricing:
+        k_max: 4
+        assign_lhs: [pi]
+        cost: {a: pricing_cost}
+        lambda: 1.0
+        policy_object: pi
+
+model:
+  cycle:
+    terminal:
+      - y = sigma*d
+      - pi = kappa*y
+    plan:
+      - y = y(+1) + sigma*pi(+1) + sigma*d
+      - pi = kappa*y + beta*pi(+1)
+
+  shocks:
+    - d = rho_d*d(-1) + e_d
+
+  trend:
+    terminal:
+      - y = sigma*d
+      - pi = kappa*y
+    plan:
+      - y = y(+1) + sigma*pi(+1) + sigma*d
+      - pi = kappa*y + beta*pi(+1)
+
+  value:
+    function: []
+    update: []
+
+calibration:
+  parameters:
+    beta: 0.99
+    sigma: 1.0
+    kappa: 0.024
+    rho_d: 0.9
+    household_cost: 0.01
+    pricing_cost: 0.00001
+  covariance:
+    e_d: 1.0

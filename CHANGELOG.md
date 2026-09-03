@@ -4,6 +4,7 @@ This project uses `setuptools_scm` (version comes from git tags).
 
 ## Unreleased
 
+- FHP: add `own_horizon_projection` beliefs for separate endogenous component horizons, with diagonal perceived choices and row-specific realized continuations
 - FHP: fix mixed row-specific planning horizons so unequal positive counters follow saturated periods-remaining timing in Python, generated Fortran, and forecast histories
 - Endogenous horizons: add opt-in simultaneous mutual-best-response selection with explicit multiplicity policies and finite-grid diagnostics
 - IRFOC: fix explicit lag handling at nonzero-history boundaries so `i(-1)` reuses exact lag alias columns like `ilag` when available
