@@ -11,6 +11,51 @@ Each component applies the incremental stopping rule
 k* = min { k >= 0 : MB(k + 1) < Δτ(k + 1) }, capped at k_max.
 ```
 
+## Beliefs about other components
+
+The optional `belief_mode` determines which continuation a component uses when
+horizons differ. The default is `correct`. It solves the joint mixed-horizon
+economy along the saturated countdown
+`(h, f) -> (max(h - 1, 0), max(f - 1, 0))`.
+
+Set `belief_mode: own_horizon_projection` for the Woodford projection:
+
+```yaml
+stopping_rule:
+  belief_mode: own_horizon_projection
+  selection_mode: simultaneous
+  components:
+    household:
+      k_max: 4
+      assign_lhs: [y]
+      cost: {a: household_cost}
+      lambda: 1.0
+      policy_object: y
+    pricing:
+      k_max: 4
+      assign_lhs: [pi]
+      cost: {a: pricing_cost}
+      lambda: 1.0
+      policy_object: pi
+```
+
+A component evaluating horizon `k` then solves a perceived economy in which
+every planning row has horizon `k`, including rows with fixed actual horizons.
+If realized horizons are `(h, f)`, the household rows use the diagonal continuation `(h - 1, h - 1)` and the pricing
+rows use `(f - 1, f - 1)`. The realized current allocation still solves all
+model equations jointly. Equal horizons nest the standard FHP solution exactly.
+
+Horizon choices are independent of opponents' realized horizons under this
+projection. Sequential and simultaneous selection therefore produce the same
+profile away from ties, though simultaneous mode remains useful for explicit
+diagnostics. Different components may have different `k_max` values; a component
+can project its candidate `k` onto a component whose own choice grid ends sooner.
+
+`own_horizon_projection` currently requires `declarations.expectations: 0`. A
+single aggregate forecast row is not well-defined when row owners hold different
+subjective forecast paths. Simulation, GIRFs, and particle filtering of current
+observables remain supported.
+
 ## Sequential selection (default)
 
 The backward-compatible default is `selection_mode: sequential`. Components
@@ -129,6 +174,8 @@ is used consistently. GIRF output includes mean baseline and shocked horizons.
   `dsge/examples/fhp/partial_equilibrium_endogenous.yaml`
 - Two-component simultaneous YAML (household 0..4, pricing 0..10):
   `dsge/examples/fhp/fhp_endogenous_two_component.yaml`
+- Two-component Woodford-projection NK YAML:
+  `dsge/examples/fhp/nk_endogenous_own_horizon_projection.yaml`
 - Monte Carlo GIRF script: `dsge/examples/fhp/girf_endogenous_horizon.py`
 
 Run the GIRF example with:
@@ -136,3 +183,20 @@ Run the GIRF example with:
 ```bash
 uv run python dsge/examples/fhp/girf_endogenous_horizon.py
 ```
+
+## Fixed horizons with own-horizon projection
+
+The same belief construction is available directly when compiling a fixed FHP
+model:
+
+```python
+linear = fhp_model.compile_model(
+    k={"default": 2, "by_lhs": {"c": 1, "q": 1, "pi": 2}},
+    belief_mode="own_horizon_projection",
+)
+```
+
+Here each row uses the continuation from the common-horizon economy associated
+with its own remaining horizon. Rows whose horizon is zero use their terminal
+equation. The default `belief_mode="correct"` retains the joint saturated
+countdown used by earlier versions.

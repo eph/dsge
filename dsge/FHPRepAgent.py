@@ -240,7 +240,8 @@ class LinearDSGEforFHPRepAgent(LinearDSGEModel):
         state_names=None,
         obs_names=None,
         prior=None,
-        parameter_names=None
+        parameter_names=None,
+        belief_mode="correct",
     ):
 
         if len(yy.shape) < 2:
@@ -285,6 +286,12 @@ class LinearDSGEforFHPRepAgent(LinearDSGEModel):
         self.k = int(k)
         self.k_cycle_row = None if k_cycle_row is None else np.asarray(k_cycle_row, dtype=int)
         self.k_trend_row = None if k_trend_row is None else np.asarray(k_trend_row, dtype=int)
+        self.belief_mode = str(belief_mode)
+        if self.belief_mode not in {"correct", "own_horizon_projection"}:
+            raise ValueError(
+                "belief_mode must be 'correct' or 'own_horizon_projection', "
+                f"got {self.belief_mode!r}"
+            )
 
     def system_matrices(self, p0):
 
@@ -344,55 +351,119 @@ class LinearDSGEforFHPRepAgent(LinearDSGEModel):
                    f"k_trend_row must have shape ({nvar},), got {k_trend_row.shape}"
                )
 
-       for m in range(1, self.k + 1):
-           # At backward step m, row i has
-           # max(k_cycle_row[i] - (self.k - m), 0) periods remaining.
-           # It therefore uses its planning equation exactly when that counter
-           # is positive.  This orders unequal positive horizons along their
-           # saturated predecessor path instead of reversing the shorter row.
+       if self.belief_mode == "correct":
+           for m in range(1, self.k + 1):
+               # At backward step m, row i has
+               # max(k_cycle_row[i] - (self.k - m), 0) periods remaining.
+               # It therefore uses its planning equation exactly when that counter
+               # is positive. This follows the joint saturated predecessor path.
+               alphaC_eff = alpha0_cycle.copy()
+               alphaF_eff = np.zeros_like(alphaF_cycle)
+               alphaB_eff = alpha1_cycle.copy()
+               betaS_eff = beta0_cycle.copy()
+
+               plan_rows = m > self.k - k_cycle_row
+               alphaC_eff[plan_rows, :] = alphaC_cycle[plan_rows, :]
+               alphaF_eff[plan_rows, :] = alphaF_cycle[plan_rows, :]
+               alphaB_eff[plan_rows, :] = alphaB_cycle[plan_rows, :]
+               betaS_eff[plan_rows, :] = betaS_cycle[plan_rows, :]
+
+               inv_cycle = np.linalg.inv(alphaC_eff - alphaF_eff @ A_cycle)
+               A_cycle_new = inv_cycle @ alphaB_eff
+               B_cycle_new = inv_cycle @ (alphaF_eff @ B_cycle @ P + betaS_eff)
+
+               # Trend uses the same remaining-horizon counters; terminal rows
+               # contribute their value loading (betaV_trend).
+               alphaC_eff = alpha0_trend.copy()
+               alphaF_eff = np.zeros_like(alphaF_trend)
+               alphaB_eff = alpha1_trend.copy()
+               betaV_eff = betaV_trend.copy()
+
+               plan_rows = m > self.k - k_trend_row
+               alphaC_eff[plan_rows, :] = alphaC_trend[plan_rows, :]
+               alphaF_eff[plan_rows, :] = alphaF_trend[plan_rows, :]
+               alphaB_eff[plan_rows, :] = alphaB_trend[plan_rows, :]
+               betaV_eff[plan_rows, :] = 0.0
+
+               inv_trend = np.linalg.inv(alphaC_eff - alphaF_eff @ A_trend)
+               A_trend_new = inv_trend @ alphaB_eff
+               B_trend_new = inv_trend @ (alphaF_eff @ B_trend + betaV_eff)
+
+               A_cycle = A_cycle_new
+               B_cycle = B_cycle_new
+               A_trend = A_trend_new
+               B_trend = B_trend_new
+
+               if self.expectations > 0:
+                   A_cycle_history[m] = A_cycle.copy()
+                   B_cycle_history[m] = B_cycle.copy()
+
+                   A_trend_history[m] = A_trend.copy()
+                   B_trend_history[m] = B_trend.copy()
+       else:
+           if self.expectations > 0:
+               raise ValueError(
+                   "own_horizon_projection does not support declarations.expectations > 0: "
+                   "different row owners have different subjective forecast paths"
+               )
+
+           # Solve the perceived common-k economies once. A row with horizon k
+           # uses the continuation from the diagonal (k-1, ..., k-1) economy,
+           # rather than the realized joint predecessor of the row-horizon tuple.
+           common_cycle = [(A_cycle.copy(), B_cycle.copy())]
+           common_trend = [(A_trend.copy(), B_trend.copy())]
+           for _ in range(1, self.k + 1):
+               prev_A_cycle, prev_B_cycle = common_cycle[-1]
+               inv_cycle = np.linalg.inv(alphaC_cycle - alphaF_cycle @ prev_A_cycle)
+               next_A_cycle = inv_cycle @ alphaB_cycle
+               next_B_cycle = inv_cycle @ (
+                   alphaF_cycle @ prev_B_cycle @ P + betaS_cycle
+               )
+               common_cycle.append((next_A_cycle, next_B_cycle))
+
+               prev_A_trend, prev_B_trend = common_trend[-1]
+               inv_trend = np.linalg.inv(alphaC_trend - alphaF_trend @ prev_A_trend)
+               next_A_trend = inv_trend @ alphaB_trend
+               next_B_trend = inv_trend @ (alphaF_trend @ prev_B_trend)
+               common_trend.append((next_A_trend, next_B_trend))
+
            alphaC_eff = alpha0_cycle.copy()
-           alphaF_eff = np.zeros_like(alphaF_cycle)
            alphaB_eff = alpha1_cycle.copy()
            betaS_eff = beta0_cycle.copy()
+           forward_A_cycle = np.zeros_like(alphaF_cycle)
+           forward_B_cycle = np.zeros_like(betaS_cycle)
+           for i, horizon in enumerate(k_cycle_row):
+               if horizon <= 0:
+                   continue
+               alphaC_eff[i, :] = alphaC_cycle[i, :]
+               alphaB_eff[i, :] = alphaB_cycle[i, :]
+               betaS_eff[i, :] = betaS_cycle[i, :]
+               prev_A, prev_B = common_cycle[int(horizon) - 1]
+               forward_A_cycle[i, :] = alphaF_cycle[i, :] @ prev_A
+               forward_B_cycle[i, :] = alphaF_cycle[i, :] @ prev_B @ P
 
-           plan_rows = m > self.k - k_cycle_row
-           alphaC_eff[plan_rows, :] = alphaC_cycle[plan_rows, :]
-           alphaF_eff[plan_rows, :] = alphaF_cycle[plan_rows, :]
-           alphaB_eff[plan_rows, :] = alphaB_cycle[plan_rows, :]
-           betaS_eff[plan_rows, :] = betaS_cycle[plan_rows, :]
+           inv_cycle = np.linalg.inv(alphaC_eff - forward_A_cycle)
+           A_cycle = inv_cycle @ alphaB_eff
+           B_cycle = inv_cycle @ (forward_B_cycle + betaS_eff)
 
-           inv_cycle = np.linalg.inv(alphaC_eff - alphaF_eff @ A_cycle)
-           A_cycle_new = inv_cycle @ alphaB_eff
-           B_cycle_new = inv_cycle @ (alphaF_eff @ B_cycle @ P + betaS_eff)
-
-           # Trend uses the same remaining-horizon counters; terminal rows
-           # contribute their value loading (betaV_trend).
            alphaC_eff = alpha0_trend.copy()
-           alphaF_eff = np.zeros_like(alphaF_trend)
            alphaB_eff = alpha1_trend.copy()
            betaV_eff = betaV_trend.copy()
+           forward_A_trend = np.zeros_like(alphaF_trend)
+           forward_B_trend = np.zeros_like(betaV_trend)
+           for i, horizon in enumerate(k_trend_row):
+               if horizon <= 0:
+                   continue
+               alphaC_eff[i, :] = alphaC_trend[i, :]
+               alphaB_eff[i, :] = alphaB_trend[i, :]
+               betaV_eff[i, :] = 0.0
+               prev_A, prev_B = common_trend[int(horizon) - 1]
+               forward_A_trend[i, :] = alphaF_trend[i, :] @ prev_A
+               forward_B_trend[i, :] = alphaF_trend[i, :] @ prev_B
 
-           plan_rows = m > self.k - k_trend_row
-           alphaC_eff[plan_rows, :] = alphaC_trend[plan_rows, :]
-           alphaF_eff[plan_rows, :] = alphaF_trend[plan_rows, :]
-           alphaB_eff[plan_rows, :] = alphaB_trend[plan_rows, :]
-           betaV_eff[plan_rows, :] = 0.0
-
-           inv_trend = np.linalg.inv(alphaC_eff - alphaF_eff @ A_trend)
-           A_trend_new = inv_trend @ alphaB_eff
-           B_trend_new = inv_trend @ (alphaF_eff @ B_trend + betaV_eff)
-
-           A_cycle = A_cycle_new
-           B_cycle = B_cycle_new
-           A_trend = A_trend_new
-           B_trend = B_trend_new
-
-           if self.expectations > 0:
-               A_cycle_history[m] = A_cycle.copy()
-               B_cycle_history[m] = B_cycle.copy()
-
-               A_trend_history[m] = A_trend.copy()
-               B_trend_history[m] = B_trend.copy()
+           inv_trend = np.linalg.inv(alphaC_eff - forward_A_trend)
+           A_trend = inv_trend @ alphaB_eff
+           B_trend = inv_trend @ (forward_B_trend + betaV_eff)
 
        self.A_cycle = A_cycle
        self.B_cycle = B_cycle
@@ -874,7 +945,7 @@ class FHPRepAgent(Base):
         logger.info(f"FHP model creation complete: {len(variables)} variables, {len(parameters)} parameters")
         return cls(**model_dict)
 
-    def compile_model(self, k=None,expectations=None):
+    def compile_model(self, k=None, expectations=None, belief_mode="correct"):
 
         k_spec = _parse_k_spec(self.get("k_spec", self["k"]) if k is None else k)
         k = k_spec["k_max"]
@@ -1068,6 +1139,7 @@ class FHPRepAgent(Base):
                                           HH, k,
                                           k_cycle_row=k_cycle_row,
                                           k_trend_row=k_trend_row,
+                                          belief_mode=belief_mode,
                                           t0=0, expectations=expectations,
                                           shock_names=shock_names,
                                           state_names=state_names,
@@ -1121,6 +1193,17 @@ class FHPRepAgent(Base):
 
         selection_mode = str(hc.get("selection_mode", "sequential"))
         equilibrium_selection = str(hc.get("equilibrium_selection", "error"))
+        belief_mode = str(hc.get("belief_mode", "correct"))
+        if belief_mode not in {"correct", "own_horizon_projection"}:
+            raise ValueError(
+                "declarations.stopping_rule.belief_mode must be 'correct' or "
+                f"'own_horizon_projection', got {belief_mode!r}"
+            )
+        if belief_mode == "own_horizon_projection" and expectations > 0:
+            raise ValueError(
+                "own_horizon_projection does not support declarations.expectations > 0: "
+                "different row owners have different subjective forecast paths"
+            )
 
         selection_order = hc.get("selection_order", None)
         if selection_order is None:
@@ -1288,8 +1371,19 @@ class FHPRepAgent(Base):
 
             return _build(cycle_plan_eqs, "cycle.plan"), _build(trend_plan_eqs, "trend.plan")
 
-        def _full_mats_at_regime(params_vec: np.ndarray, regime: Tuple[int, ...]):
-            k_cycle_row, k_trend_row = _row_horizons_for_regime(regime)
+        def _full_mats_at_regime(
+            params_vec: np.ndarray,
+            regime: Tuple[int, ...],
+            *,
+            common_horizon: Optional[int] = None,
+        ):
+            if common_horizon is None:
+                k_cycle_row, k_trend_row = _row_horizons_for_regime(regime)
+            else:
+                # Own-type beliefs also project k onto planning rows that have
+                # a fixed actual horizon rather than an endogenous component.
+                k_cycle_row = np.full((nv,), int(common_horizon), dtype=int)
+                k_trend_row = np.full((nv,), int(common_horizon), dtype=int)
             k_use = int(max(int(np.max(k_cycle_row)), int(np.max(k_trend_row))))
             lm = LinearDSGEforFHPRepAgent(
                 kernel.yy,
@@ -1319,6 +1413,7 @@ class FHPRepAgent(Base):
                 k_use,
                 k_cycle_row=k_cycle_row,
                 k_trend_row=k_trend_row,
+                belief_mode=belief_mode,
                 t0=kernel.t0,
                 expectations=kernel.expectations,
                 shock_names=kernel.shock_names,
@@ -1425,9 +1520,17 @@ class FHPRepAgent(Base):
         from .endogenous_horizon_switching import EndogenousHorizonSwitchingModel
 
         model_ref: Dict[str, Any] = {}
+        perceived_mats_cache: Dict[Tuple[bytes, int], Tuple[np.ndarray, ...]] = {}
 
-        def solve_given_regime(params_vec: np.ndarray, regime: Tuple[int, ...]):
-            CC, TT, RR, QQ, DD, ZZ, HH = _full_mats_at_regime(params_vec, tuple(int(x) for x in regime))
+        def _reduced_mats_at_regime(
+            params_vec: np.ndarray,
+            regime: Tuple[int, ...],
+            *,
+            common_horizon: Optional[int] = None,
+        ):
+            CC, TT, RR, QQ, DD, ZZ, HH = _full_mats_at_regime(
+                params_vec, tuple(int(x) for x in regime), common_horizon=common_horizon
+            )
 
             Q = _controllable_subspace_basis(TT, RR, tol=basis_tol, max_steps=basis_max_steps)
             r = int(Q.shape[1])
@@ -1449,6 +1552,9 @@ class FHPRepAgent(Base):
             HH = np.asarray(HH, dtype=float)
             return TT_red, RR_red, ZZ_red, DD_red, QQ, HH
 
+        def solve_given_regime(params_vec: np.ndarray, regime: Tuple[int, ...]):
+            return _reduced_mats_at_regime(params_vec, regime)
+
         def info_func(x_t: np.ndarray, t: int, chosen):
             x_t = np.asarray(x_t, dtype=float).reshape(-1)
             if x_t.shape != (len(reduced_state_names),):
@@ -1465,10 +1571,24 @@ class FHPRepAgent(Base):
             if m is None:  # pragma: no cover
                 raise RuntimeError("Internal error: switching model not initialized.")
             x_t = np.asarray(info_t["x"], dtype=float).reshape(-1)
-            k_by_comp = {c: int(chosen_regime.get(c, 0)) for c in components}
-            k_by_comp[str(component)] = int(k)
-            reg = tuple(int(k_by_comp[c]) for c in components)
-            TT, RR, ZZ, DD, QQ, HH = m.get_mats(params_vec, reg)
+            if belief_mode == "own_horizon_projection":
+                # A component evaluating k projects its own horizon onto every
+                # other component, even when the realized horizon grids differ.
+                params_arr = np.ascontiguousarray(params_vec, dtype=float)
+                cache_key = (params_arr.tobytes(), int(k))
+                mats = perceived_mats_cache.get(cache_key)
+                if mats is None:
+                    diagonal_regime = tuple(int(k) for _ in components)
+                    mats = _reduced_mats_at_regime(
+                        params_arr, diagonal_regime, common_horizon=int(k)
+                    )
+                    perceived_mats_cache[cache_key] = mats
+                TT, RR, ZZ, DD, QQ, HH = mats
+            else:
+                k_by_comp = {c: int(chosen_regime.get(c, 0)) for c in components}
+                k_by_comp[str(component)] = int(k)
+                reg = tuple(int(k_by_comp[c]) for c in components)
+                TT, RR, ZZ, DD, QQ, HH = m.get_mats(params_vec, reg)
             y_hat = ZZ @ x_t + np.asarray(DD, dtype=float).reshape(-1)
 
             # Map symbol -> numeric value; if a name overlaps between state and
@@ -1512,6 +1632,7 @@ class FHPRepAgent(Base):
 
         # Attach helpful metadata.
         setattr(out_model, "fhp_model", self)
+        setattr(out_model, "belief_mode", belief_mode)
         setattr(out_model, "state_names", list(reduced_state_names))
         setattr(out_model, "obs_names", list(obs_names))
         setattr(out_model, "shock_names", list(kernel.shock_names) if kernel.shock_names is not None else None)
