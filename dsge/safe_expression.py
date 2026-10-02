@@ -80,7 +80,8 @@ def _number(value):
 
 
 class _Builder:
-    def __init__(self, context: Mapping[str, Any]):
+    def __init__(self, context: Mapping[str, Any], source: str):
+        self.source = source.strip().replace("^", "**")
         self.context = {**_CONSTANTS, **_FUNCTIONS, "SUM": sp.Sum, "EXP": EXP, **context}
 
     def lookup(self, name):
@@ -158,10 +159,15 @@ class _Builder:
 
     def build(self, node):
         if isinstance(node, ast.Constant):
+            if isinstance(node.value, float):
+                # AST floats have already rounded (and can overflow/underflow).
+                # Build from the validated numeric token, not that Python float.
+                token = ast.get_source_segment(self.source, node)
+                return sp.Float(token.replace("_", ""))
             return _number(node.value)
         if isinstance(node, ast.Name):
             value = self.lookup(node.id)
-            return _number(value) if isinstance(value, numbers.Real) else value
+            return value if isinstance(value, sp.Basic) else _number(value)
         if isinstance(node, ast.BinOp):
             return _BINARY[type(node.op)](self.build(node.left), self.build(node.right))
         if isinstance(node, ast.UnaryOp):
@@ -206,7 +212,7 @@ def parse_expression(value, context: Mapping[str, Any]) -> sp.Expr:
     calls, and automatic creation of unknown symbols are never accepted.
     """
     if isinstance(value, str):
-        builder = _Builder(context)
+        builder = _Builder(context, value)
         tree = _tree(value)
         builder.validate(tree)
         try:
@@ -233,7 +239,7 @@ def parse_matrix(value, context: Mapping[str, Any]) -> sp.Matrix:
             root = root.args[0]
         if not isinstance(root, (ast.List, ast.Tuple)):
             raise ValueError("Expected a matrix as a nested list")
-        builder = _Builder(context)
+        builder = _Builder(context, value)
         rows = []
         for row in root.elts:
             if not isinstance(row, (ast.List, ast.Tuple)):
@@ -282,9 +288,26 @@ def prepare_expression(value, context: Mapping[str, Any]):
     """Ensure Base.lambdify never receives unparsed strings, even in containers."""
     if isinstance(value, str):
         tree = _tree(value)
-        if isinstance(tree, (ast.List, ast.Tuple)) or (
-            isinstance(tree, ast.Call) and isinstance(tree.func, ast.Name) and tree.func.id == "Matrix"
-        ):
+        if isinstance(tree, (ast.List, ast.Tuple)):
+            builder = _Builder(context, value)
+
+            def validate_container(node):
+                if isinstance(node, (ast.List, ast.Tuple)):
+                    for child in node.elts:
+                        validate_container(child)
+                else:
+                    builder.validate(node)
+
+            def build_container(node):
+                if isinstance(node, (ast.List, ast.Tuple)):
+                    container_type = list if isinstance(node, ast.List) else tuple
+                    return container_type(build_container(child) for child in node.elts)
+                return builder.build(node)
+
+            # Check every leaf before constructing any symbolic expression.
+            validate_container(tree)
+            return build_container(tree)
+        if isinstance(tree, ast.Call) and isinstance(tree.func, ast.Name) and tree.func.id == "Matrix":
             return parse_matrix(value, context)
         return parse_expression(value, context)
     if isinstance(value, sp.MatrixBase):

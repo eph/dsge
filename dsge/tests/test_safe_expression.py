@@ -211,3 +211,69 @@ def test_irfoc_losses_and_discount_strings_reject_code(tmp_path):
         with pytest.raises(ValueError):
             control.simulate_optimal_control(loss, discount=discount)
     assert not sentinel.exists()
+
+
+@pytest.mark.parametrize("source", [
+    "0.12345678901234567890123456789", "1e-1000", "1e1000", "0.1",
+    "2.5e-17", "1_0.2_5", "0xff", "0b101", "1_000",
+])
+def test_numeric_literals_preserve_sympy_precision(source):
+    expected = sp.Float(source.replace("_", "")) if any(c in source for c in ".eE") else sp.Integer(int(source, 0))
+    actual = parse_expression(source, {})
+    assert actual == expected
+    if isinstance(expected, sp.Float):
+        assert actual._prec == expected._prec
+        assert actual.is_finite is True
+        assert actual != 0
+
+
+def test_named_symbolic_numbers_are_not_rounded_to_python_float():
+    values = {"third": sp.Rational(1, 3),
+              "precise": sp.Float("0.12345678901234567890", 30)}
+    for name, value in values.items():
+        assert parse_expression(name, values) is value
+    assert parse_expression("third + precise", values) == values["third"] + values["precise"]
+
+
+def test_numeric_literals_preserve_arithmetic_and_matrix_semantics():
+    # Tiny/large literals can cancel to an ordinary finite number before numeric
+    # code generation; rounding each token through Python float destroys this.
+    tiny = sp.Float("1e-1000")
+    large = sp.Float("1e1000")
+    assert parse_expression("1e-1000 * 1e1000", {}) == tiny * large
+    expected = sp.Float("0.12345678901234567890123456789")
+    assert parse_matrix("[[0.12345678901234567890123456789]]", {})[0, 0] == expected
+    assert parse_expression("-2^2 + 1/3 + (4 + 5)*6", {}) == -4 + sp.Rational(1, 3) + 54
+
+
+@pytest.mark.parametrize("source, expected", [
+    ("[p, 1-p]", [0.25, 0.75]),
+    ("(p, 1-p)", (0.25, 0.75)),
+    ("[[p, 1-p]]", [[0.25, 0.75]]),
+    ("[p, (1-p, [p**2])]", [0.25, (0.75, [0.0625])]),
+    ("[]", []),
+    ("()", ()),
+])
+def test_lambdify_string_containers_preserve_structure_and_types(source, expected):
+    model = Base(parameters=[Parameter("p")], auxiliary_parameters={})
+    actual = model.lambdify(source)([0.25])
+
+    def assert_structure(left, right):
+        assert type(left) is type(right)
+        if isinstance(right, (list, tuple)):
+            assert len(left) == len(right)
+            for a, b in zip(left, right):
+                assert_structure(a, b)
+        else:
+            assert left == right
+
+    assert_structure(actual, expected)
+
+
+def test_lambdify_nested_container_payload_is_rejected_without_effects(tmp_path):
+    sentinel = tmp_path / "must-not-exist"
+    payload = f"[0, (1, [__import__('pathlib').Path({str(sentinel)!r}).touch()])]"
+    model = Base(parameters=[], auxiliary_parameters={})
+    with pytest.raises(ValueError):
+        model.lambdify(payload)
+    assert not sentinel.exists()

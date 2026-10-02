@@ -9,6 +9,8 @@ policy rules, losses, fixed-parameter formulas, and transition matrices.
   double underscores.
 - Constants `pi`, `E`, `I`, `oo`, and `inf` have their SymPy meanings unless a
   declared model symbol overrides the name.
+- Numeric expression text preserves decimal precision and exponent range; named
+  SymPy numbers retain their exact symbolic values.
 - Use numeric literals and `+`, `-`, `*`, `/`, and `**`. `^` is accepted for powers.
 - Use integer lead/lag offsets: `x(+1)`, `x(-1)`, and `x` for the current period.
 - Use `EXP(j)(expression)` for expectations and `SUM(expression, (j, a, b))`
@@ -36,8 +38,14 @@ permits the file to run with the Python process's full authority. This option is
 not a sandbox. The first- and second-order compilation paths apply the same trust
 policy; a model cannot grant itself permission in YAML. These options are
 available on `compile_model`, `python_sims_matrices`, and `solve_second_order`.
-Each direct compilation request needs its own opt-in; a compiled second-order
-object retains a copy of the caller's registry and trust options.
+Each direct compilation request needs its own opt-in; compiled second-order
+and OBC objects retain a copy of the caller's registry and trust options. The
+Fortran wrappers (`smc`, `make_fortran_model`, and `translate_fortran`) and the
+high-level SMC estimation wrappers accept the same explicit trust options.
+For YAML/Slurm estimation reloads, `read_yaml_options` can explicitly supply
+`include_root`, `max_include_depth`, and `max_include_bytes`; the model file
+cannot grant itself these capabilities. Host callables submitted through Slurm
+must be serializable by submitit and available in the worker environment.
 
 For second-order compilation, `max_tensor_entries` defaults to 2,000,000 and is
 checked before symbolic derivatives are constructed. The compiled object retains

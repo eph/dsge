@@ -448,7 +448,8 @@ def generate_hardcoded_data_fortran(yy_data):
     missing_data = 'self%MISSING_DATA = .true.' if np.isnan(flat_data).any() else ''
     return f"""
   ! Hardcoded data array (nobs={nobs}, T={T})
-  self%yy = reshape([{data_init}], &
+  self%yy = reshape([ &
+{data_init}], &
                     [{nobs}, {T}])
   {missing_data}  
 """

@@ -99,7 +99,9 @@ def _expr_to_dynare(expr, context: Dict[str, object]) -> str:
             op = " + " if isinstance(node, sympy.Add) else " * "
             return "(" + op.join(emit(arg) for arg in node.args) + ")"
         if isinstance(node, sympy.Pow):
-            return f"({emit(node.base)}^{emit(node.exp)})"
+            # Parenthesize each operand: (-1^a) means -(1^a) in Dynare,
+            # whereas the symbolic AST may mean (-1)^a.
+            return f"(({emit(node.base)})^({emit(node.exp)}))"
         if node.func in _FUNCTIONS:
             return _FUNCTIONS[node.func] + "(" + ", ".join(emit(a) for a in node.args) + ")"
         raise ValueError(f"Unsupported Dynare expression node: {type(node).__name__}")

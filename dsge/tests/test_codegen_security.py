@@ -14,6 +14,7 @@ from dsge.codegen_safety import fortran_string
 from dsge.dynare_export import to_dynare_mod, validate_generated_dynare
 from dsge.dynare_integration import run_dynare_mod_text
 from dsge.parse_yaml import read_yaml
+from dsge.safe_expression import parse_expression
 from dsge.symbols import Equation, Parameter, Shock, Variable
 from dsge.translate import (
     generate_hardcoded_data_fortran, make_fortran_model, smc,
@@ -188,8 +189,26 @@ def test_dynare_preserves_math_lags_shocks_and_calibration(model):
     assert "x(-1)" in text and "x(1)" in text
     assert "exp(x(1))" in text
     assert "var e, u =" in text
-    assert "rho = (1 + (-1 * (sigma^2)));" in text
+    assert "rho = (1 + (-1 * ((sigma)^(2))));" in text
     assert "stoch_simul(order=1, irf=0);" in text
+
+
+@pytest.mark.parametrize("source", [
+    "(-1)**rho", "(-2)**rho", "(-rho)**sigma", "rho**(-sigma)",
+    "rho**(-2)", "rho**(-1/2)", "(-rho - sigma)**(-rho + sigma)",
+    "(rho**sigma)**rho", "rho**(sigma**rho)",
+])
+def test_dynare_power_serialization_preserves_operand_precedence(model, source):
+    rho, sigma = Parameter("rho"), Parameter("sigma")
+    context = {"rho": rho, "sigma": sigma}
+    expression = parse_expression(source, context)
+    model["perturb_eq"] = [Equation(Variable("x"), expression)]
+    text = to_dynare_mod(model).mod_text
+    equation = next(line for line in text.splitlines() if line.startswith("  x = "))
+    printed = equation.removeprefix("  x = ").removesuffix(";")
+    recovered = parse_expression(printed, context)
+    assert recovered == expression
+    assert recovered.subs({rho: 2, sigma: 3}) == expression.subs({rho: 2, sigma: 3})
 
 
 @pytest.mark.parametrize("text", ["native; disp(123); end;", "@#include 'unused'", "steady;", "model; x = 0; end;"])
@@ -231,6 +250,37 @@ def test_fortran_data_is_numeric_and_nan_is_explicit():
         generate_hardcoded_data_fortran(np.array([["0; stop"]]))
     with pytest.raises(ValueError, match="finite"):
         generate_hardcoded_data_fortran(np.array([[np.inf]]))
+
+
+@pytest.mark.parametrize("data", [
+    np.full((2, 7), np.nan),
+    np.array([[np.finfo(float).max, -np.finfo(float).max, np.finfo(float).tiny,
+               np.nextafter(0.0, 1.0), -0.0, 1e20, -1e-20]]),
+])
+def test_fortran_data_respects_line_limits_and_compiles(data, tmp_path):
+    generated = generate_hardcoded_data_fortran(data)
+    assert max(map(len, generated.splitlines())) <= 132
+    compiler = shutil.which("gfortran")
+    if compiler is None:
+        pytest.skip("Fortran compiler unavailable")
+    rows, columns = data.shape
+    source = tmp_path / "data.f90"
+    source.write_text(f"""program generated_data
+  use, intrinsic :: iso_fortran_env, only: wp => real64
+  use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
+  implicit none
+  type test_model
+    real(wp) :: yy({columns}, {rows})
+    logical :: MISSING_DATA = .false.
+  end type
+  type(test_model) :: self
+{generated}
+end program generated_data
+""", encoding="utf-8")
+    # Check syntax and numeric constants only; never execute generated programs.
+    result = subprocess.run([compiler, "-Werror=line-truncation", "-fsyntax-only", str(source)],
+                            capture_output=True, text=True, cwd=tmp_path)
+    assert result.returncode == 0, result.stderr
 
 
 def test_fortran_legacy_module_name_is_validated_before_writing(model, tmp_path):

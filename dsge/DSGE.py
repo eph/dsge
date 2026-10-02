@@ -519,22 +519,30 @@ Equations:
         ))
         # Auxiliary lambdas also capture the external context. Rebuild them when
         # compiling with a different registry instead of reusing earlier authority.
+        previous_auxiliary = self.lambdify_auxiliary
         self.lambdify_auxiliary = None
-
-        self.GAM0 = self.lambdify(GAM0, context=context_f) 
-        self.GAM1 = self.lambdify(GAM1, context=context_f) 
-        self.PSI = self.lambdify(PSI, context=context_f)
-        self.PPI = self.lambdify(PPI, context=context_f)
-
-        self.QQ = self.lambdify(self["covariance"], context=context_f)
-        self.HH = self.lambdify(self["measurement_errors"], context=context_f)
-
-        self.DD = self.lambdify(DD, context=context_f)
-        self.ZZ = self.lambdify(ZZ, context=context_f)
-
-        self.psi = None
-        self._python_sims_lre_form = lre_form
-        self._python_sims_external_key = external_key
+        try:
+            numeric_matrices = {
+                "GAM0": self.lambdify(GAM0, context=context_f),
+                "GAM1": self.lambdify(GAM1, context=context_f),
+                "PSI": self.lambdify(PSI, context=context_f),
+                "PPI": self.lambdify(PPI, context=context_f),
+                "QQ": self.lambdify(self["covariance"], context=context_f),
+                "HH": self.lambdify(self["measurement_errors"], context=context_f),
+                "DD": self.lambdify(DD, context=context_f),
+                "ZZ": self.lambdify(ZZ, context=context_f),
+            }
+        except BaseException:
+            self.lambdify_auxiliary = previous_auxiliary
+            raise
+        # Publish one complete context: a failed recompile must not mix matrices
+        # from a new registry with the previous registry's cache identity.
+        self.__dict__.update(
+            numeric_matrices,
+            psi=None,
+            _python_sims_lre_form=lre_form,
+            _python_sims_external_key=external_key,
+        )
 
         # if self['__data__']['declarations']['type'] == 'sv':
         #     sv = self['__data__']['equations']['sv']
@@ -718,6 +726,10 @@ Equations:
         n_workers: int = 1,
         parallel: str = "thread",
         wait: bool = False,
+        external_functions=None,
+        allow_external_code: bool = False,
+        max_tensor_entries: int = 2_000_000,
+        read_yaml_options: Optional[Mapping[str, Any]] = None,
     ):
         """
         Estimate the model using tempered SMC.
@@ -743,6 +755,14 @@ Equations:
             Likelihood batch parallelism for local runs (`parallel="thread"` avoids pickling).
         wait
             Only for backend `"slurm"`: if True, block and return the result.
+        external_functions, allow_external_code, max_tensor_entries
+            Explicit host options forwarded to compilation locally or on the worker.
+            File plugins remain disabled by default. A registry used with Slurm must
+            be serializable by submitit and available in the worker environment.
+        read_yaml_options
+            For Slurm reloads only: explicitly supply `include_root`,
+            `max_include_depth`, and/or `max_include_bytes` to `read_yaml`.
+            Loading this model with includes does not authorize remote includes.
         """
         from .smc import SMCOptions, smc_submit_slurm
 
@@ -755,7 +775,14 @@ Equations:
 
         backend = str(backend).lower().strip()
         if backend == "local":
-            compiled = self.compile_model(order=order)
+            if read_yaml_options:
+                raise ValueError("read_yaml_options requires the Slurm YAML reload backend.")
+            compiled = self.compile_model(
+                order=order,
+                external_functions=external_functions,
+                allow_external_code=allow_external_code,
+                max_tensor_entries=max_tensor_entries,
+            )
             return compiled.estimate_smc(
                 options=options_obj,
                 log_lik_kwargs=log_lik_kwargs,
@@ -786,6 +813,10 @@ Equations:
                 parallel=str(parallel),
                 submitit_folder=submitit_folder,
                 slurm_params=slurm_params,
+                external_functions=external_functions,
+                allow_external_code=allow_external_code,
+                max_tensor_entries=max_tensor_entries,
+                read_yaml_options=read_yaml_options,
             )
             return job.result() if wait else job
 

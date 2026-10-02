@@ -1,7 +1,7 @@
 """Trust and resource limits at the numerical compilation boundary."""
 
 import io
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import numpy as np
 import pytest
@@ -105,6 +105,34 @@ def test_registry_never_imports_file_and_cache_tracks_callables(external_bundle,
         else:
             actual = model.solve_second_order(external_functions=registry).hx[0, 0]
         assert actual == pytest.approx(expected)
+    assert not marker.exists()
+
+
+def test_failed_registry_recompile_preserves_complete_previous_cache(external_bundle):
+    model, marker = external_bundle
+    registry_a = {"half_rho": lambda value: value / 2}
+    registry_b = {"half_rho": lambda value: value / 4}
+    first = model.compile_model(external_functions=registry_a)
+    previous_auxiliary = model.lambdify_auxiliary
+    original = model.lambdify
+    calls = 0
+
+    def interrupted(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 3:
+            raise ValueError("interrupted numerical compilation")
+        return original(*args, **kwargs)
+
+    with patch.object(model, "lambdify", side_effect=interrupted):
+        with pytest.raises(ValueError, match="interrupted"):
+            model.compile_model(external_functions=registry_b)
+    assert model.lambdify_auxiliary is previous_auxiliary
+    assert model.GAM1 is first.GAM1
+    retry = model.compile_model(external_functions=registry_a)
+    assert -retry.GAM1(model.p0())[0, 0] == pytest.approx(0.4)
+    changed = model.compile_model(external_functions=registry_b)
+    assert -changed.GAM1(model.p0())[0, 0] == pytest.approx(0.2)
     assert not marker.exists()
 
 
