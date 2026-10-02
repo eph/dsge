@@ -6,6 +6,8 @@ from typing import Any, Dict, Iterable, Mapping, Sequence, Tuple
 import numpy as np
 import sympy as sp
 
+from .safe_expression import parse_expression, validate_identifier
+
 from .endogenous_horizon_switching import EndogenousHorizonSwitchingModel
 from .planning_costs import MarginalCostSchedule, compile_cost_schedule
 
@@ -19,6 +21,8 @@ def _expr_str(x: Any) -> str:
 
 
 def _symbol_dict(names: Sequence[str]) -> Dict[str, sp.Symbol]:
+    for name in names:
+        validate_identifier(str(name))
     return {str(n): sp.Symbol(str(n)) for n in names}
 
 
@@ -43,7 +47,7 @@ def _parse_expr(
 ) -> sp.Expr:
     s = _expr_str(expr)
     try:
-        out = sp.sympify(s, locals=dict(ctx))
+        out = parse_expression(s, ctx)
     except Exception as e:  # pragma: no cover - error formatting
         raise ValueError(f"While parsing {where} expression {s!r}: {e}") from e
 

@@ -12,6 +12,7 @@ import numpy as np
 import sympy as sp
 
 from .DSGE import DSGE
+from .safe_expression import parse_expression
 
 
 class OccBinModel:
@@ -218,7 +219,8 @@ class OccBinModel:
     def _compile_when(self, when: str) -> Tuple[List[str], Any]:
         if not when:
             return [], lambda *args: False
-        expr = sp.sympify(when)
+        context = {v.name: sp.Symbol(v.name) for v in self.variables}
+        expr = parse_expression(when, context)
         syms = sorted(list(expr.free_symbols), key=lambda s: s.name)
         lam = sp.lambdify([s for s in syms], expr, modules=["numpy"])
         names = [s.name for s in syms]

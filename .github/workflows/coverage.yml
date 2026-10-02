@@ -10,34 +10,38 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
         with:
           fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: '3.10'
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4.2.0
+        with:
+          version: '0.9.6'
+          checksum: ccf643248118d5ed85698161e4456f384ff3ec1f20a9f89e4daa9f4de1b4ab6f
 
       - name: Install dependencies (uv)
         run: |
-          uv pip install -e .
-          uv pip install pytest pytest-cov coverage-badge
+          uv sync --frozen --group build --no-install-project
+          uv lock --check --no-build-isolation-package dsge
+          uv sync --frozen --group build --no-build-isolation-package dsge
 
       - name: Run tests with coverage (uv)
         run: |
-          uv run -m pytest -q dsge/tests --cov=dsge --cov-report=xml --cov-report=term
+          uv run --frozen --no-sync -m pytest -q dsge/tests --cov=dsge --cov-report=xml --cov-report=term
 
       - name: Generate coverage badge (uv)
         run: |
           mkdir -p badges
-          uv run coverage-badge -o badges/coverage.svg -f
+          uv run --frozen --no-sync coverage-badge -o badges/coverage.svg -f
 
       - name: Commit coverage badge
-        uses: stefanzweifel/git-auto-commit-action@v5
+        uses: stefanzweifel/git-auto-commit-action@b863ae1933cb653a53c021fe36dbb774e1fb9403 # v5.2.0
         with:
           commit_message: "chore(ci): update coverage badge"
           file_pattern: badges/coverage.svg

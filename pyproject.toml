@@ -42,7 +42,7 @@ slurm = [
 codegen = [
   # Fortress is hosted on GitHub and provides `fortress.make_smc` used by codegen.
   # For local development, prefer installing your checkout separately (e.g. `uv pip install -e ../fortress`).
-  "fortress @ git+https://github.com/eph/fortress.git",
+  "fortress @ git+https://github.com/eph/fortress.git@7fffbcfb037163295f12071d318455fa5651a2a1",
 ]
 
 [tool.setuptools]
@@ -65,7 +65,15 @@ dsge = [
 
 # uv-specific niceties
 [dependency-groups]
+build = [
+  "setuptools>=68,<81",
+  "wheel==0.45.1",
+  "setuptools-scm[toml]==8.3.1",
+]
 dev = [
+  "coverage-badge==1.1.2",
+  # coverage-badge 1.1.2 imports pkg_resources, absent from newer setuptools.
+  "setuptools<81",
   "pytest",
   "pytest-cov",
   "mypy",

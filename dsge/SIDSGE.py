@@ -12,6 +12,7 @@ import sympy
 from typing import Dict, Any
 
 from .Base import Base
+from .safe_expression import remove_sum
 from .symbols import Variable, Parameter, Shock, Equation, EXP
 from .validation import validate_si_model, validate_model_consistency
 from .logging_config import get_logger
@@ -413,7 +414,7 @@ class SIDSGE(Base):
             get_order = re.search(r'E\[([a-zA-Z0-9 -]+)\]', ee.__str__())
 
             if get_order is not None:
-                e_order = sympy.sympify(get_order.groups(0)[0], locals={j.name: j})
+                e_order = parse_expression(get_order.groups(0)[0], {j.name: j})
                 gap = e_order + j
                 d = ee.diff(EXP(e_order)(v(order))).subs({j:j+gap})
                 # if d is not sympy.S.Zero:
@@ -893,7 +894,7 @@ def read_si(model_yaml: Dict[str, Any]) -> SIDSGE:
     context = build_symbolic_context(var_ordering + par_ordering + index + shk_ordering + other_para,
                                      extras={'inf': sympy.oo})
     rcontext = context.copy()
-    rcontext['SUM'] = lambda x, d: x
+    rcontext['SUM'] = remove_sum
 
     for obs in obs_equations.items():
         obs_equations[obs[0]] = parse_expression(obs[1], context)
@@ -993,7 +994,7 @@ def read_si(model_yaml: Dict[str, Any]) -> SIDSGE:
         cal["auxiliary_parameters"] = {}
     else:
         cal['auxiliary_parameters'] = {op:
-                                       sympy.sympify(cal["auxiliary_parameters"][str(op)],
+                                       parse_expression(cal["auxiliary_parameters"][str(op)],
                                                   {str(p): p for p in
                                                    par_ordering+other_para})
                                        for op in other_para}

@@ -33,7 +33,7 @@ calibration:
     gamma: half_rho(rho)
 """)
         f = read_yaml(simple_dsge)
-        mod_simple = f.compile_model()
+        mod_simple = f.compile_model(allow_external_code=True)
         p0 = f.p0()
         assert_equal(-mod_simple.GAM1(p0)[0,0], p0[0]/2)
 
@@ -41,7 +41,12 @@ calibration:
     def test_DGS(self):
         with resource_path('examples/DGS/DGS.yaml') as p:
             DGS = read_yaml(str(p))
-        DGSlin = DGS.compile_model()
+        import runpy
+
+        # The trusted host chooses the bundled plugin, not the YAML's stale path.
+        with resource_path('examples/DGS/helper_func.py') as helper_path:
+            functions = runpy.run_path(str(helper_path))
+        DGSlin = DGS.compile_model(external_functions=functions)
         p0 = DGS.p0()
         import time
         start = time.time()

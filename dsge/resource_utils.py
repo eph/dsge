@@ -13,9 +13,10 @@ Example:
 
 from __future__ import annotations
 
-from contextlib import contextmanager
-from pathlib import Path
-import tempfile
+from contextlib import ExitStack, contextmanager
+from pathlib import Path, PurePosixPath, PureWindowsPath
+import atexit
+import threading
 
 try:  # Python 3.9+
     from importlib.resources import files, as_file  # type: ignore
@@ -24,8 +25,11 @@ except Exception:  # pragma: no cover - fallback for Python 3.8
 
 
 def _resource(rel: str):
-    rel = rel.lstrip("/").replace("\\", "/")
-    return files("dsge").joinpath(*rel.split("/"))
+    path = PurePosixPath(rel)
+    if (not rel or path.is_absolute() or PureWindowsPath(rel).drive
+            or ".." in path.parts or "\\" in rel):
+        raise ValueError("Resource paths must be relative package paths without traversal")
+    return files("dsge").joinpath(*path.parts)
 
 
 @contextmanager
@@ -48,25 +52,22 @@ def open_binary(rel: str):
 
 __all__ = ["resource_path", "open_text", "open_binary"]
 
-# Persistent extraction cache for resources that need a stable filesystem path
-_CACHE_BASE = Path(tempfile.gettempdir()) / "dsge_resources_cache"
+# Keep importlib's exclusively-created temporary files alive for callers that
+# need paths beyond one context manager. No shared, predictable cache is used.
+_RESOURCE_STACK = ExitStack()
+_RESOURCE_LOCK = threading.RLock()
+atexit.register(_RESOURCE_STACK.close)
+
 
 def resource_file_path(rel: str) -> Path:
-    """
-    Return a persistent filesystem path to a packaged resource.
+    """Return a package resource path valid until this process exits.
 
-    Copies the resource into a temp cache directory if it isn't already on the
-    filesystem. Suitable for configs that need a long-lived path string.
+    Filesystem packages use their original path. Zip resources are materialized
+    by importlib.resources in a fresh private temporary file for this call.
     """
-    rel_norm = rel.lstrip("/").replace("\\", "/")
-    dest = _CACHE_BASE / rel_norm
-    if dest.exists():
-        return dest
-    res = _resource(rel_norm)
-    data = res.read_bytes()
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    with open(dest, "wb") as f:
-        f.write(data)
-    return dest
+    res = _resource(rel)
+    with _RESOURCE_LOCK:
+        return Path(_RESOURCE_STACK.enter_context(as_file(res)))
+
 
 __all__.append("resource_file_path")

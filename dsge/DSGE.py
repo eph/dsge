@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Mapping, Optional, Union
 
 from sympy.matrices import zeros
 from sympy import sympify
+from .safe_expression import declared_functions
 
 from .symbols import (Variable,
                      Equation,
@@ -279,6 +280,9 @@ Equations:
         matrix_format="numeric",
         method: str = "auto",
         lre_form: str = "auto",
+        *,
+        external_functions=None,
+        allow_external_code: bool = False,
     ):
         """
         Construct Sims-style system matrices for the linear rational expectations model.
@@ -306,6 +310,13 @@ Equations:
             lre_form = "expvars" if int(getattr(self, "max_lead", 1)) > 1 else "legacy"
 
         if matrix_format != "symbolic":
+            from .external_functions import external_function_key
+
+            external_key = external_function_key(
+                self,
+                external_functions=external_functions,
+                allow_external_code=allow_external_code,
+            )
             already = (
                 callable(getattr(self, "GAM0", None))
                 and callable(getattr(self, "GAM1", None))
@@ -316,7 +327,11 @@ Equations:
                 and callable(getattr(self, "DD", None))
                 and callable(getattr(self, "ZZ", None))
             )
-            if already and getattr(self, "_python_sims_lre_form", None) == lre_form:
+            if (
+                already
+                and getattr(self, "_python_sims_lre_form", None) == lre_form
+                and getattr(self, "_python_sims_external_key", None) == external_key
+            ):
                 return None
 
         if lre_form == "legacy":
@@ -494,27 +509,17 @@ Equations:
             self._python_sims_lre_form = lre_form
             return GAM0, GAM1, PSI, PPI, QQ, DD, ZZ, HH
 
-        subs_dict = []
-        context = dict([(p, Parameter(p)) for p in self.parameters])
-        context.update(reserved_names)
-        context['normcdf'] = lambda x: 0.5 * (1 + sympy.erf(x / sympy.sqrt(2)))
-        context_f = {}
-        context_f["exp"] = np.exp
+        from .external_functions import resolve_external_functions
 
-        if "external" in self["__data__"]["declarations"]:
-            from importlib.machinery import SourceFileLoader
-            import importlib.util
-         
-            f = self["__data__"]["declarations"]["external"]["file"]
-            
-            # Load module from source file
-            spec = importlib.util.spec_from_loader("external", SourceFileLoader("external", f))
-            module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(module)
-            
-            for n in self["__data__"]["declarations"]["external"]["names"]:
-                context[n] = sympy.Function(n)  # or getattr(module, n) for other uses, if necessary
-                context_f[n] = getattr(module, n)
+        context_f = {"exp": np.exp}
+        context_f.update(resolve_external_functions(
+            self,
+            external_functions=external_functions,
+            allow_external_code=allow_external_code,
+        ))
+        # Auxiliary lambdas also capture the external context. Rebuild them when
+        # compiling with a different registry instead of reusing earlier authority.
+        self.lambdify_auxiliary = None
 
         self.GAM0 = self.lambdify(GAM0, context=context_f) 
         self.GAM1 = self.lambdify(GAM1, context=context_f) 
@@ -529,6 +534,7 @@ Equations:
 
         self.psi = None
         self._python_sims_lre_form = lre_form
+        self._python_sims_external_key = external_key
 
         # if self['__data__']['declarations']['type'] == 'sv':
         #     sv = self['__data__']['equations']['sv']
@@ -554,6 +560,10 @@ Equations:
         nonlinear_observables: str = "error",
         lre_reduction: str = "none",
         lre_form: str = "auto",
+        *,
+        external_functions=None,
+        allow_external_code: bool = False,
+        max_tensor_entries: int = 2_000_000,
     ):
         """
         Compile the DSGE model into an object with likelihood/simulation APIs.
@@ -575,6 +585,14 @@ Equations:
             Only used when `order=1`. Controls the internal LRE augmentation used to
             construct the GENSYS pencil. `"auto"` selects `"expvars"` for models with
             declared `max_lead > 1` (e.g. LINVER) and `"legacy"` otherwise.
+        external_functions : mapping, optional
+            Host-approved name-to-callable registry for declared external functions.
+            When supplied, the model-selected Python file is never imported.
+        allow_external_code : bool
+            Default False. Set True only for trusted model bundles: importing their
+            external file executes arbitrary Python with full process permissions.
+        max_tensor_entries : int
+            For `order=2`, reject larger derivative tensors before symbolic compilation.
         """
         if order == 2:
             from .perturbation_model import PerturbationDSGEModel
@@ -610,6 +628,9 @@ Equations:
                 order=2,
                 pruning=pruning,
                 nonlinear_observables=nonlinear_observables,
+                external_functions=external_functions,
+                allow_external_code=allow_external_code,
+                max_tensor_entries=max_tensor_entries,
             )
 
         if order != 1:
@@ -621,9 +642,19 @@ Equations:
         if lre_reduction == "core":
             core = self._lre_core_model()
             # Important: avoid recursive reduction.
-            return core.compile_model(order=1, lre_reduction="none", lre_form=lre_form)
+            return core.compile_model(
+                order=1,
+                lre_reduction="none",
+                lre_form=lre_form,
+                external_functions=external_functions,
+                allow_external_code=allow_external_code,
+            )
 
-        self.python_sims_matrices(lre_form=lre_form)
+        self.python_sims_matrices(
+            lre_form=lre_form,
+            external_functions=external_functions,
+            allow_external_code=allow_external_code,
+        )
 
         GAM0 = self.GAM0
         GAM1 = self.GAM1
@@ -815,9 +846,10 @@ Equations:
         from .dynare_integration import load_first_order_solution, run_dynare_mod_text
 
         mod = to_dynare_mod(self, order=1, pruning=False, irf=0, periods=0)
-        name = str(self.get("name", "dsge_model"))
-        safe_name = "".join(c if (c.isalnum() or c == "_") else "_" for c in name)
-        results_path = run_dynare_mod_text(mod_text=mod.mod_text, model_name=safe_name, timeout=int(timeout))
+        # The temporary executable basename is independent of model metadata.
+        results_path = run_dynare_mod_text(
+            mod_text=mod.mod_text, model_name="dsge_model", timeout=int(timeout)
+        )
         return load_first_order_solution(results_path)
 
     @staticmethod
@@ -1028,7 +1060,15 @@ Equations:
         steady_state = [0]
         init_values = [0]
 
-        context = build_symbolic_context(var_ordering + par_ordering + shk_ordering + other_para)
+        # Declare symbolic functions without importing the model's Python file.
+        external = dec.get("external", {})
+        if not isinstance(external, dict):
+            raise ValueError("declarations.external must be a mapping")
+        external_context = declared_functions(external.get("names", []))
+        context = build_symbolic_context(
+            var_ordering + par_ordering + shk_ordering + other_para,
+            extras=external_context,
+        )
 
         if "model" in model_yaml["equations"]:
             raw_equations = model_yaml["equations"]["model"]
@@ -1139,8 +1179,6 @@ Equations:
         #------------------------------------------------------------------
         # observation equation
         #------------------------------------------------------------------
-        context["sum"] = np.sum
-        context["range"] = range
         for obs in obs_equations.items():
             # Parse observable equations safely
             obs_equations[obs[0]] = parse_expression(obs[1], context)
@@ -1161,8 +1199,9 @@ Equations:
         else:
             cal['auxiliary_parameters'] = {op:
                                            parse_expression(cal["auxiliary_parameters"][str(op)],
-                                                         {str(p): p for p in
-                                                          par_ordering+other_para})
+                                                         build_symbolic_context(
+                                                             par_ordering + other_para,
+                                                             extras=external_context))
 
                                            for op in other_para}
 
