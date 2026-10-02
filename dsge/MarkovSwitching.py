@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as p
 from sympy import Matrix
-from sympy import sympify
+from .safe_expression import parse_matrix
 class MarkovSwitchingModel:
 
     def __init__(self, model1, model2, transition_matrix):
@@ -28,8 +28,11 @@ class MarkovSwitchingModel:
         self.model_2_matrices['F'] = self.model2.lambdify(Matrix(nv, nv, lambda i, j: self.model2['equations'][i].set_eq_zero.diff(self.model2.variables[j](+1))))
         self.model_2_matrices['B'] = self.model2.lambdify(Matrix(nv, nv, lambda i, j: self.model2['equations'][i].set_eq_zero.diff(self.model2.variables[j](-1))))
 
-        self.P_temp = self.model1.lambdify(transition_matrix if type(transition_matrix)==str
-                                      else sympify(transition_matrix))
+        parameters = model1['parameters'] + list(model1['auxiliary_parameters'])
+        transition = parse_matrix(transition_matrix, {p.name: p for p in parameters})
+        if transition.shape != (2, 2):
+            raise ValueError('Transition matrix must have shape (2, 2)')
+        self.P_temp = self.model1.lambdify(transition)
         # hack
         self.P = lambda x: np.array(self.P_temp(x))
         self.Q = self.model1.lambdify(self.model1['covariance'])

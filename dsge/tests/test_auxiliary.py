@@ -34,7 +34,7 @@ calibration:
         
         
         f = read_yaml(simple_dsge)
-        c = f.compile_model()
+        c = f.compile_model(allow_external_code=True)
         import inspect
         print(inspect.getsource(f.lambdify_auxiliary))
         print(inspect.getsource(c.GAM1))

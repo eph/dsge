@@ -1,4 +1,5 @@
-from sympy import Matrix, sympify, zeros, eye
+from sympy import Matrix, zeros, eye
+from .safe_expression import parse_expression
 from .symbols import Variable, Parameter, Shock, Equation
 from typing import List, Tuple
 from .StateSpaceModel import LinearDSGEModel
@@ -26,7 +27,7 @@ def _as_policy_shocks(policy_shocks) -> List[Shock]:
 
 def _loss_uses_variable(loss_string: str, var: Variable, context: dict) -> bool:
     try:
-        loss_expr = sympify(loss_string, locals=context)
+        loss_expr = parse_expression(loss_string, context)
     except Exception:
         # Conservative: if we cannot parse, assume it might be used.
         return True
@@ -162,7 +163,7 @@ def parse_loss(loss_string: str,
     n_policy = len(policy_instruments)
 
     context = {str(v): v for v in endogenous_variables+policy_instruments+parameters_vector}
-    loss = sympify(loss_string, locals=context)
+    loss = parse_expression(loss_string, context)
 
     # check to make sure there are no lagged or leaded variables in the loss function
     if any([v(-1) in loss.atoms() for v in endogenous_variables]):
@@ -282,7 +283,7 @@ def compile_commitment(model, loss_string, policy_instruments, policy_shocks=Non
     all_parameters = model['parameters'] + list(model['auxiliary_parameters'].keys())
     # parse the loss function
     if type(beta) == str:
-        beta = sympify(beta, locals={str(p): p for p in all_parameters})
+        beta = parse_expression(beta, {str(p): p for p in all_parameters})
 
     policy_instruments = _as_policy_tools(policy_instruments)
 
@@ -480,7 +481,7 @@ def compile_discretion(model, loss_string, policy_instruments, policy_shocks=Non
     all_parameters = model['parameters'] + list(model['auxiliary_parameters'].keys())
     # parse the loss function
     if type(beta) == str:
-        beta = sympify(beta, locals={str(p): p for p in all_parameters})
+        beta = parse_expression(beta, {str(p): p for p in all_parameters})
 
     policy_instruments = _as_policy_tools(policy_instruments)
 

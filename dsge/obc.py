@@ -12,6 +12,7 @@ import numpy as np
 import sympy as sp
 
 from .DSGE import DSGE
+from .safe_expression import parse_expression
 
 
 class OccBinModel:
@@ -57,20 +58,24 @@ class OccBinModel:
     def p0(self):
         return list(map(lambda x: self.yaml["calibration"]["parameters"][str(x)], self.parameters))
 
-    def compile_regime(self, name: str):
-        return self.regimes[name].compile_model()
+    def compile_regime(self, name: str, *, external_functions=None, allow_external_code=False):
+        return self.regimes[name].compile_model(
+            external_functions=external_functions, allow_external_code=allow_external_code,
+        )
 
-    def compile_model(self):
+    def compile_model(self, *, external_functions=None, allow_external_code=False):
         """Compile both regimes and return a compiled OBC model.
 
         Aligns with the mod->compile_model pattern used elsewhere.
         """
-        return OccBinCompiled(self)
+        return OccBinCompiled(
+            self, external_functions=external_functions, allow_external_code=allow_external_code,
+        )
 
     # Back-compat convenience; prefer compiled.impulse_response
-    def irf_obc(self, p0, shock_name: Optional[str] = None, h: int = 20):
+    def irf_obc(self, p0, shock_name: Optional[str] = None, h: int = 20, **compile_options):
         # Build shocks path for a one-time 1-s.d. impulse
-        normal = self.compile_regime(self.normal_regime)
+        normal = self.compile_regime(self.normal_regime, **compile_options)
         CC, TTn, RRn, QQn, DDn, ZZn, HHn = normal.system_matrices(p0)
         neps = RRn.shape[1]
         shock_names = normal.shock_names
@@ -81,32 +86,32 @@ class OccBinModel:
         eps = np.zeros((h+1, neps))
         eps[0, shock_idx] = float(np.sqrt(QQn[shock_idx, shock_idx]))
 
-        sim = self.simulate_obc(p0, eps, horizon=h+1)
+        sim = self.simulate_obc(p0, eps, horizon=h+1, **compile_options)
         return sim
 
     # New aligned naming
-    def impulse_response(self, p0, h: int = 20, shock_name: Optional[str] = None):
-        return self.compile_model().impulse_response(p0, h=h, shock_name=shock_name)
+    def impulse_response(self, p0, h: int = 20, shock_name: Optional[str] = None, **compile_options):
+        return self.compile_model(**compile_options).impulse_response(p0, h=h, shock_name=shock_name)
 
-    def simulate(self, p0, eps_path: np.ndarray, horizon: Optional[int] = None, s0: Optional[np.ndarray] = None):
-        return self.compile_model().simulate(p0, eps_path=eps_path, horizon=horizon, s0=s0)
+    def simulate(self, p0, eps_path: np.ndarray, horizon: Optional[int] = None, s0: Optional[np.ndarray] = None, **compile_options):
+        return self.compile_model(**compile_options).simulate(p0, eps_path=eps_path, horizon=horizon, s0=s0)
 
     # Standardized wrappers
-    def impulse_response_states(self, p0, h: int = 20, shock_name: Optional[str] = None):
-        return self.compile_model().impulse_response_states(p0, h=h, shock_name=shock_name)
+    def impulse_response_states(self, p0, h: int = 20, shock_name: Optional[str] = None, **compile_options):
+        return self.compile_model(**compile_options).impulse_response_states(p0, h=h, shock_name=shock_name)
 
-    def impulse_response_observables(self, p0, h: int = 20, shock_name: Optional[str] = None):
-        return self.compile_model().impulse_response_observables(p0, h=h, shock_name=shock_name)
+    def impulse_response_observables(self, p0, h: int = 20, shock_name: Optional[str] = None, **compile_options):
+        return self.compile_model(**compile_options).impulse_response_observables(p0, h=h, shock_name=shock_name)
 
-    def simulate_obc(self, p0, eps_path: np.ndarray, s0: Optional[np.ndarray] = None, horizon: Optional[int] = None):
+    def simulate_obc(self, p0, eps_path: np.ndarray, s0: Optional[np.ndarray] = None, horizon: Optional[int] = None, **compile_options):
         """OccBin-like deterministic path simulation with one constraint.
 
         Returns dict with keys: 'states' (ndarray), 'observables' (ndarray),
         'binding' (bool array), 'irf' (dict of DataFrames for states per shock if horizon small).
         """
         # Compile regime systems
-        normal = self.compile_regime(self.normal_regime)
-        binding = self.compile_regime(self.binding_regime)
+        normal = self.compile_regime(self.normal_regime, **compile_options)
+        binding = self.compile_regime(self.binding_regime, **compile_options)
         CCn, TTn, RRn, QQn, DDn, ZZn, HHn = normal.system_matrices(p0)
         CCb, TTB, RRB, QQb, DDb, ZZb, HHb = binding.system_matrices(p0)
 
@@ -146,7 +151,7 @@ class OccBinModel:
                 elif reg == self.normal_regime:
                     C, T, R, DD, ZZ = CCn, TTn, RRn, DDn, ZZn
                 else:
-                    model_t = self.compile_regime(reg)
+                    model_t = self.compile_regime(reg, **compile_options)
                     C, T, R, QQt, DD, ZZ, HHt = model_t.system_matrices(p0)
                 s = C + T.dot(s) + R.dot(eps[t])
                 states[t, :] = s
@@ -218,7 +223,8 @@ class OccBinModel:
     def _compile_when(self, when: str) -> Tuple[List[str], Any]:
         if not when:
             return [], lambda *args: False
-        expr = sp.sympify(when)
+        context = {v.name: sp.Symbol(v.name) for v in self.variables}
+        expr = parse_expression(when, context)
         syms = sorted(list(expr.free_symbols), key=lambda s: s.name)
         lam = sp.lambdify([s for s in syms], expr, modules=["numpy"])
         names = [s.name for s in syms]
@@ -246,11 +252,15 @@ class OccBinCompiled:
     parent OccBinModel for constraint evaluation.
     """
 
-    def __init__(self, obc: OccBinModel):
+    def __init__(self, obc: OccBinModel, *, external_functions=None, allow_external_code=False):
         self._obc = obc
-        # Compile regime models once; system matrices still depend on p0
-        self._normal = obc.compile_regime(obc.normal_regime)
-        self._binding = obc.compile_regime(obc.binding_regime)
+        # Retain a host-owned registry snapshot for later composite regimes too.
+        self._compile_options = {
+            "external_functions": dict(external_functions) if external_functions is not None else None,
+            "allow_external_code": allow_external_code,
+        }
+        self._normal = obc.compile_regime(obc.normal_regime, **self._compile_options)
+        self._binding = obc.compile_regime(obc.binding_regime, **self._compile_options)
         self.shock_names = self._normal.shock_names
         self.state_names = self._normal.state_names
         self.obs_names = self._normal.obs_names
@@ -349,7 +359,7 @@ class OccBinCompiled:
                     C, T, R, DD, ZZ = CCn, TTn, RRn, DDn, ZZn
                 else:
                     # Composite or specific regime
-                    model_t = self._obc.compile_regime(reg)
+                    model_t = self._obc.compile_regime(reg, **self._compile_options)
                     C, T, R, QQt, DD, ZZ, HHt = model_t.system_matrices(p0)
                 s = C + T.dot(s) + R.dot(eps[t])
                 states[t, :] = s

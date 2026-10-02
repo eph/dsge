@@ -2,6 +2,7 @@ import sympy as sp
 from typing import List, Dict, Union, Any, Iterable, Optional
 from .symbols import Equation, Parameter, Shock, Variable
 from .symbols import EXP
+from .safe_expression import parse_expression, validate_identifier, validate_symbolic
 import itertools
 
 def build_symbolic_context(
@@ -14,7 +15,9 @@ def build_symbolic_context(
     """
     ctx: Dict[str, Any] = {}
     if symbols:
-        ctx.update({s.name: s for s in symbols})
+        for symbol in symbols:
+            validate_identifier(symbol.name)
+            ctx[symbol.name] = symbol
 
     # Common math and constants
     ctx.update({
@@ -41,31 +44,14 @@ def build_symbolic_context(
 
     # User extras
     if extras:
+        for name, value in extras.items():
+            validate_identifier(name)
+            validate_symbolic(value)
         ctx.update(extras)
 
     return ctx
 
 
-def parse_expression(expr: str, context: Dict[str, Any]) -> sp.Expr:
-    """Parse a string expression into a SymPy expression using a safe context.
-
-    Uses SymPy's sympify with a whitelisted local context. Validates that
-    all model symbols used in the expression are present in the context.
-    """
-    expr_obj = sp.sympify(expr, locals=context)
-
-    symbols_in_expr = expr_obj.atoms(Parameter) | expr_obj.atoms(Variable) | expr_obj.atoms(Shock)
-    for symbol in symbols_in_expr:
-        if symbol.name not in context:
-            raise ValueError(
-                f"In expression {expr}, symbol {symbol} is not in the provided context"
-            )
-
-    # Also ensure no bare SymPy symbols slipped in that aren't known in context
-    unknown_free = [s for s in expr_obj.free_symbols if s.name not in context]
-    if unknown_free:
-        raise ValueError(f"Unknown symbols in expression {expr}: {unknown_free}")
-    return expr_obj
 
 def from_dict_to_mat(dictionary: Dict[str, str], element_array: List[str], context: Dict[str, Any], is_symmetric: bool =True) -> sp.Matrix:
     """

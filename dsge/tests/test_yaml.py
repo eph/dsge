@@ -1,5 +1,5 @@
 import unittest
-from dsge.parse_yaml import navigate_path, yaml, read_yaml
+from dsge.parse_yaml import navigate_path, yaml, read_yaml, load_yaml
 
 class TestIncludeConstructor(unittest.TestCase):
      
@@ -24,7 +24,7 @@ class TestIncludeConstructor(unittest.TestCase):
 
     def test_include(self):
         with open('dsge/tests/yaml/check_include.yaml','r') as f:
-            re = yaml.safe_load(f)
+            re = load_yaml(f.read(), include_root="dsge/tests/yaml", source_path=f.name)
         self.assertEqual(re, {'key': 'value', 'key2' : 'value2'})
 
     def test_schema(self):

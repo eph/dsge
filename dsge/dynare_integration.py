@@ -11,6 +11,8 @@ from typing import Any, Dict, List, Tuple
 import numpy as np
 from scipy.io import loadmat
 
+from .codegen_safety import code_identifier
+
 
 def dynare_cmd() -> str | None:
     """Return a Dynare wrapper command if installed on PATH."""
@@ -105,8 +107,12 @@ def run_dynare_mod_text(
     dynare_args: Tuple[str, ...] = ("noclearall", "nolog", "nograph"),
 ) -> Path:
     """
-    Run Dynare on a `.mod` text and return the path to the `*_results.mat` file.
+    Run trusted Dynare source and return the path to the `*_results.mat` file.
+
+    This low-level function executes source code. For model data, use
+    ``to_dynare_mod``, which validates and serializes its restricted model DSL.
     """
+    model_name = code_identifier(model_name, language="Dynare filename")
     if dynare is None:
         dynare = dynare_cmd()
     if dynare is None:
@@ -185,4 +191,3 @@ def load_first_order_solution(results_mat_path: str | Path) -> DynareFirstOrderS
         ghu=ghu,
         eigval=eigval,
     )
-

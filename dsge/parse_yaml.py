@@ -11,6 +11,7 @@ import re
 import os
 import warnings
 import logging
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import List, Dict, Optional, Union, IO
 
 from .DSGE import DSGE
@@ -80,41 +81,85 @@ def navigate_path(data, path):
             return None  # Or raise an error if a key is missing
     return data
 
+class _DSGELoader(yaml.SafeLoader):
+    """Private loader: importing DSGE never changes PyYAML's global loaders."""
+
+
 def include_constructor(loader, node):
-    # Get the path to the original YAML file
-    original_file = loader.name
-
-    # Extract the directory path
-    directory = os.path.dirname(original_file)
-
     value = loader.construct_scalar(node)
-    parts = value.split('#')
-    file_name = parts[0]
-    fragment_path = parts[1:] if len(parts) > 1 else None
+    if loader.include_resolver is None:
+        raise ValueError("YAML !include is disabled; supply an explicit include_root")
+    return loader.include_resolver(value)
 
-    # Construct the full path to the included file
-    included_file_path = os.path.join(directory, file_name) if directory else file_name
 
-    data = None
-    # Try filesystem-relative include first
-    if included_file_path and os.path.exists(included_file_path):
-        with open(included_file_path, 'r') as f:
-            data = yaml.safe_load(f)
-    else:
-        # Fallback: load include from packaged resources (e.g., dsge.schema/common.yaml)
-        try:
-            pkg_text = (ir_files('dsge.schema') / file_name).read_text(encoding='utf-8')
-            data = yaml.safe_load(pkg_text)
-        except Exception as _:
-            raise FileNotFoundError(f"Included file not found: {included_file_path}")
+_DSGELoader.add_constructor('!include', include_constructor)
 
-    # Navigate the fragment path if specified
-    if fragment_path:
-        return navigate_path(data, fragment_path)
 
-    return data
+def _include_parts(value):
+    file_name, *fragment = value.split('#')
+    path = PurePosixPath(file_name)
+    if (not file_name or path.is_absolute() or PureWindowsPath(file_name).drive
+            or ".." in path.parts or "\\" in file_name):
+        raise ValueError("Include paths must be relative and cannot contain parent traversal")
+    return path, fragment
 
-yaml.SafeLoader.add_constructor('!include', include_constructor)
+
+def _load_document(text, resolver=None):
+    loader = _DSGELoader(text)
+    loader.include_resolver = resolver
+    try:
+        return loader.get_single_data()
+    finally:
+        loader.dispose()
+
+
+def load_yaml(text, *, include_root=None, source_path=None,
+              max_include_depth=16, max_include_bytes=10 * 1024 * 1024):
+    """Load YAML, optionally allowing bounded includes inside a caller-owned root.
+
+    Includes are disabled by default. Relative names resolve against the source
+    document's directory (or include_root for a stream). Absolute paths, parent
+    traversal, symlink escapes, cycles, and budget overruns are rejected.
+    """
+    if max_include_depth < 0 or max_include_bytes < 1:
+        raise ValueError("Include limits must be nonnegative depth and positive bytes")
+    root = Path(include_root).resolve(strict=True) if include_root is not None else None
+    if root is not None and not root.is_dir():
+        raise ValueError("include_root must be a directory")
+    source = Path(source_path).resolve() if source_path is not None else None
+    remaining = max_include_bytes - len(text.encode("utf-8"))
+    if remaining < 0:
+        raise ValueError("YAML exceeds max_include_bytes")
+    active = {source} if source is not None else set()
+
+    def parse(document, directory, depth):
+        def include(value):
+            nonlocal remaining
+            if depth >= max_include_depth:
+                raise ValueError("YAML include depth limit exceeded")
+            path, fragment = _include_parts(value)
+            target = (directory / path).resolve(strict=True)
+            if not target.is_relative_to(root):
+                raise ValueError("YAML include escapes include_root")
+            if target in active:
+                raise ValueError("YAML include cycle detected")
+            if not target.is_file():
+                raise ValueError("YAML includes must refer to regular files")
+            with target.open("rb") as stream:
+                content = stream.read(remaining + 1)
+            remaining -= len(content)
+            if remaining < 0:
+                raise ValueError("YAML include byte limit exceeded")
+            active.add(target)
+            try:
+                result = parse(content.decode("utf-8"), target.parent, depth + 1)
+            finally:
+                active.remove(target)
+            return navigate_path(result, fragment) if fragment else result
+        return _load_document(document, include if root is not None else None)
+
+    return parse(text, source.parent if source is not None else root, 0)
+
 
 from cerberus import Validator
 # Use modern importlib.resources.files API with fallback for older Python
@@ -124,10 +169,29 @@ except ImportError:  # pragma: no cover - fallback for Python <3.9
     from importlib_resources import files as ir_files
 
 def load_schema(schema_name):
-    """Load a schema YAML by name from the packaged dsge/schema directory."""
-    resource_path = f"{schema_name}.yaml"
-    schema_text = (ir_files('dsge.schema') / resource_path).read_text(encoding='utf-8')
-    return yaml.safe_load(schema_text)
+    """Load trusted schema includes exclusively from packaged resources."""
+    resource_root = ir_files('dsge.schema')
+    active = set()
+
+    def load(path):
+        name = path.as_posix()
+        if name in active or len(active) >= 16:
+            raise ValueError("Schema include cycle or depth limit exceeded")
+        active.add(name)
+        try:
+            text = resource_root.joinpath(*path.parts).read_text(encoding='utf-8')
+
+            def include(value):
+                child, fragment = _include_parts(value)
+                result = load(path.parent / child)
+                return navigate_path(result, fragment) if fragment else result
+
+            return _load_document(text, include)
+        finally:
+            active.remove(name)
+
+    path, _ = _include_parts(f"{schema_name}.yaml")
+    return load(path)
 
 _VALIDATORS = None
 
@@ -141,13 +205,18 @@ def get_validators():
     return _VALIDATORS
 
 def read_yaml(yaml_file: Union[str,IO[str]],
-               sub_list : List[tuple]=[('^', '**'), (';','')]):
+               sub_list : List[tuple]=[('^', '**'), (';','')], *,
+               include_root=None, max_include_depth=16,
+               max_include_bytes=10 * 1024 * 1024):
     """
     Read a model specification from a YAML file and return the appropriate model instance.
     
     Args:
         yaml_file: Path to a YAML file or file-like object containing the model spec
         sub_list: List of substitution patterns to apply to the YAML text
+        include_root: Explicit trusted root enabling relative YAML includes
+        max_include_depth: Maximum nesting of enabled includes
+        max_include_bytes: Maximum total UTF-8 bytes across YAML and includes
         
     Returns:
         A model instance of the appropriate type (DSGE, FHPRepAgent, SIDSGE, etc.)
@@ -160,18 +229,27 @@ def read_yaml(yaml_file: Union[str,IO[str]],
     # Configure logging for this module
     logger = logging.getLogger("dsge.parser")
     
-    # Read the file content
+    # Bound root input as well as included files before allocating the text.
+    if not isinstance(max_include_bytes, int) or max_include_bytes < 1:
+        raise ValueError("max_include_bytes must be a positive integer")
+    if not isinstance(max_include_depth, int) or max_include_depth < 0:
+        raise ValueError("max_include_depth must be a nonnegative integer")
     if isinstance(yaml_file, str):
         logger.info(f"Reading YAML from file: {yaml_file}")
         yaml_path = os.path.abspath(yaml_file)
         yaml_dir = os.path.dirname(yaml_path)
-        with open(yaml_file) as f:
-            txt = f.read()
+        with open(yaml_file, "rb") as f:
+            raw = f.read(max_include_bytes + 1)
+        if len(raw) > max_include_bytes:
+            raise ValueError("YAML exceeds max_include_bytes")
+        txt = raw.decode("utf-8")
     else:
         logger.info("Reading YAML from stream")
         yaml_path = None
         yaml_dir = None
-        txt = yaml_file.read()
+        txt = yaml_file.read(max_include_bytes + 1)
+        if len(txt.encode("utf-8")) > max_include_bytes:
+            raise ValueError("YAML exceeds max_include_bytes")
 
     # Apply text replacements
     for old, new in sub_list:
@@ -180,7 +258,10 @@ def read_yaml(yaml_file: Union[str,IO[str]],
     txt = re.sub(r"@ ?\n", " ", txt)
 
     # Parse YAML to dictionary
-    yaml_dict = yaml.safe_load(txt)
+    yaml_dict = load_yaml(
+        txt, include_root=include_root, source_path=yaml_path,
+        max_include_depth=max_include_depth, max_include_bytes=max_include_bytes,
+    )
     yaml_dict = update_deprecated_keys(yaml_dict)
 
     def _find_project_root(start_dir: str) -> Optional[str]:

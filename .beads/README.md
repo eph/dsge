@@ -57,12 +57,17 @@ Issues in Beads are:
 
 ## Get Started with Beads
 
-Try Beads in your own projects:
+Install Beads from a numbered [official release](https://github.com/steveyegge/beads/releases).
+Choose the archive for your platform and record its version, download URL, and
+SHA-256 digest in your reviewed setup instructions. Download the archive to disk,
+then verify its digest against that recorded value with `shasum -a 256` (macOS)
+or `sha256sum` (Linux). Only extract and install the binary after the digest
+matches. Review the version and digest together when updating Beads; do not
+execute a remote installer script or use an unversioned download URL.
+
+After installing the verified binary, try Beads in your own projects:
 
 ```bash
-# Install Beads
-curl -sSL https://raw.githubusercontent.com/steveyegge/beads/main/scripts/install.sh | bash
-
 # Initialize in your repo
 bd init
 

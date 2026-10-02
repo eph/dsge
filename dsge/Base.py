@@ -9,6 +9,7 @@ from sympy import default_sort_key, topological_sort
 import sympy 
 
 from .contexts import numeric_context, function_context
+from .safe_expression import parse_expression, prepare_expression, validate_identifier, declared_functions
 
 class Base(dict, ABC):
     """Base class for DSGE model"""
@@ -22,6 +23,7 @@ class Base(dict, ABC):
         context_aux = {}
 
         for key, value in self['auxiliary_parameters'].items():
+            value = parse_expression(value, {p.name: p for p in self['parameters'] + list(self['auxiliary_parameters'])})
             aux.append(value.subs(context_aux))
             context_aux[key] = aux[-1]
 
@@ -40,6 +42,13 @@ class Base(dict, ABC):
         if context is None:
             context = {}
         all_parameters = [self['parameters'] + list(self['auxiliary_parameters'].keys())]
+        for parameter in all_parameters[0]:
+            validate_identifier(parameter.name)
+        parse_context = {p.name: p for p in all_parameters[0]}
+        parse_context.update(function_context)
+        external = self.get('__data__', {}).get('declarations', {}).get('external', {})
+        parse_context.update(declared_functions(external.get('names', [])))
+        expr_or_matrix = prepare_expression(expr_or_matrix, parse_context)
         expanded_numeric = lambdify(all_parameters, expr_or_matrix,
                                     modules=[{'ImmutableDenseMatrix': np.array, **context}, 'numpy', 'scipy'])
         if with_auxiliary:
@@ -74,26 +83,24 @@ class Base(dict, ABC):
             setattr(self, f'{attr_name}', string_list)
 
     def fix_parameters(self, **kwargs):
-        for para, value in kwargs.items():
-            para = Parameter(para)
-            self['parameters'].remove(para)
-            self['auxiliary_parameters'][para] = value
-
-            context_tuple = [(p.name, p) for p in
-                             self['parameters']+list(self['auxiliary_parameters'].keys())]
-
-
-        context = dict(context_tuple)
+        # Parse before mutating the model, so rejected input leaves it intact.
+        parameters = list(self['parameters'])
+        auxiliary = dict(self['auxiliary_parameters'])
+        for name, value in kwargs.items():
+            parameter = Parameter(name)
+            parameters.remove(parameter)
+            auxiliary[parameter] = value
+        context = {p.name: p for p in parameters + list(auxiliary)}
         context.update(function_context)
-
-        to_replace = [(p, sympy.sympify(value, context))
-                      for p,value in self['auxiliary_parameters'].items()]
-        edges = [(v[0],dep) for v in to_replace for dep in sympy.sympify(v[1]).atoms(Parameter) if dep in self['auxiliary_parameters'].keys()]
-
-        para_func = topological_sort([self['auxiliary_parameters'].keys(), edges], default_sort_key)[::-1]
-        # sort the fixed parameters in the order of their dependencies
-        self['auxiliary_parameters'] = {p: sympy.sympify(self['auxiliary_parameters'][p], context) for p in para_func}
-
+        external = self.get('__data__', {}).get('declarations', {}).get('external', {})
+        context.update(declared_functions(external.get('names', [])))
+        parsed = {p: parse_expression(value, context) for p, value in auxiliary.items()}
+        edges = [(p, dep) for p, value in parsed.items()
+                 for dep in value.atoms(Parameter) if dep in parsed]
+        order = topological_sort([list(parsed), edges], default_sort_key)[::-1]
+        self['parameters'] = parameters
+        self['auxiliary_parameters'] = {p: parsed[p] for p in order}
+        self.lambdify_auxiliary = None
         self.create_string_attributes(['parameters', 'auxiliary_parameters'])
         return self
 

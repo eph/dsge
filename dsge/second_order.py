@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from numbers import Integral
 from typing import Callable, Dict, Iterable, List, Sequence, Tuple
 
 import numpy as np
@@ -8,6 +9,7 @@ import sympy
 from scipy.linalg import ordqz
 
 from .logging_config import get_logger
+from .external_functions import external_function_key, resolve_external_functions
 from .symbols import Equation, Shock, Variable
 
 logger = get_logger("dsge.second_order")
@@ -81,29 +83,19 @@ def _make_unique_name(existing: Iterable[str], base: str) -> str:
     return f"{base}_{i}"
 
 
-def _numeric_context_for_model(model) -> Dict[str, object]:
+def _numeric_context_for_model(
+    model, *, external_functions=None, allow_external_code=False
+) -> Dict[str, object]:
     context_f: Dict[str, object] = {
         "exp": np.exp,
         "log": np.log,
     }
 
-    # Keep parity with DSGE.python_sims_matrices external function support.
-    try:
-        external = model["__data__"]["declarations"].get("external")
-    except Exception:
-        external = None
-
-    if external is not None:
-        from importlib.machinery import SourceFileLoader
-        import importlib.util
-
-        f = external["file"]
-        spec = importlib.util.spec_from_loader("external", SourceFileLoader("external", f))
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-
-        for n in external["names"]:
-            context_f[n] = getattr(module, n)
+    context_f.update(resolve_external_functions(
+        model,
+        external_functions=external_functions,
+        allow_external_code=allow_external_code,
+    ))
 
     # Optional convenience: normcdf if it appears in a user model.
     try:
@@ -134,13 +126,53 @@ class _SecondOrderCompiled:
     eval_QQ: Callable[[Sequence[float]], np.ndarray]
 
 
-def _compile_second_order(model) -> _SecondOrderCompiled:
+def _check_tensor_entries(tensor_entries: int, max_tensor_entries: int) -> None:
+    if (
+        isinstance(max_tensor_entries, bool)
+        or not isinstance(max_tensor_entries, Integral)
+        or max_tensor_entries < 0
+    ):
+        raise ValueError("max_tensor_entries must be a non-negative integer.")
+    if tensor_entries > max_tensor_entries:
+        raise ValueError(
+            f"Second-order tensor too large ({tensor_entries} entries). "
+            "Reduce model size or increase max_tensor_entries."
+        )
+
+
+def _preflight_second_order(model, max_tensor_entries: int) -> int:
+    """Bound the expanded tensor before lag substitutions or symbolic derivatives."""
+    lagged_names = {
+        atom.name
+        for eq in model["perturb_eq"]
+        for atom in eq.atoms(Variable)
+        if atom.date == -1
+    }
+    n = len(model["var_ordering"]) + len(lagged_names)
+    nv = 2 * n + len(model["shk_ordering"])
+    tensor_entries = n * nv * nv
+    _check_tensor_entries(tensor_entries, max_tensor_entries)
+    return tensor_entries
+
+
+def _compile_second_order(
+    model,
+    *,
+    max_tensor_entries: int = 2_000_000,
+    external_functions=None,
+    allow_external_code: bool = False,
+) -> _SecondOrderCompiled:
     """
     Compile symbolic derivatives needed for second-order perturbation once per model.
 
     The compiled object is parameterized only by the model's parameter vector `p`.
     """
-    context_f = _numeric_context_for_model(model)
+    _preflight_second_order(model, max_tensor_entries)
+    context_f = _numeric_context_for_model(
+        model,
+        external_functions=external_functions,
+        allow_external_code=allow_external_code,
+    )
 
     base_vars = list(model["var_ordering"])
     shocks = list(model["shk_ordering"])
@@ -168,11 +200,17 @@ def _compile_second_order(model) -> _SecondOrderCompiled:
     xp = [v(1) for v in x0]
     yp = [v(1) for v in y0]
 
+    # Hessian tensor wrt v = [x', y', x, y, u]. Check the actual expanded
+    # dimensions too, before constructing any Jacobian, Hessian, or lambda.
+    v = xp + yp + x0 + y0 + shocks
+    tensor_entries = n * len(v) * len(v)
+    _check_tensor_entries(tensor_entries, max_tensor_entries)
+
     # Steady-state point: all endogenous and shocks at 0.
     subs_ss: Dict[object, object] = {}
-    for v in var_ordering:
-        subs_ss[v] = 0
-        subs_ss[v(1)] = 0
+    for variable in var_ordering:
+        subs_ss[variable] = 0
+        subs_ss[variable(1)] = 0
     for s in shocks:
         subs_ss[s] = 0
 
@@ -182,14 +220,10 @@ def _compile_second_order(model) -> _SecondOrderCompiled:
     F0_sym = res.jacobian(x0 + y0).subs(subs_ss)
     Fu_sym = res.jacobian(shocks).subs(subs_ss)
 
+    model.lambdify_auxiliary = None
     eval_F1 = model.lambdify(F1_sym, context=context_f)
     eval_F0 = model.lambdify(F0_sym, context=context_f)
     eval_Fu = model.lambdify(Fu_sym, context=context_f)
-
-    # Hessian tensor wrt v = [x', y', x, y, u]
-    v = xp + yp + x0 + y0 + shocks
-    nv = len(v)
-    tensor_entries = n * nv * nv
 
     eval_Hi = []
     for i in range(n):
@@ -216,11 +250,29 @@ def _compile_second_order(model) -> _SecondOrderCompiled:
     )
 
 
-def _get_second_order_compiled(model) -> _SecondOrderCompiled:
+def _get_second_order_compiled(
+    model,
+    *,
+    max_tensor_entries: int = 2_000_000,
+    external_functions=None,
+    allow_external_code: bool = False,
+) -> _SecondOrderCompiled:
+    external_key = external_function_key(
+        model,
+        external_functions=external_functions,
+        allow_external_code=allow_external_code,
+    )
     compiled = getattr(model, "_second_order_compiled", None)
-    if compiled is None:
-        compiled = _compile_second_order(model)
+    if compiled is None or getattr(model, "_second_order_external_key", None) != external_key:
+        compiled = _compile_second_order(
+            model,
+            max_tensor_entries=max_tensor_entries,
+            external_functions=external_functions,
+            allow_external_code=allow_external_code,
+        )
         setattr(model, "_second_order_compiled", compiled)
+        setattr(model, "_second_order_external_key", external_key)
+    _check_tensor_entries(compiled.tensor_entries, max_tensor_entries)
     return compiled
 
 
@@ -274,6 +326,8 @@ def solve_second_order(
     *,
     max_tensor_entries: int = 2_000_000,
     bk_tol: float = 1e-8,
+    external_functions=None,
+    allow_external_code: bool = False,
 ) -> SecondOrderSolution:
     """
     Computes a second-order perturbation solution for LRE DSGE models.
@@ -283,13 +337,17 @@ def solve_second_order(
     - This solver treats any endogenous lag v(-1) as a state by introducing an auxiliary
       variable v_LAG1 and adding the linking identity v_LAG1(+1) = v.
     - Only intended for standard LRE models (not SI/FHP/OBC).
+    - Model-selected Python files are disabled unless `allow_external_code=True`.
+      Prefer a host-supplied `external_functions` registry, which avoids importing
+      the file. The opt-in grants arbitrary Python execution, not a sandbox.
+    - `max_tensor_entries` is enforced before symbolic compilation and on cache hits.
     """
-    compiled = _get_second_order_compiled(model)
-    if compiled.tensor_entries > max_tensor_entries:
-        raise ValueError(
-            f"Second-order tensor too large ({compiled.tensor_entries} entries). "
-            f"Reduce model size or increase max_tensor_entries."
-        )
+    compiled = _get_second_order_compiled(
+        model,
+        max_tensor_entries=max_tensor_entries,
+        external_functions=external_functions,
+        allow_external_code=allow_external_code,
+    )
 
     x0 = compiled.x0
     y0 = compiled.y0

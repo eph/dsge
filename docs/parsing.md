@@ -1,43 +1,94 @@
 # Expression Parsing DSL
 
-This project parses model equations from YAML into SymPy expressions using a safe, whitelisted context. This page summarizes the supported syntax and functions.
+DSGE constructs SymPy expressions from a restricted mathematical grammar. It does
+not evaluate model strings as Python. The same parser is used for model equations,
+policy rules, losses, fixed-parameter formulas, and transition matrices.
 
-- Declared symbols
-  - Variables: declared under `declarations.variables` (e.g., `y`, `pinf`).
-  - Parameters: declared under `declarations.parameters`.
-  - Shocks/Innovations: declared under `declarations.shocks` (and `innovations` for FHP models).
-  - All symbols used in equations must be declared; unknown names raise a parsing error.
+- Declare variables, parameters, shocks, and auxiliary parameters in the model.
+  Unknown identifiers are rejected. Names must be valid identifiers without
+  double underscores.
+- Constants `pi`, `E`, `I`, `oo`, and `inf` have their SymPy meanings unless a
+  declared model symbol overrides the name.
+- Numeric expression text preserves decimal precision and exponent range; named
+  SymPy numbers retain their exact symbolic values.
+- Use numeric literals and `+`, `-`, `*`, `/`, and `**`. `^` is accepted for powers.
+- Use integer lead/lag offsets: `x(+1)`, `x(-1)`, and `x` for the current period.
+- Use `EXP(j)(expression)` for expectations and `SUM(expression, (j, a, b))`
+  for sums. Declare index symbols such as `j`; `oo` denotes infinity.
+- Mathematical functions include `exp`, `log`, trigonometric and hyperbolic
+  functions, `sqrt`, `Abs`, `sign`, `Min`, `Max`, and `Piecewise`.
+- Relations and Boolean combinations are available for constraints and policies.
+  Matrices use rectangular nested lists or `Matrix([[...]])`.
+- DataFrame variable labels must name a declared variable, optionally with an
+  integer lead/lag. They cannot contain general formulas.
 
-- Leads/Lags
-  - Use parentheses with integer offsets: `x(+1)`, `x(-1)`, `x` for current period.
-  - Offsets apply to both endogenous variables and shocks.
+Python attribute access, indexing, string literals, comprehensions, lambdas,
+imports, and arbitrary calls are rejected before symbolic construction. Python
+`sum`/`range` expressions must be rewritten as explicit arithmetic or DSL `SUM`.
+Host applications should still impose their own process resource limits when
+processing large or untrusted symbolic models.
 
-- Expectations
-  - Use `EXP(j)(expr)` to denote an expectation formed at time `t-j` of `expr`.
-  - Example: `SUM((1-lam)**j * EXP(-j-1)(pp + alp*ygr), (j, 0, oo))`.
+## External functions
 
-- Sums and indexing
-  - Use `SUM(expr, (i, a, b))` for summation, with `oo` for infinity (SymPy’s `oo`).
-  - Index symbols (like `j` above) must be declared as parameters.
+A model may declare symbolic external function names, but model-selected Python
+files are disabled during compilation by default. Prefer supplying a trusted
+`external_functions` mapping from names to callables in the host application.
+For an audited model and companion file, `allow_external_code=True` explicitly
+permits the file to run with the Python process's full authority. This option is
+not a sandbox. The first- and second-order compilation paths apply the same trust
+policy; a model cannot grant itself permission in YAML. These options are
+available on `compile_model`, `python_sims_matrices`, and `solve_second_order`.
+Each direct compilation request needs its own opt-in; compiled second-order
+and OBC objects retain a copy of the caller's registry and trust options. The
+Fortran wrappers (`smc`, `make_fortran_model`, and `translate_fortran`) and the
+high-level SMC estimation wrappers accept the same explicit trust options.
+For YAML/Slurm estimation reloads, `read_yaml_options` can explicitly supply
+`include_root`, `max_include_depth`, and `max_include_bytes`; the model file
+cannot grant itself these capabilities. Host callables submitted through Slurm
+must be serializable by submitit and available in the worker environment.
 
-- Math functions
-  - Supported: `exp`, `log`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `sqrt`, `Abs`, `sign`.
-  - Add custom functions via `declarations.external` (DSGE) or code paths that load externals.
+For second-order compilation, `max_tensor_entries` defaults to 2,000,000 and is
+checked before symbolic derivatives are constructed. The compiled object retains
+this limit for likelihood and simulation; direct solves also enforce it on cache
+hits.
 
-- Operators
-  - Standard Python/SymPy operators are supported (e.g., `+`, `-`, `*`, `/`).
-  - Power: `**` is preferred; `^` is accepted in existing examples for exponents.
+## YAML includes
 
-- Observables
-  - Observable equations are parsed in the same controlled context as model equations.
-  - Common Python helpers like `range`/`sum` are available where used.
+`read_yaml` disables `!include` by default. To enable includes, the caller must
+supply an explicit directory containing the permitted files:
 
-- Reserved names and collisions
-  - The parser avoids injecting SymPy’s `pi` constant to prevent conflicts with variables named `pi` or `pinf`.
+```python
+model = read_yaml("models/main.yaml", include_root="models")
+```
 
-- Validation and errors
-  - Unknown symbols trigger a clear `ValueError` during parsing.
-  - Leads/lags and other model constraints are validated during model construction.
+Relative names resolve against the including file's directory. Absolute paths,
+parent traversal, symlink escapes, and cycles are rejected. The optional
+`max_include_depth` (default 16) and `max_include_bytes` (default 10 MiB) bound
+include nesting and total UTF-8 input bytes. Includes in a stream resolve against
+the explicit root. `load_yaml` exposes the same policy when a plain dictionary is
+needed, with an optional `source_path` for relative resolution.
 
-If you encounter an expression that is not covered by this DSL, consider either using an equivalent SymPy-friendly form or extending the parsing context in code.
+Internal schemas resolve includes only within packaged schema resources.
+Importing DSGE does not add constructors to `yaml.SafeLoader` or change unrelated
+`yaml.safe_load` calls.
 
+## Packaged resources
+
+Use `resource_path` for scoped filesystem access to package files.
+`resource_file_path` provides a path valid until process exit: source installations
+use the packaged file directly, and zip installations use private temporary
+files managed by `importlib.resources`. No shared persistent resource cache is
+trusted. Resource paths must remain relative to the package and cannot traverse
+parent directories.
+
+## Generated source
+
+Fortran and Dynare exporters validate identifiers as ASCII names beginning with
+letters, with at most 63 characters. Model display names may contain printable
+text but not control characters. Fortran string literals are encoded, and Dynare
+expressions are serialized from supported mathematical nodes rather than copied
+as native source. Unsupported directives and source fragments are rejected.
+
+`run_dynare_mod_text` is a low-level API for executing trusted Dynare source.
+Likewise, explicitly supplied Fortran `extra_code` and `filter_function` hooks
+are trusted caller code. Keep these separate from untrusted model metadata.

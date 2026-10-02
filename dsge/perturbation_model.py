@@ -7,6 +7,8 @@ import numpy as np
 import pandas as p
 
 from .logging_config import get_logger
+from .external_functions import external_function_key
+from .second_order import _preflight_second_order
 from .symbols import Shock, Variable
 
 logger = get_logger("dsge.perturbation")
@@ -125,10 +127,24 @@ class PerturbationDSGEModel:
         order: int = 2,
         pruning: bool = True,
         nonlinear_observables: str = "error",
+        external_functions=None,
+        allow_external_code: bool = False,
+        max_tensor_entries: int = 2_000_000,
     ):
         if order != 2:
             raise ValueError("PerturbationDSGEModel currently supports only order=2.")
 
+        external_function_key(
+            dsge_model,
+            external_functions=external_functions,
+            allow_external_code=allow_external_code,
+        )
+        _preflight_second_order(dsge_model, max_tensor_entries)
+        self._external_functions = (
+            dict(external_functions) if external_functions is not None else None
+        )
+        self._allow_external_code = allow_external_code
+        self._max_tensor_entries = max_tensor_entries
         self.dsge_model = dsge_model
         self.yy = yy
         self.t0 = t0
@@ -201,13 +217,27 @@ class PerturbationDSGEModel:
             raise ValueError(msg.rstrip())
 
     def _measurement_matrices(self, para, use_cache: bool = False):
-        if use_cache and self._cached_measurement_para is not None and np.allclose(
-            np.asarray(para, dtype=float),
-            np.asarray(self._cached_measurement_para, dtype=float),
+        _preflight_second_order(self.dsge_model, self._max_tensor_entries)
+        external_key = external_function_key(
+            self.dsge_model,
+            external_functions=self._external_functions,
+            allow_external_code=self._allow_external_code,
+        )
+        if (
+            use_cache
+            and getattr(self, "_cached_measurement_external_key", None) == external_key
+            and self._cached_measurement_para is not None
+            and np.allclose(
+                np.asarray(para, dtype=float),
+                np.asarray(self._cached_measurement_para, dtype=float),
+            )
         ):
             return self._cached_measurement
 
-        self.dsge_model.python_sims_matrices()
+        self.dsge_model.python_sims_matrices(
+            external_functions=self._external_functions,
+            allow_external_code=self._allow_external_code,
+        )
 
         DD_full = np.atleast_1d(self.dsge_model.DD(para)).astype(float)
         ZZ_full = np.atleast_2d(self.dsge_model.ZZ(para)).astype(float)
@@ -219,20 +249,38 @@ class PerturbationDSGEModel:
         QQ = np.atleast_2d(self.dsge_model.QQ(para)).astype(float)
 
         self._cached_measurement_para = np.asarray(para, dtype=float).copy()
+        self._cached_measurement_external_key = external_key
         self._cached_measurement = (DD, ZZ, HH, QQ)
         return DD, ZZ, HH, QQ
 
     def _policy(self, para, use_cache: bool = False) -> _SecondOrderPolicy:
-        if use_cache and self._cached_policy_para is not None and np.allclose(
-            np.asarray(para, dtype=float),
-            np.asarray(self._cached_policy_para, dtype=float),
+        external_key = external_function_key(
+            self.dsge_model,
+            external_functions=self._external_functions,
+            allow_external_code=self._allow_external_code,
+        )
+        _preflight_second_order(self.dsge_model, self._max_tensor_entries)
+        if (
+            use_cache
+            and getattr(self, "_cached_policy_external_key", None) == external_key
+            and self._cached_policy_para is not None
+            and np.allclose(
+                np.asarray(para, dtype=float),
+                np.asarray(self._cached_policy_para, dtype=float),
+            )
         ):
             return self._cached_policy
 
-        sol = self.dsge_model.solve_second_order(para)
+        sol = self.dsge_model.solve_second_order(
+            para,
+            external_functions=self._external_functions,
+            allow_external_code=self._allow_external_code,
+            max_tensor_entries=self._max_tensor_entries,
+        )
         pol = _policy_from_solution(sol)
 
         self._cached_policy_para = np.asarray(para, dtype=float).copy()
+        self._cached_policy_external_key = external_key
         self._cached_policy = pol
 
         if self.state_names is None:

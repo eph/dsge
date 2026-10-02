@@ -12,6 +12,7 @@ from scipy.optimize import Bounds, LinearConstraint, milp
 
 from .logging_config import get_logger
 from .symbols import Equation, Variable
+from .safe_expression import parse_expression, parse_variable_label
 
 logger = get_logger("dsge.irfoc")
 
@@ -48,9 +49,8 @@ def _split_equation(s: str) -> tuple[str, str]:
     return lhs, rhs
 
 
-def _sympify_with_context(expr: str, context: dict[str, object]) -> sympy.Expr:
-    # Use SymPy's parser with a controlled locals dict (no eval of Python names).
-    return sympy.sympify(expr, locals=context)
+def _parse_with_context(expr: str, context: dict[str, object]) -> sympy.Expr:
+    return parse_expression(expr, context)
 
 
 _INDICATOR_PATTERN = re.compile(r"(^|[^0-9A-Za-z_\.])1\s*\(")
@@ -85,7 +85,7 @@ def parse_policy_rules(
     variables
         The variables that rules are allowed to reference (used later for affine checks).
     variable_context
-        Locals dict passed to `sympy.sympify` (should map variable names to dsge `Variable` objects).
+        Declared symbols for the mathematical expression parser (should map variable names to dsge `Variable` objects).
     """
     rule_list = _as_list(rules)
     if not rule_list:
@@ -100,8 +100,8 @@ def parse_policy_rules(
         lhs_s, rhs_s = _split_equation(str(r))
         lhs_s = _preprocess_indicator_syntax(lhs_s)
         rhs_s = _preprocess_indicator_syntax(rhs_s)
-        lhs = _sympify_with_context(lhs_s, context)
-        rhs = _sympify_with_context(rhs_s, context)
+        lhs = _parse_with_context(lhs_s, context)
+        rhs = _parse_with_context(rhs_s, context)
         eqs.append(Equation(lhs, rhs))
 
     if not allow_piecewise:
@@ -191,7 +191,7 @@ class IRFOC:
                 context.setdefault(str(v), v)
 
         self._variable_context = context
-        self._baseline_variables = [sympy.sympify(str(c), locals=context) for c in self.columns]
+        self._baseline_variables = [parse_variable_label(str(c), context) for c in self.columns]
         # Map baseline columns by their full string form, not just `v.name`.
         #
         # Why: compiled model `state_names` can include time-shifted variables like `pi(1)`.
@@ -661,7 +661,7 @@ class IRFOC:
         for p in model_parameters:
             context.setdefault(str(p), p)
 
-        loss_expr = _sympify_with_context(_preprocess_indicator_syntax(loss), context)
+        loss_expr = _parse_with_context(_preprocess_indicator_syntax(loss), context)
         if loss_expr.has(sympy.Max, sympy.Min, sympy.Piecewise, INDICATOR_FN):
             raise NotImplementedError("Piecewise / indicator loss functions are not supported in optimal control.")
 
@@ -690,7 +690,7 @@ class IRFOC:
             W = 0.5 * (W + W.T)
 
         if isinstance(discount, str):
-            disc_expr = _sympify_with_context(discount, context)
+            disc_expr = _parse_with_context(discount, context)
             discount = float(np.asarray(self.model.lambdify(disc_expr)(self.p0), dtype=float))
         discount = float(discount)
         if not np.isfinite(discount) or discount <= 0.0:

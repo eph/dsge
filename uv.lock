@@ -390,6 +390,19 @@ toml = [
 ]
 
 [[package]]
+name = "coverage-badge"
+version = "1.1.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "coverage" },
+    { name = "setuptools" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/be/8f/e92b0a010c76b0da82709838b3f3ae9aec638d0c44dbfb1186a5751f5d2e/coverage_badge-1.1.2.tar.gz", hash = "sha256:fe7ed58a3b72dad85a553b64a99e963dea3847dcd0b8ddd2b38a00333618642c", size = 6335, upload-time = "2024-08-02T23:34:08.58Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/90/3d/5642a1a06191b2e1e0f87a2e824e6d3eb7c32c589a68ed4d1dcbd3324d63/coverage_badge-1.1.2-py2.py3-none-any.whl", hash = "sha256:d8413ce51c91043a1692b943616b450868cbeeb0ea6a0c54a32f8318c9c96ff7", size = 6493, upload-time = "2024-08-02T23:34:07.063Z" },
+]
+
+[[package]]
 name = "cycler"
 version = "0.12.1"
 source = { registry = "https://pypi.org/simple" }
@@ -429,7 +442,13 @@ test = [
 ]
 
 [package.dev-dependencies]
+build = [
+    { name = "setuptools" },
+    { name = "setuptools-scm" },
+    { name = "wheel" },
+]
 dev = [
+    { name = "coverage-badge" },
     { name = "matplotlib" },
     { name = "mkdocs" },
     { name = "mkdocs-macros-plugin" },
@@ -439,12 +458,13 @@ dev = [
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "ruff" },
+    { name = "setuptools" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "cerberus" },
-    { name = "fortress", marker = "extra == 'codegen'", git = "https://github.com/eph/fortress.git" },
+    { name = "fortress", marker = "extra == 'codegen'", git = "https://github.com/eph/fortress.git?rev=7fffbcfb037163295f12071d318455fa5651a2a1" },
     { name = "lark" },
     { name = "matplotlib", marker = "extra == 'test'" },
     { name = "numba" },
@@ -460,7 +480,13 @@ requires-dist = [
 provides-extras = ["test", "progress", "slurm", "codegen"]
 
 [package.metadata.requires-dev]
+build = [
+    { name = "setuptools", specifier = ">=68,<81" },
+    { name = "setuptools-scm", extras = ["toml"], specifier = "==8.3.1" },
+    { name = "wheel", specifier = "==0.45.1" },
+]
 dev = [
+    { name = "coverage-badge", specifier = "==1.1.2" },
     { name = "importlib-resources", marker = "python_full_version < '3.9'" },
     { name = "matplotlib" },
     { name = "mkdocs", specifier = ">=1.5" },
@@ -471,6 +497,7 @@ dev = [
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "ruff" },
+    { name = "setuptools", specifier = "<81" },
 ]
 
 [[package]]
@@ -545,7 +572,7 @@ wheels = [
 [[package]]
 name = "fortress"
 version = "0.1.6"
-source = { git = "https://github.com/eph/fortress.git#7fffbcfb037163295f12071d318455fa5651a2a1" }
+source = { git = "https://github.com/eph/fortress.git?rev=7fffbcfb037163295f12071d318455fa5651a2a1#7fffbcfb037163295f12071d318455fa5651a2a1" }
 dependencies = [
     { name = "numpy" },
     { name = "pandas" },
@@ -1743,6 +1770,29 @@ wheels = [
 ]
 
 [[package]]
+name = "setuptools"
+version = "80.10.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/76/95/faf61eb8363f26aa7e1d762267a8d602a1b26d4f3a1e758e92cb3cb8b054/setuptools-80.10.2.tar.gz", hash = "sha256:8b0e9d10c784bf7d262c4e5ec5d4ec94127ce206e8738f29a437945fbc219b70", size = 1200343, upload-time = "2026-01-25T22:38:17.252Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/94/b8/f1f62a5e3c0ad2ff1d189590bfa4c46b4f3b6e49cef6f26c6ee4e575394d/setuptools-80.10.2-py3-none-any.whl", hash = "sha256:95b30ddfb717250edb492926c92b5221f7ef3fbcc2b07579bcd4a27da21d0173", size = 1064234, upload-time = "2026-01-25T22:38:15.216Z" },
+]
+
+[[package]]
+name = "setuptools-scm"
+version = "8.3.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "packaging" },
+    { name = "setuptools" },
+    { name = "tomli", marker = "python_full_version < '3.11'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/b9/19/7ae64b70b2429c48c3a7a4ed36f50f94687d3bfcd0ae2f152367b6410dff/setuptools_scm-8.3.1.tar.gz", hash = "sha256:3d555e92b75dacd037d32bafdf94f97af51ea29ae8c7b234cf94b7a5bd242a63", size = 78088, upload-time = "2025-04-23T11:53:19.739Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ab/ac/8f96ba9b4cfe3e4ea201f23f4f97165862395e9331a424ed325ae37024a8/setuptools_scm-8.3.1-py3-none-any.whl", hash = "sha256:332ca0d43791b818b841213e76b1971b7711a960761c5bea5fc5cdb5196fbce3", size = 43935, upload-time = "2025-04-23T11:53:17.922Z" },
+]
+
+[[package]]
 name = "six"
 version = "1.17.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1905,4 +1955,13 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/07/f6/d0e5b343768e8bcb4cda79f0f2f55051bf26177ecd5651f84c07567461cf/watchdog-6.0.0-py3-none-win32.whl", hash = "sha256:07df1fdd701c5d4c8e55ef6cf55b8f0120fe1aef7ef39a1c6fc6bc2e606d517a", size = 79065, upload-time = "2024-11-01T14:07:09.525Z" },
     { url = "https://files.pythonhosted.org/packages/db/d9/c495884c6e548fce18a8f40568ff120bc3a4b7b99813081c8ac0c936fa64/watchdog-6.0.0-py3-none-win_amd64.whl", hash = "sha256:cbafb470cf848d93b5d013e2ecb245d4aa1c8fd0504e863ccefa32445359d680", size = 79070, upload-time = "2024-11-01T14:07:10.686Z" },
     { url = "https://files.pythonhosted.org/packages/33/e8/e40370e6d74ddba47f002a32919d91310d6074130fe4e17dabcafc15cbf1/watchdog-6.0.0-py3-none-win_ia64.whl", hash = "sha256:a1914259fa9e1454315171103c6a30961236f508b9b623eae470268bbcc6a22f", size = 79067, upload-time = "2024-11-01T14:07:11.845Z" },
+]
+
+[[package]]
+name = "wheel"
+version = "0.45.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/8a/98/2d9906746cdc6a6ef809ae6338005b3f21bb568bea3165cfc6a243fdc25c/wheel-0.45.1.tar.gz", hash = "sha256:661e1abd9198507b1409a20c02106d9670b2576e916d58f520316666abca6729", size = 107545, upload-time = "2024-11-23T00:18:23.513Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0b/2c/87f3254fd8ffd29e4c02732eee68a83a1d3c346ae39bc6822dcbcb697f2b/wheel-0.45.1-py3-none-any.whl", hash = "sha256:708e7481cc80179af0e556bbf0cc00b8444c7321e2700b8d8580231d13017248", size = 72494, upload-time = "2024-11-23T00:18:21.207Z" },
 ]

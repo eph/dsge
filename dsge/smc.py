@@ -908,6 +908,19 @@ def smc_estimate(
     )
 
 
+def _smc_read_yaml_options(options):
+    """Copy only explicit include capabilities supplied by the host."""
+    if options is None:
+        return {}
+    if not isinstance(options, Mapping):
+        raise TypeError("read_yaml_options must be a mapping.")
+    copied = dict(options)
+    unknown = copied.keys() - {"include_root", "max_include_depth", "max_include_bytes"}
+    if unknown:
+        raise ValueError(f"Unknown read_yaml_options: {sorted(unknown)}")
+    return copied
+
+
 def smc_estimate_from_yaml(
     yaml_path: str,
     *,
@@ -916,14 +929,27 @@ def smc_estimate_from_yaml(
     log_lik_kwargs: Optional[Mapping[str, Any]] = None,
     n_workers: int = 1,
     parallel: Literal["none", "thread", "process"] = "thread",
+    external_functions=None,
+    allow_external_code: bool = False,
+    max_tensor_entries: int = 2_000_000,
+    read_yaml_options: Optional[Mapping[str, Any]] = None,
 ) -> SMCResult:
     """
     Convenience wrapper for Slurm/remote runs: load YAML, compile, run SMC.
+
+    External-function authority and tensor budgets are host options, forwarded
+    unchanged to compilation. `read_yaml_options` may explicitly enable bounded
+    includes using `include_root`, `max_include_depth`, and `max_include_bytes`.
     """
     from .parse_yaml import read_yaml
 
-    model = read_yaml(yaml_path)
-    compiled = model.compile_model(order=order)
+    model = read_yaml(yaml_path, **_smc_read_yaml_options(read_yaml_options))
+    compiled = model.compile_model(
+        order=order,
+        external_functions=external_functions,
+        allow_external_code=allow_external_code,
+        max_tensor_entries=max_tensor_entries,
+    )
     return smc_estimate(
         compiled,
         options=options,
@@ -943,15 +969,28 @@ def smc_submit_slurm(
     parallel: Literal["none", "thread", "process"] = "thread",
     submitit_folder: str = "_submitit",
     slurm_params: Optional[Mapping[str, Any]] = None,
+    external_functions=None,
+    allow_external_code: bool = False,
+    max_tensor_entries: int = 2_000_000,
+    read_yaml_options: Optional[Mapping[str, Any]] = None,
 ):
     """
     Submit an SMC estimation to Slurm via `submitit`.
+
+    Host-provided registries are copied and serialized by submitit; their callables
+    must be serializable and their dependencies available on workers. Serialization
+    errors propagate; no fallback grants file-plugin authority. YAML includes stay
+    disabled unless `read_yaml_options` explicitly supplies an accessible include root.
 
     Returns
     -------
     submitit.Job
         A handle that supports `.result()`.
     """
+    yaml_options = _smc_read_yaml_options(read_yaml_options)
+    if external_functions is not None and not isinstance(external_functions, Mapping):
+        raise TypeError("external_functions must be a name-to-callable mapping.")
+    functions = dict(external_functions) if external_functions is not None else None
     try:
         import submitit  # type: ignore
     except Exception as exc:  # pragma: no cover
@@ -974,5 +1013,9 @@ def smc_submit_slurm(
         log_lik_kwargs=dict(log_lik_kwargs or {}),
         n_workers=int(n_workers),
         parallel=str(parallel),
+        external_functions=functions,
+        allow_external_code=allow_external_code,
+        max_tensor_entries=max_tensor_entries,
+        read_yaml_options=yaml_options,
     )
     return job

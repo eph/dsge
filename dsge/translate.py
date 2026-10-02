@@ -2,6 +2,10 @@ import numpy as np
 
 import os
 from dsge.translate_cpp import translate_cpp
+from dsge.codegen_safety import (
+    code_identifier, code_integer, fortran_real, fortran_string,
+    validate_fortran_expression,
+)
 
 template_path = os.path.join(os.path.dirname(__file__), "templates")
 
@@ -48,7 +52,7 @@ module model_t
     character(len=144) :: name
     integer :: nobs, T, ns, npara, neps
 
-    name = '{model[name]}'
+    name = {model_name}
 
     nobs = {yy.shape[1]}
     T = {yy.shape[0]}
@@ -123,12 +127,25 @@ end module model_t
 """
 
 
-def smc(model, t0=0, extra_code=""):
+def smc(
+    model, t0=0, extra_code="", *, external_functions=None, allow_external_code=False,
+):
+    """Generate source, forwarding host authority for external model functions.
+
+    ``extra_code`` is an explicitly trusted source-code hook. Model-declared
+    Python files remain disabled unless the caller opts in for this call.
+    """
 
     import sympy
     from sympy.printing import fcode
 
-    cmodel = model.compile_model()
+    model_name = fortran_string(model["name"])
+    t0 = code_integer(t0, field="Fortran t0")
+    _validate_fortran_model(model)
+    cmodel = model.compile_model(
+        external_functions=external_functions,
+        allow_external_code=allow_external_code,
+    )
     template = fortran_model  # open('fortran_model.f90').read()
 
     # Generate custom prior code instead of writing prior.txt
@@ -167,6 +184,7 @@ def smc(model, t0=0, extra_code=""):
     user_functions = {}
     if 'external' in model["__data__"]["declarations"]:
         for n in model["__data__"]["declarations"]["external"]["names"]:
+            code_identifier(n, language="Fortran")
             context[n] = sympy.Function(n)  
             user_functions[n] = n
 
@@ -193,28 +211,46 @@ def smc(model, t0=0, extra_code=""):
     to_write = ["GAM0", "GAM1", "PSI", "PPI", "self%QQ", "DD2", "self%ZZ", "self%HH"]
     # print(fcode(system_matrices[1][7,45].subs(para_func).subs(fortran_subs), user_functions=user_function))
     
+    matrices = [(mat.subs(para_func)).subs(fortran_subs) for mat in system_matrices]
+    for mat in matrices:
+        validate_fortran_expression(mat)
     fmats = [
         fcode(
-            (mat.subs(para_func)).subs(fortran_subs),
+            mat,
             assign_to=n,
             source_format="free",
             standard=2008,
             contract=False,
             user_functions=user_functions,
         )
-        for mat, n in zip(system_matrices, to_write)
+        for mat, n in zip(matrices, to_write)
     ]
     sims_mat = "\n\n".join(fmats)
     template = template.format(
         model=model, yy=cmodel.yy, p0="", t0=t0, sims_mat=sims_mat,
         extra_code=extra_code, custom_prior_code=custom_prior_code,
-        hardcoded_data=hardcoded_data
+        hardcoded_data=hardcoded_data, model_name=model_name,
     )
 
     return template
 
 
-def translate(model, output_dir=".", language="fortran"):
+def _validate_fortran_model(model):
+    for name in model.parameters:
+        code_identifier(name, language="Fortran")
+    for parameter in list(model["parameters"]) + list(model["other_para"]):
+        code_identifier(parameter.name, language="Fortran")
+    for field in ("neq_fort", "npara", "neps", "neta"):
+        code_integer(getattr(model, field), field=f"Fortran {field}")
+    for expr in model["auxiliary_parameters"].values():
+        if hasattr(expr, "atoms"):
+            validate_fortran_expression(expr)
+
+
+def translate(
+    model, output_dir=".", language="fortran", *,
+    external_functions=None, allow_external_code=False,
+):
     """
 
     Inputs
@@ -227,6 +263,8 @@ def translate(model, output_dir=".", language="fortran"):
     -------
     None 
     """
+    if language != "fortran" and (external_functions is not None or allow_external_code):
+        raise ValueError("External function options are supported only by the Fortran exporter")
     if not os.path.isabs(output_dir):
         output_dir = os.path.join(os.getcwd(), output_dir)
 
@@ -238,7 +276,11 @@ def translate(model, output_dir=".", language="fortran"):
         print("Directory already exists.")
 
     if language == "fortran":
-        translate_fortran(model, output_dir)
+        translate_fortran(
+            model, output_dir,
+            external_functions=external_functions,
+            allow_external_code=allow_external_code,
+        )
     elif language == "cpp":
         translate_cpp(model, output_dir)
     elif language == "dynare":
@@ -266,49 +308,50 @@ def generate_custom_prior_fortran(prior):
         idx = i + 1  # Fortran is 1-indexed
 
         if name == "uniform":
-            lower = float(dist.kwds["loc"])
-            upper = float(dist.kwds["loc"] + dist.kwds["scale"])
+            lower = fortran_real(dist.kwds["loc"])
+            upper = fortran_real(dist.kwds["loc"] + dist.kwds["scale"])
             prior_code_lines.append(
-                f"    lpdf = lpdf + uniform_logpdf(para({idx}), {lower}_wp, {upper}_wp)"
+                f"    lpdf = lpdf + uniform_logpdf(para({idx}), {lower}, {upper})"
             )
             rvs_code_lines.append(
-                f"    parasim({idx}, i) = uniform_rvs({lower}_wp, {upper}_wp, self%rn)"
+                f"    parasim({idx}, i) = uniform_rvs({lower}, {upper}, self%rn)"
             )
         elif name == "norm":
-            mean = dist.mean()
-            std = dist.std()
+            mean = fortran_real(dist.mean())
+            std = fortran_real(dist.std())
             prior_code_lines.append(
-                f"    lpdf = lpdf + normal_logpdf(para({idx}), {mean}_wp, {std}_wp)"
+                f"    lpdf = lpdf + normal_logpdf(para({idx}), {mean}, {std})"
             )
             rvs_code_lines.append(
-                f"    parasim({idx}, i) = normal_rvs({mean}_wp, {std}_wp, self%rn)"
+                f"    parasim({idx}, i) = normal_rvs({mean}, {std}, self%rn)"
             )
         elif name == "gamma":
-            mean = dist.mean()
-            std = dist.std()
+            mean = fortran_real(dist.mean())
+            std = fortran_real(dist.std())
             prior_code_lines.append(
-                f"    lpdf = lpdf + gamma_logpdf(para({idx}), {mean}_wp, {std}_wp)"
+                f"    lpdf = lpdf + gamma_logpdf(para({idx}), {mean}, {std})"
             )
             rvs_code_lines.append(
-                f"    parasim({idx}, i) = gamma_rvs({mean}_wp, {std}_wp, self%rn)"
+                f"    parasim({idx}, i) = gamma_rvs({mean}, {std}, self%rn)"
             )
         elif name == "beta":
-            mean = dist.mean()
-            std = dist.std()
+            mean = fortran_real(dist.mean())
+            std = fortran_real(dist.std())
             prior_code_lines.append(
-                f"    lpdf = lpdf + beta_logpdf(para({idx}), {mean}_wp, {std}_wp)"
+                f"    lpdf = lpdf + beta_logpdf(para({idx}), {mean}, {std})"
             )
             rvs_code_lines.append(
-                f"    parasim({idx}, i) = beta_rvs({mean}_wp, {std}_wp, self%rn)"
+                f"    parasim({idx}, i) = beta_rvs({mean}, {std}, self%rn)"
             )
         elif name == "invgamma_zellner":
             # invgamma_zellner uses shape and scale directly
             shape, scale = dist.args
+            shape, scale = fortran_real(shape), fortran_real(scale)
             prior_code_lines.append(
-                f"    lpdf = lpdf + invgamma_logpdf(para({idx}), {float(shape)}_wp, {float(scale)}_wp)"
+                f"    lpdf = lpdf + invgamma_logpdf(para({idx}), {shape}, {scale})"
             )
             rvs_code_lines.append(
-                f"    parasim({idx}, i) = invgamma_rvs({float(shape)}_wp, {float(scale)}_wp, self%rn)"
+                f"    parasim({idx}, i) = invgamma_rvs({shape}, {scale}, self%rn)"
             )
         else:
             raise ValueError(f"Unsupported distribution type: {name}")
@@ -332,7 +375,7 @@ contains
   type(model_custom_prior) function new_model_custom_prior(seed) result(self)
     integer, optional :: seed
 
-    self%npara = {prior.npara}
+    self%npara = {code_integer(prior.npara, field='Fortran prior parameter count')}
     if (present(seed)) then
       self%rn = fortress_random(seed)
     else
@@ -382,7 +425,7 @@ def generate_hardcoded_data_fortran(yy_data):
     """
     import numpy as np
 
-    yy = np.asarray(yy_data)
+    yy = np.asarray(yy_data, dtype=float)
     T, nobs = yy.shape
 
     # Transpose to match fortress convention: (nobs, T) not (T, nobs)
@@ -392,12 +435,12 @@ def generate_hardcoded_data_fortran(yy_data):
     flat_data = yy_transposed.flatten(order='F')
 
     # Format the data values
-    # Break into chunks of 5 values per line for readability
-    values_per_line = nobs
+    # Keep even explicit NaN expressions within free-form line limits.
+    values_per_line = max(1, min(nobs, 3))
     lines = []
     for i in range(0, len(flat_data), values_per_line):
         chunk = flat_data[i:i+values_per_line]
-        formatted = ', '.join(f'{val}_wp' for val in chunk )
+        formatted = ', '.join(fortran_real(val, allow_nan=True) for val in chunk)
         lines.append(f'      {formatted}')
         
     # Join with commas and line continuations
@@ -405,7 +448,8 @@ def generate_hardcoded_data_fortran(yy_data):
     missing_data = 'self%MISSING_DATA = .true.' if np.isnan(flat_data).any() else ''
     return f"""
   ! Hardcoded data array (nobs={nobs}, T={T})
-  self%yy = reshape([{data_init}], &
+  self%yy = reshape([ &
+{data_init}], &
                     [{nobs}, {T}])
   {missing_data}  
 """
@@ -432,21 +476,30 @@ def write_prior_file(prior, output_dir):
         prior_file.write("\n".join(plist))
 
 
-def make_fortran_model(model, **kwargs):
+def make_fortran_model(
+    model, *, external_functions=None, allow_external_code=False, **kwargs,
+):
+    """Build a Fortress project with explicit host authority for model plugins."""
 
     t0 = kwargs.pop("t0", 0)
     extra_code = kwargs.pop("extra_code", "")
     filter_function = kwargs.pop("filter_function", None)
     
 
-    from fortress import make_smc
-
-
-    model_file = smc(model, t0=t0, extra_code=extra_code)
+    model_file = smc(
+        model, t0=t0, extra_code=extra_code,
+        external_functions=external_functions,
+        allow_external_code=allow_external_code,
+    )
     if filter_function is not None:
         model_file = filter_function(model_file)
 
-    modelc = model.compile_model()
+    modelc = model.compile_model(
+        external_functions=external_functions,
+        allow_external_code=allow_external_code,
+    )
+
+    from fortress import make_smc
 
     r = make_smc(
         model_file,
@@ -490,12 +543,12 @@ module {name}
 
   implicit none
 
-  character(len=*), parameter :: mname = '{name}'
+  character(len=*), parameter :: mname = {model_name}
 
-  character(len=*), parameter :: priorfile = '{odir}/prior.txt'
+  character(len=*), parameter :: priorfile = {prior_path}
   character(len=*), parameter :: priorfile2 = ''
-  character(len=*), parameter :: datafile = '{odir}/yy.txt'
-  character(len=*), parameter :: transfile = '{odir}/trans.txt'
+  character(len=*), parameter :: datafile = {data_path}
+  character(len=*), parameter :: transfile = {trans_path}
 
   character(len=*), parameter :: initfile = ''
   character(len=*), parameter :: initwt = ''
@@ -573,8 +626,13 @@ end module {name}
 
 
 def write_model_file(model, output_dir, language="fortran", nobs=None):
+    _validate_fortran_model(model)
+    code_identifier(model["name"], language="Fortran")
+    nobs = code_integer(nobs, field="Fortran nobs")
 
     system_matrices = model.python_sims_matrices(matrix_format="symbolic")
+    for mat in system_matrices:
+        validate_fortran_expression(mat)
     GAM0, GAM1, PSI, PPI, QQ, DD, ZZ, HH = system_matrices
 
     from FCodePrinter import fcode_double as wf
@@ -600,19 +658,21 @@ def write_model_file(model, output_dir, language="fortran", nobs=None):
         ["{:} = para({:})".format(pa, i + 1) for i, pa in enumerate(model.parameters)]
     )
 
+    for value in model.get("para_func", {}).values():
+        validate_fortran_expression(value)
     helper = "\n".join(
         [wf(model["para_func"][v.name], v.name) for v in model["other_para"]]
     )
 
-    import re
-
-    cal_list = [str(model["calibration"][str(x)]) for x in model.parameters]
-    cal_list = [re.sub(r"([^a-zA-Z][0-9\.]+)", r"\1d0", str_p) for str_p in cal_list]
+    cal_list = [fortran_real(model["calibration"][str(x)]) for x in model.parameters]
     pmsv = "function pmsv result(para)\n  real(wp) :: para(npara)\n\n"
     pmsv += "para = (/" + ",".join(cal_list) + "/)\n\n end function pmsv"
 
     out = fortran_template.format(
-        odir=output_dir,
+        model_name=fortran_string(model["name"]),
+        prior_path=fortran_string(os.path.join(output_dir, "prior.txt")),
+        data_path=fortran_string(os.path.join(output_dir, "yy.txt")),
+        trans_path=fortran_string(os.path.join(output_dir, "trans.txt")),
         sims_mat=sims_mat,
         ss_mat=ss_mat,
         para_list=",".join(map(str, model.parameters)),
@@ -634,9 +694,18 @@ def write_model_file(model, output_dir, language="fortran", nobs=None):
     print(out)
 
 
-def translate_fortran(model, output_dir):
+def translate_fortran(
+    model, output_dir, *, external_functions=None, allow_external_code=False,
+):
+    _validate_fortran_model(model)
+    code_identifier(model["name"], language="Fortran")
+    # Resolve authority before writing any project files.
+    compiled_model = model.compile_model(
+        external_functions=external_functions,
+        allow_external_code=allow_external_code,
+    )
 
-    for driver, driver_file in fortran_files.iteritems():
+    for driver, driver_file in fortran_files.items():
         with open(os.path.join(template_path, driver_file)) as template:
             if "Makefile" in driver_file:
                 output_path = os.path.join(output_dir, "Makefile")
@@ -646,7 +715,6 @@ def translate_fortran(model, output_dir):
             output_file.write(template.read().format(model=model["name"]))
             output_file.close()
 
-    compiled_model = model.compile_model()
     output_dir = os.path.join(output_dir, "model")
     try:
         os.mkdir(output_dir)

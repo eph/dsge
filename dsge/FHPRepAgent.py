@@ -11,7 +11,6 @@ import sympy
 import re
 from typing import Dict, Optional, Any, Tuple
 
-from sympy import sympify
 from sympy.utilities.lambdify import lambdify
 
 from .symbols import (Variable,
@@ -713,7 +712,7 @@ class FHPRepAgent(Base):
             
             try:
                 other_para = {
-                    op: sympify(
+                    op: parse_expression(
                         model_yaml['calibration']["auxiliary_parameters"][op.name],
                         param_context
                     ) for op in other_para
@@ -1238,7 +1237,7 @@ class FHPRepAgent(Base):
         def _parse_param_expr(expr: Any, *, where: str) -> sympy.Expr:
             s = str(expr) if not isinstance(expr, str) else expr
             try:
-                out = sympy.sympify(s, locals=param_ctx)
+                out = parse_expression(s, param_ctx)
             except Exception as e:  # pragma: no cover
                 raise ValueError(f"While parsing {where} expression {s!r}: {e}") from e
             unknown = [v for v in out.free_symbols if v not in allowed_param_syms]
@@ -1508,7 +1507,7 @@ class FHPRepAgent(Base):
 
         for comp in components:
             expr_raw = hc_components[comp]["policy_object"]
-            expr = sympy.sympify(str(expr_raw), locals=pol_ctx)
+            expr = parse_expression(expr_raw, pol_ctx)
             unknown = [v for v in expr.free_symbols if v not in allowed_pol_syms]
             if unknown:
                 raise ValueError(
