@@ -33,28 +33,13 @@ Preferred tooling: uv (no conda-specific paths)
 - Configuration lives in YAML models under `dsge/examples/`. Validate with small inputs; avoid embedding credentials or absolute user paths.
 - Large data or binaries should be referenced, not committed.
 
-## Landing the Plane (Session Completion)
+## Task Tracking & Session Completion
 
-**When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
-
-**MANDATORY WORKFLOW:**
-
-1. **File issues for remaining work** - Create issues for anything that needs follow-up
-2. **Run quality gates** (if code changed) - Tests, linters, builds
-3. **Update issue status** - Close finished work, update in-progress items
-4. **PUSH TO REMOTE** - This is MANDATORY:
-   ```bash
-   git pull --rebase
-   bd sync
-   git push
-   git status  # MUST show "up to date with origin"
-   ```
-5. **Clean up** - Clear stashes, prune remote branches
-6. **Verify** - All changes committed AND pushed
-7. **Hand off** - Provide context for next session
-
-**CRITICAL RULES:**
-- Work is NOT complete until `git push` succeeds
-- NEVER stop before pushing - that leaves work stranded locally
-- NEVER say "ready to push when you are" - YOU must push
-- If push fails, resolve and retry until it succeeds
+- Maintain follow-up work in [TASKS.md](TASKS.md). Preserve task IDs and record
+  completion dates and resolutions when closing tasks.
+- Run the relevant quality gates for changed code, and report the results.
+- Review the diff and Git status; keep commits focused on the requested work.
+- Commit, push, and publish only within the user's authorized scope. Preserve
+  unrelated edits, stashes, and branches.
+- Hand off the changes, validation results, remaining tasks, and commit or branch
+  needed to continue the work.

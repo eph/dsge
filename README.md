@@ -68,6 +68,8 @@ If your `dynare` wrapper can’t locate Dynare’s MATLAB/Octave files, set `DYN
 
 Bugs and Questions
 ------------------
+Repository follow-up work is tracked in [TASKS.md](TASKS.md).
+
 For bug reports and questions, send me an email at
 ed.herbst@gmail.com.  If there is enough interest,
 I'll mirror the source on github.

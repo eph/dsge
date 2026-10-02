@@ -1,0 +1,81 @@
+{
+  "date": "2026-10-02",
+  "revision": "0cfeca45eafdaefb420fb78ddba5fb1c6f319fe9",
+  "branch": "master",
+  "environment": {
+    "python": "3.13.9",
+    "platform": "Darwin arm64",
+    "numpy": "2.2.6",
+    "numba": "0.61.2",
+    "pytest": "8.4.2"
+  },
+  "probes": {
+    "dsge-0qi": {
+      "generated_include_directories": [
+        "include_directories(\"/home/eherbst/Dropbox/code/math/lib/eigen_3.3.3/\")",
+        "include_directories(\"/home/eherbst/Dropbox/code/math\")",
+        "include_directories(\"~/Dropbox/code/math/lib/boost_1.69.0/\")",
+        "include_directories(\"~/Dropbox/code/math/lib/sundials_4.1.0/include\")"
+      ]
+    },
+    "dsge-5fc": {
+      "ordinary": [
+        1.0,
+        0.85,
+        0.7224999999999999,
+        0.6141249999999999,
+        0.5220062499999999,
+        0.4437053124999999
+      ],
+      "anticipated_zero_error": "ValueError: shapes (1,0) and (1,1) not aligned: 0 (dim 1) != 1 (dim 0)"
+    },
+    "dsge-845+dsge-y4d": {
+      "constructor": "(model, baseline: 'pd.DataFrame', instrument_shocks: 'str | Sequence[str]', *, p0: 'Sequence[float] | None' = None, compiled_model=None)",
+      "simulate": "(self, rules: 'str | Sequence[str]', *, rcond: 'float | None' = None, return_details: 'bool' = False) -> 'pd.DataFrame | IRFOCResult'",
+      "public_methods": [
+        "sim_simple_policy_rule",
+        "simulate",
+        "simulate_optimal_control",
+        "simulate_piecewise"
+      ],
+      "result_fields": [
+        "simulation",
+        "shocks",
+        "residuals"
+      ],
+      "horizon_from_baseline": true
+    },
+    "dsge-846": {
+      "expectations_error": "ValueError: own_horizon_projection does not support declarations.expectations > 0: different row owners have different subjective forecast paths"
+    },
+    "dsge-847": {
+      "declared_helper": "/home/eherbst/Dropbox/code/dsge/dsge/examples/DGS/helper_func.py",
+      "compile_options": {},
+      "compile_error": "FileNotFoundError: [Errno 2] No such file or directory: '/home/eherbst/Dropbox/code/dsge/dsge/examples/DGS/helper_func.py'"
+    },
+    "dsge-850": {
+      "regime": [
+        28,
+        369
+      ],
+      "actual": [
+        -508640.697359835,
+        1.6197794421171665e+21
+      ],
+      "independent_recursion": [
+        0.6659686781019037,
+        1.619779442117172e+21
+      ],
+      "absolute_output_error": 508641.36332851305
+    },
+    "dsge-gwm": {
+      "prior_pi": -0.04676688917187356,
+      "expected_i0_with_presample_history": -0.02338344458593678,
+      "actual_i0": 1.3877787807814457e-17,
+      "reported_residual0": [
+        0.0
+      ],
+      "has_pi_lag_alias": false
+    }
+  }
+}
