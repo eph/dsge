@@ -420,6 +420,8 @@ def compile_commitment(model, loss_string, policy_instruments, policy_shocks=Non
 def solve_fixed_point(A0np, A1np, A2np, A3np, A4np, A5np, Wnp, Qnp, beta, alpha=0.5):
     ny,nx = A3np.shape
     nnu = A5np.shape[1]
+    if not np.isfinite(alpha) or not 0 < alpha <= 1:
+        raise ValueError("alpha must be in (0, 1].")
 
     # initial guess for H1
     H1 = np.zeros((ny,ny))
@@ -428,23 +430,23 @@ def solve_fixed_point(A0np, A1np, A2np, A3np, A4np, A5np, Wnp, Qnp, beta, alpha=
     F2 = np.zeros((nx,nnu))
 
     converged = False
-    alpha = 0.5
     iters = 0
     while not converged and iters < 1000:
         D = A0np - A2np @ H1 - A4np @ F1
         P = solve_discrete_lyapunov(np.sqrt(beta)*H1.T, Wnp + beta*F1.T@Qnp@F1)
  
-        F1new = -np.linalg.inv(Qnp + A3np.T @ np.linalg.inv(D.T) @ P @ np.linalg.inv(D) @ A3np) @ A3np.T @ np.linalg.inv(D) @ P @ np.linalg.inv(D) @ A1np
-        F2new = -np.linalg.inv(Qnp + A3np.T @ np.linalg.inv(D.T) @ P @ np.linalg.inv(D) @ A3np) @ A3np.T @ np.linalg.inv(D) @ P @ np.linalg.inv(D) @ A5np
+        F1new = -np.linalg.inv(Qnp + A3np.T @ np.linalg.inv(D.T) @ P @ np.linalg.inv(D) @ A3np) @ A3np.T @ np.linalg.inv(D.T) @ P @ np.linalg.inv(D) @ A1np
+        F2new = -np.linalg.inv(Qnp + A3np.T @ np.linalg.inv(D.T) @ P @ np.linalg.inv(D) @ A3np) @ A3np.T @ np.linalg.inv(D.T) @ P @ np.linalg.inv(D) @ A5np
         H1new = np.linalg.inv(D) @ (A1np + A3np @ F1new)
         H2new = np.linalg.inv(D) @ (A5np + A3np @ F2new)
  
-        if (np.allclose(H1new, H1) and
-            np.allclose(H2new, H2) and
-            np.allclose(F1new, F1) and
-            np.allclose(F2new, F2)):
+        if (np.allclose(H1new, H1, rtol=1e-10, atol=1e-12) and
+            np.allclose(H2new, H2, rtol=1e-10, atol=1e-12) and
+            np.allclose(F1new, F1, rtol=1e-10, atol=1e-12) and
+            np.allclose(F2new, F2, rtol=1e-10, atol=1e-12)):
  
             converged = True
+            H1, H2, F1, F2 = H1new, H2new, F1new, F2new
  
         else:
             H1 = alpha*H1new + (1-alpha)*H1
@@ -462,7 +464,7 @@ def solve_fixed_point(A0np, A1np, A2np, A3np, A4np, A5np, Wnp, Qnp, beta, alpha=
 
 def compile_discretion(model, loss_string, policy_instruments, policy_shocks=None, beta=0.99):
     """
-    Solve a linear rational expectations model with commitment using the Dennis method.
+    Solve a linear rational expectations model under discretion using the Dennis method.
 
     Args:
     model (Model): A model object.
