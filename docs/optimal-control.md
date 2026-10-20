@@ -43,11 +43,31 @@ discretion_path = irfoc.simulate_optimal_discretion(
 )
 ```
 
-The discretion method solves continuation optimality conditions following Hebden–Winkler. It does not select a simple feedback rule or restart commitment each period. `method="finite"` instead solves a finite backward game; use the stationary method for comparison with `compile_discretion`.
+The discretion method solves continuation optimality conditions following Hebden–Winkler. It does not select a simple feedback rule or restart commitment each period. Its default `method="auto"` selects stationary for a quadratic loss and finite for a loss with positive-weight squared shortfall or overshoot terms. The explicit stationary method above is appropriate for comparison with `compile_discretion`.
 
 Compare solutions using the same loss, parameters, discount, shock, and inherited state. Sequence-space methods truncate responses, while the state-space benchmark has an infinite-horizon continuation. Compare early dates and increase the sequence horizon to assess terminal effects.
 
-The sequence methods accept affine inequalities such as `constraints="i >= -0.2"`. Commitment solves a constrained quadratic problem. Constrained discretion requires the stationary method and uses a local active-set heuristic with an unconstrained tail, rather than covering every corner equilibrium. See [IRFOC](irfoc.md) for `binding_horizon`, result diagnostics, and constraint assumptions.
+The sequence methods accept affine inequalities such as `constraints="i >= -0.2"`. Commitment solves a constrained quadratic problem. Constrained discretion uses a local active-set heuristic that holds future binding sets fixed when computing marginal effects. Its stationary method assumes a slack continuation after `binding_horizon`; its finite method permits binding at the final date. Neither covers every corner equilibrium. See [IRFOC](irfoc.md) for diagnostic fields and constraint assumptions.
+
+## Output shortfalls and inflation overshoots
+
+IRFOC additionally accepts nonnegative weighted squared penalties such as `min(y, 0)**2` and `max(pi - 0.02, 0)**2` alongside a convex quadratic remainder:
+
+```python
+shortfall_loss = "pi**2 + min(y, 0)**2 + deli**2"
+shortfall_commitment = irfoc.simulate_optimal_control(
+    shortfall_loss, discount="beta", return_details=True,
+)
+shortfall_discretion = irfoc.simulate_optimal_discretion(
+    shortfall_loss, discount="beta", return_details=True,
+)
+```
+
+Here commitment uses an exact auxiliary-variable reformulation of the finite-horizon objective. Discretion's default selects the finite local active-set method, allowing loss constraints to bind at the end. For a comparison that changes only the loss, use `method="finite"` for the symmetric discretionary problem too.
+
+The affine argument may include calibrated targets. Unsquared or nested `min`/`max`, products with a shortfall term, negative weights, and arbitrary piecewise objectives are unsupported. This extension belongs to the IRFOC methods; the `dsge.oc` state-space compilers retain their quadratic-loss interface.
+
+Returned economic paths and instrument-shock columns remain unchanged. With detailed results, `diagnostics["loss_auxiliaries"]` contains the internal penalty variables, and `"loss: "` prefixes identify their slack and multiplier columns. See [IRFOC](irfoc.md) for the complete grammar and limitations.
 
 ## Current scope and examples
 
@@ -56,6 +76,7 @@ This first sequence-space stage handles perfect foresight under one calibrated m
 ```bash
 uv run python dsge/examples/oc/nk_sequence_policy_demo.py
 uv run python dsge/examples/oc/nk_sequence_policy_demo.py --horizon 120
+uv run python dsge/examples/oc/nk_shortfall_demo.py --compare-horizon 48
 ```
 
-The example prints both policy paths, their early-horizon differences from the state-space counterparts, and numerical diagnostics. It imposes no universal agreement threshold. The earlier `dsge/examples/oc/nk_oc_demo.py` provides a commitment comparison with optional plots.
+The sequence-policy example prints early-horizon differences from the state-space counterparts and numerical diagnostics. The shortfall example compares both objectives under commitment and discretion, with an optional longer-horizon check. Neither imposes a universal agreement threshold. The earlier `dsge/examples/oc/nk_oc_demo.py` provides a commitment comparison with optional plots.

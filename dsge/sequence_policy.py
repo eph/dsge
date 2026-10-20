@@ -139,27 +139,40 @@ class ConstrainedDiscretionSolution:
 def solve_constrained_discretion(M, baseline, W, discount, C, bounds, *,
                                  linear_loss=None, binding_horizon=None,
                                  tolerance=1e-9, max_iter=500, terminal="repeat",
-                                 unconstrained=None):
+                                 unconstrained=None, method="stationary"):
     """HW section 5.3: fixed-future-active-set discretionary equilibrium.
 
-    This is the paper's local active-set algorithm, not a global nonlinear
-    game solver. Constraints after ``binding_horizon`` must be slack. Failed
-    active-set guesses or corner/degenerate systems raise instead of returning
-    an apparently successful solution.
+    This is a local active-set algorithm, not a global nonlinear game solver.
+    ``stationary`` uses the paper's unconstrained continuation; constraints
+    after ``binding_horizon`` must be slack. ``finite`` ends the loss at the
+    final date and permits constraints to bind there. Future binding sets are
+    held fixed when taking derivatives in either case. Increase the horizon
+    to check the effect of either terminal approximation.
     """
     from .sequence_discretion import solve_discretion, discretionary_step
+    if not np.isfinite(tolerance) or tolerance <= 0:
+        raise ValueError("tolerance must be positive and finite.")
+    if not isinstance(max_iter, (int, np.integer)) or max_iter < 1:
+        raise ValueError("max_iter must be a positive integer.")
     n = W.shape[0]
     N = M.shape[0] // n
     m = M.shape[1] // N
     q = C.shape[0]
+    if method not in {"stationary", "finite"}:
+        raise ValueError("method must be 'stationary' or 'finite'.")
+    if method == "finite" and binding_horizon is not None:
+        raise ValueError("binding_horizon applies only to stationary discretion.")
     horizon = N - 1 if binding_horizon is None else int(binding_horizon)
     if not 0 <= horizon < N:
         raise ValueError("binding_horizon must be between zero and T-1.")
-    if unconstrained is None:
+    if method == "stationary" and unconstrained is None:
         unconstrained = solve_discretion(M, W, discount, linear_loss=linear_loss,
                                          method="stationary", tol=tolerance)
-    Q = np.kron(np.diag(discount ** np.arange(N)), W)
-    gradient = np.kron(discount ** np.arange(N), np.zeros(n) if linear_loss is None else linear_loss)
+    weights = discount ** np.arange(N)
+    if np.any(weights == 0):
+        raise ValueError("Discount powers underflow at the requested horizon.")
+    Q = np.kron(np.diag(weights), W)
+    gradient = np.kron(weights, np.zeros(n) if linear_loss is None else linear_loss)
     F = np.zeros((N*n, N*n))
     F[:(N-1)*n, n:] = np.eye((N-1)*n)
     if terminal == "repeat":
@@ -173,17 +186,40 @@ def solve_constrained_discretion(M, baseline, W, discount, C, bounds, *,
         if key in visited:
             raise ValueError("Constrained discretion active sets cycle; a regular local solution was not found.")
         visited.add(key)
-        D = unconstrained.operator.copy()
-        offset = unconstrained.offset.copy()
-        multiplier_map = np.zeros((N*q, N*n))
-        multiplier_constant = np.zeros(N*q)
+        if method == "stationary":
+            D = unconstrained.operator.copy()
+            offset = unconstrained.offset.copy()
+            multiplier_map = np.zeros((N*q, N*n))
+            multiplier_constant = np.zeros(N*q)
+        else:
+            D = np.empty((0, 0))
+            offset = np.empty(0)
+            multiplier_map = np.empty((0, 0))
+            multiplier_constant = np.empty(0)
         for h in range(horizon, -1, -1):
-            future = D[:(N-1)*m] @ F
-            future_offset = offset[:(N-1)*m]
-            step = discretionary_step(M, Q, future, gradient)
+            if method == "stationary":
+                length = N
+                future = D[:(N-1)*m] @ F
+                future_offset = offset[:(N-1)*m]
+                future_mu = multiplier_map[:(N-1)*q] @ F
+                future_mu_constant = multiplier_constant[:(N-1)*q]
+            else:
+                length = N - h
+                # Fresh-date anticipated responses are leading submatrices,
+                # not bottom-right blocks of the original announcement map.
+                future = np.column_stack((np.zeros((D.shape[0], n)), D))
+                future_offset = offset
+                future_mu = np.column_stack((
+                    np.zeros((multiplier_map.shape[0], n)), multiplier_map,
+                ))
+                future_mu_constant = multiplier_constant
+            step = discretionary_step(
+                M[:length*n, :length*m], Q[:length*n, :length*n], future,
+                gradient[:length*n],
+            )
             G = step.effective_response
             rows = np.flatnonzero(active[h])
-            A = C0[rows]
+            A = C0[rows, :length*n]
             E = A @ G
             if len(rows) > m or np.linalg.matrix_rank(E, tol=1e-11) < len(rows):
                 raise ValueError("Dependent or excessive binding constraints in discretionary step.")
@@ -192,20 +228,20 @@ def solve_constrained_discretion(M, baseline, W, discount, C, bounds, *,
                 d = np.vstack([Z.T @ step.operator, A])
                 a = np.r_[Z.T @ step.offset, -bounds[rows]]
                 K = checked_solve(E @ E.T, E, name="discretionary multiplier system")
-                mu_map = np.zeros((q, N*n))
+                mu_map = np.zeros((q, length*n))
                 mu_constant = np.zeros(q)
                 mu_map[rows] = K @ step.operator
                 mu_constant[rows] = K @ step.offset
             else:
                 d, a = step.operator, step.offset
-                mu_map = np.zeros((q, N*n))
+                mu_map = np.zeros((q, length*n))
                 mu_constant = np.zeros(q)
             # Row scaling does not change constraints and avoids beta underflow.
             scales = np.maximum(np.linalg.norm(d, axis=1), 1e-30)
             D = np.vstack([d/scales[:, None], future])
             offset = np.r_[a/scales, future_offset]
-            multiplier_map = np.vstack([mu_map, multiplier_map[:(N-1)*q] @ F])
-            multiplier_constant = np.r_[mu_constant, multiplier_constant[:(N-1)*q]]
+            multiplier_map = np.vstack([mu_map, future_mu])
+            multiplier_constant = np.r_[mu_constant, future_mu_constant]
         choice = checked_solve(D @ M, -(D @ baseline + offset),
                                tolerance=tolerance, name="discretionary path")
         outcomes = baseline + M @ choice

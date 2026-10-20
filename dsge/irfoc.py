@@ -626,41 +626,34 @@ class IRFOC:
         )
         return IRFOCResult(simulation=sim, shocks=shocks, residuals=resid)
 
-    def _quadratic_policy_loss(self, loss, discount):
-        """Compile the same symbolic period loss used by the state-space API."""
+    def _compile_policy_loss(self, loss, discount):
+        """Compile the symbolic period loss, including squared shortfalls."""
+        from .policy_loss import compile_policy_loss
+
         if not isinstance(loss, str) or not loss.strip():
             raise ValueError("loss must be a non-empty string.")
         context = dict(self._variable_context)
         parameters = list(self.model["parameters"]) + list(self.model["auxiliary_parameters"].keys())
         context.update({str(p): p for p in parameters})
+        context.update({"min": sympy.Min, "max": sympy.Max,
+                        "Min": sympy.Min, "Max": sympy.Max,
+                        "indicator": INDICATOR_FN})
         expr = _sympify_with_context(loss, context)
-        if expr.has(sympy.Max, sympy.Min, sympy.Piecewise, INDICATOR_FN):
-            raise NotImplementedError("Use a quadratic period loss; piecewise losses require auxiliary variables.")
+        if expr.has(sympy.Piecewise, INDICATOR_FN):
+            raise ValueError("Use a quadratic loss plus nonnegative weighted squared min/max terms.")
         variables = self._baseline_variables
         used = expr.atoms(Variable)
         if any(getattr(v, "date", 0) != 0 for v in used):
             raise ValueError("Loss may not reference leads/lags directly; use a model auxiliary such as deli.")
         if not used.issubset(set(variables)):
             raise ValueError("Every loss variable must be a baseline column.")
-        try:
-            if sympy.Poly(expr, *variables, domain="EX").total_degree() > 2:
-                raise ValueError("loss must be quadratic (degree <= 2).")
-        except sympy.PolynomialError as exc:
-            raise ValueError("loss must be a quadratic polynomial.") from exc
-        Wsym = sympy.hessian(expr, variables)
-        gsym = sympy.Matrix([expr.diff(v) for v in variables]).subs({v: 0 for v in variables})
-        W = np.asarray(self.model.lambdify(Wsym)(self.p0), float)
-        g = np.asarray(self.model.lambdify(gsym)(self.p0), float).reshape(-1)
+        compiled = compile_policy_loss(expr, variables, lambda e: self.model.lambdify(e)(self.p0))
         if isinstance(discount, str):
             discount = self.model.lambdify(_sympify_with_context(discount, context))(self.p0)
         discount = float(np.asarray(discount))
         if not np.isfinite(discount) or not 0 < discount <= 1:
             raise ValueError("discount must be in (0, 1].")
-        if not np.all(np.isfinite(W)) or not np.all(np.isfinite(g)):
-            raise ValueError("The calibrated loss must be finite.")
-        if np.linalg.eigvalsh(W).min(initial=0) < -1e-10 * max(1, np.linalg.norm(W)):
-            raise ValueError("The quadratic period loss must be convex.")
-        return W, g, discount, context
+        return compiled, discount, context
 
     def _policy_constraints(self, constraints, context):
         """Compile affine current-period inequalities as C y >= bounds."""
@@ -697,6 +690,26 @@ class IRFOC:
         order = np.arange(self.T*k).reshape(k, self.T).T.reshape(-1)
         return self.M[:, order]
 
+    def _optimal_policy_problem(self, loss, discount, constraints):
+        """Append independent auxiliary choices for one-sided loss penalties."""
+        compiled, beta, context = self._compile_policy_loss(loss, discount)
+        C, bounds, labels = self._policy_constraints(constraints, context)
+        M = self._policy_mapping()
+        baseline = self.baseline.to_numpy(dtype=float)
+        count = compiled.auxiliary_count
+        if count:
+            k = len(self.instrument_shocks)
+            augmented = np.zeros((self.T, self.n + count, self.T, k + count))
+            augmented[:, :self.n, :, :k] = M.reshape(self.T, self.n, self.T, k)
+            for j in range(count):
+                augmented[:, self.n + j, :, k + j] = np.eye(self.T)
+            M = augmented.reshape(self.T * (self.n + count), self.T * (k + count))
+            baseline = np.column_stack([baseline, np.zeros((self.T, count))])
+            C = np.vstack([np.pad(C, ((0, 0), (0, count))), compiled.constraints])
+            bounds = np.r_[bounds, compiled.bounds]
+            labels += ["loss: " + label for label in compiled.auxiliary_labels]
+        return compiled, beta, M, baseline.reshape(-1), C, bounds, labels
+
     def simulate_optimal_control(
         self, loss: str, *, discount: float | str = 1.0,
         ridge: float = 0.0, u_weight: float = 0.0,
@@ -705,9 +718,12 @@ class IRFOC:
         tolerance: float = 1e-9, max_iter: int = 1000,
         return_details: bool = False,
     ) -> pd.DataFrame | IRFOCOptimalResult:
-        """Perfect-foresight optimal commitment with a quadratic period loss.
+        """Perfect-foresight commitment with quadratic and squared hinge losses.
 
         ``loss`` uses model variables/parameters, e.g. ``pi**2 + y**2 + deli**2``.
+        Nonnegative weighted squared shortfalls/overshoots such as
+        ``pi**2 + 0.5*min(y, 0)**2`` are compiled into a convex quadratic
+        problem with independent auxiliary choices and affine inequalities.
         ``constraints`` optionally gives affine inequalities such as ``i >= -0.2``.
         The entire shock path is announced at adoption. No future forecast
         revisions, uncertain transmission, or stochastic nonlinear expectations
@@ -724,41 +740,49 @@ class IRFOC:
             raise ValueError("dynamics must be 'perfect_foresight', 'pf', or 'irf'.")
         if ridge < 0 or u_weight < 0 or not np.isfinite(ridge + u_weight):
             raise ValueError("ridge and u_weight must be finite and nonnegative.")
-        W, g, beta, context = self._quadratic_policy_loss(loss, discount)
-        C, bounds, labels = self._policy_constraints(constraints, context)
-        M = self._policy_mapping()
+        compiled, beta, M, baseline, C, bounds, labels = self._optimal_policy_problem(
+            loss, discount, constraints)
+        W, g = compiled.hessian, compiled.gradient
+        count = compiled.auxiliary_count
+        n, k = self.n + count, len(self.instrument_shocks)
         weights = beta ** np.arange(self.T)
         Q = np.kron(np.diag(weights), W)
         gradient = np.kron(weights, g)
-        baseline = self.baseline.to_numpy(dtype=float).reshape(-1)
         A = np.kron(np.eye(self.T), C)
-        H = M.T @ Q @ M + (ridge + u_weight)*np.eye(M.shape[1])
+        # Legacy wedge penalties apply to physical implementing shocks only.
+        penalty = np.tile(np.r_[np.full(k, ridge + u_weight), np.zeros(count)], self.T)
+        H = M.T @ Q @ M + np.diag(penalty)
         f = M.T @ (Q @ baseline + gradient)
         result = solve_quadratic(H, f, A @ M, np.tile(bounds, self.T)-A @ baseline,
                                  tolerance=tolerance, max_iter=max_iter)
         y = baseline + M @ result.choice
-        simulation = pd.DataFrame(y.reshape(self.T, self.n), columns=self.columns,
+        outcomes = y.reshape(self.T, n)
+        simulation = pd.DataFrame(outcomes[:, :self.n], columns=self.columns,
                                   index=self.baseline.index)
         if not return_details:
             return simulation
         q = len(labels)
         stationarity = H @ result.choice + f - (A @ M).T @ result.multipliers
+        diagnostics = {"regime": "commitment", "iterations": result.iterations,
+                       "residual": result.residual, "horizon": self.T}
+        if count:
+            diagnostics["loss_auxiliaries"] = pd.DataFrame(
+                outcomes[:, self.n:], columns=compiled.auxiliary_labels, index=self.baseline.index)
         return IRFOCOptimalResult(
             simulation,
-            pd.DataFrame(result.choice.reshape(self.T, -1), columns=self.instrument_shocks,
+            pd.DataFrame(result.choice.reshape(self.T, -1)[:, :k], columns=self.instrument_shocks,
                          index=self.baseline.index),
-            pd.DataFrame(stationarity.reshape(self.T, -1), columns=self.instrument_shocks,
+            pd.DataFrame(stationarity.reshape(self.T, -1)[:, :k], columns=self.instrument_shocks,
                          index=self.baseline.index),
             pd.DataFrame(result.multipliers.reshape(self.T, q)/weights[:, None],
                          columns=labels, index=self.baseline.index),
             pd.DataFrame(result.slack.reshape(self.T, q), columns=labels, index=self.baseline.index),
-            {"regime": "commitment", "iterations": result.iterations,
-             "residual": result.residual, "horizon": self.T},
+            diagnostics,
         )
 
     def simulate_optimal_discretion(
         self, loss: str, *, discount: float | str = 0.99,
-        method: str = "stationary", constraints: str | Sequence[str] | None = None,
+        method: str = "auto", constraints: str | Sequence[str] | None = None,
         binding_horizon: int | None = None, tolerance: float = 1e-9,
         max_iter: int = 1000, damping: float = 1.0,
         return_details: bool = False,
@@ -770,27 +794,40 @@ class IRFOC:
         ``method='stationary'`` finds their time-invariant fixed point;
         ``'finite'`` solves a backward finite game. Both truncate the sequence
         Jacobian, so comparisons should check convergence as the horizon grows.
+        ``'auto'`` selects stationary for quadratic losses and finite for
+        squared shortfall/overshoot losses. The latter allows loss constraints
+        to bind through the last date without assuming a slack terminal tail.
 
-        With inequalities, use the stationary method. The paper's section 5.3
-        algorithm holds future binding sets fixed when taking marginal effects,
-        assumes constraints slack after ``binding_horizon``, and can fail at
-        corners or when its active-set iteration does not converge.
+        With inequalities, the local active-set algorithm holds future binding
+        sets fixed when taking marginal effects. Stationary calculations assume
+        constraints slack after ``binding_horizon``. Both methods can fail at
+        switching boundaries or when their active-set iteration does not converge.
+        The augmented quadratic problem must have positive curvature in current
+        controls before current inequalities are imposed. Some hinge-only losses
+        therefore need an alternative formulation even when their optimum is unique.
         """
         from .sequence_discretion import solve_discretion
         from .sequence_policy import checked_solve, solve_constrained_discretion
-        W, g, beta, context = self._quadratic_policy_loss(loss, discount)
-        C, bounds, labels = self._policy_constraints(constraints, context)
-        M = self._policy_mapping()
-        baseline = self.baseline.to_numpy(dtype=float).reshape(-1)
-        policy = solve_discretion(M, W, beta, linear_loss=g, method=method,
-                                  tol=tolerance, max_iter=max_iter, damping=damping)
+        if not np.isfinite(damping) or not 0 < damping <= 1:
+            raise ValueError("damping must be in (0, 1].")
+        compiled, beta, M, baseline, C, bounds, labels = self._optimal_policy_problem(
+            loss, discount, constraints)
+        W, g = compiled.hessian, compiled.gradient
+        count = compiled.auxiliary_count
+        n, k = self.n + count, len(self.instrument_shocks)
+        if method == "auto":
+            method = "finite" if count else "stationary"
+        if method not in {"stationary", "finite"}:
+            raise ValueError("method must be 'auto', 'stationary', or 'finite'.")
+        policy = None
+        if not len(labels) or method == "stationary":
+            policy = solve_discretion(M, W, beta, linear_loss=g, method=method,
+                                      tol=tolerance, max_iter=max_iter, damping=damping)
         if len(labels):
-            if method != "stationary":
-                raise ValueError("Constrained discretion requires a stationary unconstrained tail.")
             result = solve_constrained_discretion(
                 M, baseline, W, beta, C, bounds, linear_loss=g,
                 binding_horizon=binding_horizon, tolerance=tolerance,
-                max_iter=max_iter, unconstrained=policy,
+                max_iter=max_iter, unconstrained=policy, method=method,
             )
             choice, y = result.choice, result.outcomes
             residuals = result.operator @ y + result.offset
@@ -805,21 +842,32 @@ class IRFOC:
             multipliers = slack = np.empty((self.T, 0))
             iterations = policy.iterations
             residual = max(policy.residual, np.max(np.abs(residuals), initial=0))
-        simulation = pd.DataFrame(y.reshape(self.T, self.n), columns=self.columns,
+        outcomes = y.reshape(self.T, n)
+        simulation = pd.DataFrame(outcomes[:, :self.n], columns=self.columns,
                                   index=self.baseline.index)
         if not return_details:
             return simulation
+        diagnostics = {"regime": "discretion", "method": method, "iterations": iterations,
+                       "residual": float(residual), "horizon": self.T}
+        if policy is not None:
+            diagnostics["fixed_point_residual"] = policy.residual
+        if count:
+            diagnostics["loss_auxiliaries"] = pd.DataFrame(
+                outcomes[:, self.n:], columns=compiled.auxiliary_labels, index=self.baseline.index)
+            diagnostics["policy_system_residuals"] = pd.DataFrame(
+                residuals.reshape(self.T, -1),
+                columns=[f"condition {j + 1}" for j in range(k + count)],
+                index=self.baseline.index,
+            )
         return IRFOCOptimalResult(
             simulation,
-            pd.DataFrame(choice.reshape(self.T, -1), columns=self.instrument_shocks,
+            pd.DataFrame(choice.reshape(self.T, -1)[:, :k], columns=self.instrument_shocks,
                          index=self.baseline.index),
-            pd.DataFrame(residuals.reshape(self.T, -1), columns=self.instrument_shocks,
+            pd.DataFrame(residuals.reshape(self.T, -1)[:, :k], columns=self.instrument_shocks,
                          index=self.baseline.index),
             pd.DataFrame(multipliers, columns=labels, index=self.baseline.index),
             pd.DataFrame(slack, columns=labels, index=self.baseline.index),
-            {"regime": "discretion", "method": method, "iterations": iterations,
-             "residual": float(residual), "fixed_point_residual": policy.residual,
-             "horizon": self.T},
+            diagnostics,
         )
 
     def _u_to_df(self, u: np.ndarray) -> pd.DataFrame:

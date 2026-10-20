@@ -88,7 +88,8 @@ def test_infeasible_constraints_raise():
         problem.simulate_optimal_control('pi**2+y**2', constraints=['i >= 1', 'i <= 0'])
 
 
-def test_dynamic_bound_discretion_against_backward_nk_solution():
+@pytest.mark.parametrize('method', ['stationary', 'finite'])
+def test_dynamic_bound_discretion_against_backward_nk_solution(method):
     text = STATIC.replace('pi = kappa*y + u', 'pi = beta*pi(+1) + kappa*y + u')
     text = text.replace('y = -sigma*i + r', 'y = y(+1) - sigma*(i-pi(+1)-r)')
     text = text.replace('r = er', 'r = 0.5*r(-1) + er')
@@ -99,7 +100,8 @@ def test_dynamic_bound_discretion_against_backward_nk_solution():
     problem = IRFOC(model, baseline, 'em', compiled_model=compiled)
     result = problem.simulate_optimal_discretion(
         'pi**2 + 0.1*y**2', discount='beta', constraints='i >= -0.1',
-        binding_horizon=12, return_details=True,
+        method=method, binding_horizon=12 if method == 'stationary' else None,
+        return_details=True,
     )
     # No endogenous inherited states: each period's discretionary problem is
     # static conditional on its successor's solution, giving exact backward FOCs.
