@@ -7,7 +7,7 @@ name = "dsge"
 dynamic = ["version"]
 description = "A simple Python package for DSGE models."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 authors = [
   { name = "Ed Herbst", email = "ed.herbst@gmail.com" },
 ]
@@ -32,6 +32,7 @@ dependencies = [
 test = [
   "pytest",
   "matplotlib",
+  "pillow>=13.0.0",
 ]
 progress = [
   "rich",
@@ -76,6 +77,7 @@ dev = [
   "mkdocstrings[python]",
   "importlib-resources; python_version < '3.9'",
   "matplotlib",
+  "pillow>=13.0.0",
 ]
 
 [tool.uv]
