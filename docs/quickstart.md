@@ -3,7 +3,7 @@
 This guide shows a minimal end-to-end flow: install, load a model, compile it, and get system matrices/IRFs.
 
 Prerequisites
-- Python 3.10+
+- Python 3.11+
 - Optional: uv for fast, reproducible runs (recommended)
 
 Install (dev)
